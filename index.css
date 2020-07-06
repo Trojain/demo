@@ -1,0 +1,63 @@
+body {
+    height: 100%;
+    background: #defaff;
+}
+.bannerimg {
+    height: 40%;
+    width: 100%;
+    margin: 0 auto;
+}
+.maincontentbox {
+    position: relative;
+    height: 48%;
+}
+.lentdingtip {
+    padding: 0.4rem 0.2rem;
+    font-size: 0.32rem;
+    line-height: 0.46rem;
+    text-align: center;
+}
+.lentdingtip text {
+    color: #36a3ff;
+}
+.tiptext {
+    text-align: center;
+    color: #959595;
+    line-height: 0.4rem;
+}
+.progressline {
+    position: relative;
+    width: 70%;
+    height: 0.1rem;
+    border-radius: 0.5rem;
+    margin: 0.4rem auto;
+    background: #959595;
+}
+.currprogressline {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 10%;
+    background: #36a3ff;
+    border-radius: 0.5rem;
+    animation: move 8s;
+    animation-fill-mode: forwards;
+}
+@keyframes move {
+    0% {
+        width: 2%;
+    }
+    20% {
+        width: 40%;
+    }
+    50% {
+        width: 50%;
+    }
+    70% {
+        width: 60%;
+    }
+    100% {
+        width: 96%;
+    }
+}

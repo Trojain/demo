@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Document</title>
+        <link rel="stylesheet" href="./index.css" />
+    </head>
+
+    <body>
+        <div>bbb</div>
+        <script>
+            window.onload = function () {
+                window.addEventListener(
+                    'popstate',
+                    function (e) {
+                        alert(1);
+                    },
+                    false
+                );
+            };
+        </script>
+    </body>
+    <!-- <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.min.js"></script> -->
+    <!-- <script src="./index.js"></script> -->
+</html>
