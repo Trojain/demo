@@ -1,0 +1,18 @@
+{
+    "devDependencies": {
+        "concurrently": "^9.2.0"
+    },
+    "scripts": {
+        "start": "concurrently \"npm:start:main\" \"npm:start:react\" \"npm:start:vue2\" \"npm:start:vue3\"",
+        "start:main": "npm run dev --workspace=main-app",
+        "start:react": "npm run start --workspace=react-app",
+        "start:vue2": "npm run serve --workspace=vue2-app",
+        "start:vue3": "npm run dev --workspace=vue3-app"
+    },
+    "workspaces": [
+        "main-app",
+        "react-app",
+        "vue2-app",
+        "vue3-app"
+    ]
+}
