@@ -16,22 +16,22 @@ registerMicroApps([
     {
         name: 'vue2-app',
         entry: '//localhost:3001',
-        container: '#yd-container',
-        activeRule: '/yd-vue2',
+        container: '#subapp-container',
+        activeRule: '/app-vue2',
         props: {}
     },
     {
         name: 'react-app',
         entry: '//localhost:3002',
-        container: '#yd-container',
-        activeRule: '/yd-react',
+        container: '#subapp-container',
+        activeRule: '/app-react',
         props: {}
     },
     {
         name: 'vue3-app',
         entry: '//localhost:3003',
-        container: '#yd-container',
-        activeRule: '/yd-vue3',
+        container: '#subapp-container',
+        activeRule: '/app-vue3',
         props: {}
     }
 ]);

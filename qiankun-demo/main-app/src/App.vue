@@ -1,17 +1,12 @@
 <template>
     <h1>主应用</h1>
-    <router-link to="/yd-vue2">Vue2 应用</router-link>
+    <router-link to="/app-vue2">Vue2 应用</router-link>
     |
-    <router-link to="/yd-react">React 应用</router-link>
+    <router-link to="/app-react">React 应用</router-link>
     |
-    <router-link to="/yd-vue3">Vue3 应用</router-link>
+    <router-link to="/app-vue3">Vue3 应用</router-link>
 
-    <router-view v-slot="{ Component }">
-        <keep-alive>
-            <component :is="Component" />
-        </keep-alive>
-    </router-view>
-    <div id="yd-container"></div>
+    <div id="subapp-container"></div>
 </template>
 
 <script setup>
