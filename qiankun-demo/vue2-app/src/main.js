@@ -1,4 +1,3 @@
-import './qiankun.js';
 import './public-path.js';
 import Vue from 'vue';
 import App from './App.vue';

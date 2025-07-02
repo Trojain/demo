@@ -15,11 +15,15 @@ import { ElLoading } from 'element-plus';
 
 onMounted(() => {
     // 订阅loading事件
-    window._QIANKUN_YD.event.on('loading', () => {
+    window._QIANKUN_YD.event?.on('loading', () => {
         const loadingInstance = ElLoading.service({ fullscreen: true });
         setTimeout(() => {
             loadingInstance.close();
         }, 3000);
+    });
+
+    window._QIANKUN_YD.event?.on('change-user', (eventName, data) => {
+        console.log('主应用中收到用户变更事件：', data);
     });
 });
 </script>

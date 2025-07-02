@@ -1,8 +1,3 @@
-if (window.__POWERED_BY_QIANKUN__) {
-    // eslint-disable-next-line no-undef
-    __webpack_public_path__ = window.__INJECTED_PUBLIC_PATH_BY_QIANKUN__;
-}
-
 window._QIANKUN_YD = window._QIANKUN_YD || {
     event: (() => {
         class Emitter {
@@ -10,7 +5,7 @@ window._QIANKUN_YD = window._QIANKUN_YD || {
                 this.events = {};
                 this.watchs = [];
             }
-            add(eventName, callback, count) {
+            add (eventName, callback, count) {
                 if (!eventName || typeof callback !== 'function') return;
                 if (!this.events[eventName]) {
                     this.events[eventName] = [];
@@ -20,7 +15,7 @@ window._QIANKUN_YD = window._QIANKUN_YD || {
                     !hasExist && this.events[eventName].push({ callback, count });
                 }
             }
-            emit(...args) {
+            emit (...args) {
                 const [eventName, ...restArgs] = args;
                 const callbacks = this.events[eventName] || [];
                 if (eventName && this.watchs.length > 0) {
@@ -35,15 +30,15 @@ window._QIANKUN_YD = window._QIANKUN_YD || {
                     });
                 }
             }
-            on(eventName, callback) {
+            on (eventName, callback) {
                 this.add(eventName, callback, 0);
             }
-            once(eventName, callback) {
+            once (eventName, callback) {
                 this.add(eventName, callback, 1);
             }
-            off(eventName, callback) {
+            off (eventName, callback) {
                 const callbacks = this.events[eventName] || [];
-                if (callbacks.legnth <= 0) return;
+                if (callbacks.length <= 0) return;
                 if (!callback) this.events[eventName] = [];
                 callbacks.forEach((item, index) => {
                     if (item.callback === callback) {
@@ -51,12 +46,12 @@ window._QIANKUN_YD = window._QIANKUN_YD || {
                     }
                 });
             }
-            watch(callback) {
-                if (typeof fn !== 'function') return;
+            watch (callback) {
+                if (typeof callback !== 'function') return;
                 this.watchs.push(callback);
             }
         }
         return new Emitter();
     })(),
-    store: (() => {})()
+    store: (() => { })()
 };
