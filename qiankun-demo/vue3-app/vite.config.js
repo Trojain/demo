@@ -12,7 +12,7 @@ export default defineConfig({
     ],
     server: {
         open: false,
-        port: 3003,
+        port: 2003,
         headers: {
             'Access-Control-Allow-Origin': '*'
         }
