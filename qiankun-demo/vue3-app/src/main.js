@@ -5,7 +5,6 @@ import { renderWithQiankun, qiankunWindow } from 'vite-plugin-qiankun/dist/helpe
 let app = undefined;
 
 const render = props => {
-    console.log('子应用（app-vue3）', props);
     const { container } = props;
     app = createApp(App);
     app.mount(container ? container.querySelector('#app') : '#app');
@@ -13,15 +12,16 @@ const render = props => {
 
 const initQianKun = () => {
     renderWithQiankun({
-        bootstrap() {},
-        mount(props) {
+        bootstrap () { },
+        mount (props) {
             render(props);
         },
-        unmount() {
+        unmount () {
             app.unmount();
         },
-        update() {}
+        update () { }
     });
 };
 
+// 判断是否在主应用中运行
 qiankunWindow.__POWERED_BY_QIANKUN__ ? initQianKun() : render({});

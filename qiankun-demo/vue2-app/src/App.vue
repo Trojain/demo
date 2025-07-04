@@ -9,7 +9,7 @@ export default {
     methods: {
         openLoading() {
             // 发布loading事件
-            window._QIANKUN_YD.event.emit('loading');
+            window.__EVENT_BUS__.emit('loading');
         }
     }
 };
