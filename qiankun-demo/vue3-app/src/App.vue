@@ -4,7 +4,16 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue';
 import HelloWorld from './components/HelloWorld.vue';
+
+const props = defineProps(['eventBus']);
+
+onMounted(() => {
+    props.eventBus?.on('vue2-to-vue3', data => {
+        console.log('vue3-app 收到了来自 vue2-app 的消息:', data);
+    });
+});
 </script>
 
 <style scoped>

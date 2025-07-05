@@ -36,7 +36,7 @@ registerMicroApps([
         entry: '//localhost:2003',
         container: '#subapp-container',
         activeRule: '/app-vue3',
-        props: {}
+        props: { eventBus }
     }
 ], {
     beforeLoad: [app => console.log('before load', app.name)],
