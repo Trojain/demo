@@ -1,26 +1,26 @@
 {
-    "devDependencies": {
-        "concurrently": "^9.2.0",
-        "open": "^10.1.2",
-        "wait-on": "^8.0.3"
-    },
-    "scripts": {
-        "start": "concurrently --names \"main,react,vue2,vue3,open\" --prefix-colors \"blue,magenta,green,yellow,cyan\" \"npm run start:main\" \"npm run start:react\" \"npm run start:vue2\" \"npm run start:vue3\" \"npm run open-main\"",
-        "start:main": "npm run dev --workspace=main-app",
-        "start:react": "npm run start --workspace=react-app",
-        "start:vue2": "npm run serve --workspace=vue2-app",
-        "start:vue3": "npm run dev --workspace=vue3-app",
-        "open-main": "wait-on http://localhost:2000 --timeout 30000 && npx open http://localhost:2000",
-        "build": "npm run build:main && npm run build:vue2 && npm run build:vue3 && npm run build:react",
-        "build:main": "npm run build --workspace=main-app",
-        "build:vue2": "npm run build --workspace=vue2-app",
-        "build:vue3": "npm run build --workspace=vue3-app",
-        "build:react": "npm run build --workspace=react-app"
-    },
-    "workspaces": [
-        "main-app",
-        "react-app",
-        "vue2-app",
-        "vue3-app"
-    ]
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "open": "^10.1.2",
+    "wait-on": "^8.0.3"
+  },
+  "scripts": {
+    "start": "concurrently --names \"main,react,vue2,vue3,open\" --prefix-colors \"blue,magenta,green,yellow,cyan\" \"npm run start:main\" \"npm run start:react\" \"npm run start:vue2\" \"npm run start:vue3\" \"npm run open-main\"",
+    "start:main": "npm run dev --workspace=main-app",
+    "start:react": "npm run start --workspace=react-app",
+    "start:vue2": "npm run serve --workspace=vue2-app",
+    "start:vue3": "npm run dev --workspace=vue3-app",
+    "open-main": "wait-on http://localhost:2000 --timeout 30000 && npx open http://localhost:2000",
+    "build": "npm run build:main && npm run build:vue2 && npm run build:vue3 && npm run build:react",
+    "build:main": "npm run build --workspace=main-app",
+    "build:vue2": "npm run build --workspace=vue2-app",
+    "build:vue3": "npm run build --workspace=vue3-app",
+    "build:react": "npm run build --workspace=react-app"
+  },
+  "workspaces": [
+    "main-app",
+    "react-app",
+    "vue2-app",
+    "vue3-app"
+  ]
 }

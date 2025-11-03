@@ -1,26 +1,38 @@
+import { qiankunWindow, renderWithQiankun } from 'vite-plugin-qiankun/dist/helper';
 import { createApp } from 'vue';
 import App from './App.vue';
-import { renderWithQiankun, qiankunWindow } from 'vite-plugin-qiankun/dist/helper';
 
 let app = null;
+let appActions = null;
 
-const render = props => {
-    const { container, eventBus } = props;
-    app = createApp(App, { eventBus }); //  将 eventBus 作为 props 传入 App.vue
-    app.mount(container ? container.querySelector('#app') : '#app');
+const noopActions = {
+  onGlobalStateChange: () => {},
+  offGlobalStateChange: () => {},
+  setGlobalState: () => {}
+};
+
+const render = (props = {}) => {
+  const { container, actions } = props;
+  appActions = actions || noopActions;
+  app = createApp(App, { actions: appActions });
+  app.mount(container ? container.querySelector('#app') : '#app');
 };
 
 renderWithQiankun({
-    bootstrap () { },
-    mount (props) {
-        render(props);
-    },
-    unmount () {
-        app.unmount();
-    },
-    update () { }
+  bootstrap() {},
+  mount(props) {
+    render(props);
+  },
+  unmount() {
+    if (app) {
+      app.unmount();
+      app = null;
+    }
+    appActions = null;
+  },
+  update() {}
 });
 
 if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
-    render({})
+  render();
 }
