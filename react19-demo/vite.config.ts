@@ -50,13 +50,6 @@ export default defineConfig(({ mode }) => {
       host: true,
       open: true,
       cors: true,
-      proxy: {
-        '/api': {
-          target: 'http://localhost:7000',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ''),
-        },
-      },
     },
 
     // 4. 构建配置

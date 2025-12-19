@@ -1,17 +1,24 @@
-import { userApi } from '@/services/user'
-import { LockOutlined, UserOutlined } from '@ant-design/icons'
-import { Button, Form, Input } from 'antd'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { message } from 'antd'
+import { GlobalOutlined, LockOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons'
+import { ProForm, ProFormText } from '@ant-design/pro-components'
+import { login } from '@/services/login'
+import { useUserStore } from '@/store/user'
 
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/'
+  const setUserInfo = useUserStore((state) => state.setUserInfo)
 
-  const onFinish = async (values: { username: string; password: string }) => {
+  const onFinish = async (values: any) => {
     try {
-      const result = await userApi.login(values)
-      localStorage.setItem('token', result.token)
+      const response = await login(values)
+
+      // 存入 Zustand (自动持久化到 localStorage)
+      setUserInfo(response)
+
+      message.success('登录成功')
       navigate(from, { replace: true })
     } catch (error) {
       console.error(error)
@@ -30,27 +37,48 @@ export default function Login() {
     >
       <div
         style={{
-          width: 400,
-          padding: 40,
+          width: 450,
+          padding: '40px 50px',
           background: 'white',
           borderRadius: 8,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         }}
       >
-        <h1 style={{ textAlign: 'center', marginBottom: 32 }}>SaaS Admin</h1>
-        <Form onFinish={onFinish} autoComplete="off">
-          <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
-            <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
-          </Form.Item>
-          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" size="large" block>
-              登录
-            </Button>
-          </Form.Item>
-        </Form>
+        <h1 style={{ textAlign: 'center', marginBottom: 32, fontSize: 24 }}>SaaS Admin</h1>
+
+        <ProForm
+          onFinish={onFinish}
+          submitter={{
+            searchConfig: { submitText: '登录' },
+            render: (_, dom) => dom.pop(),
+            submitButtonProps: { size: 'large', style: { width: '100%' } },
+          }}
+          initialValues={{ username: 'admin', password: 'AA2877333sd@!', code: '1' }}
+        >
+          <ProFormText
+            name="username"
+            fieldProps={{ size: 'large', prefix: <UserOutlined /> }}
+            placeholder="请输入用户名"
+            rules={[{ required: true, message: '请输入用户名' }]}
+          />
+          <ProFormText.Password
+            name="password"
+            fieldProps={{ size: 'large', prefix: <LockOutlined /> }}
+            placeholder="请输入密码"
+            rules={[{ required: true, message: '请输入密码' }]}
+          />
+          <ProFormText
+            name="code"
+            fieldProps={{ size: 'large', prefix: <SafetyOutlined /> }}
+            placeholder="请输入google验证码"
+            rules={[{ required: true, message: '请输入google验证码' }]}
+          />
+          <ProFormText
+            name="siteCode"
+            fieldProps={{ size: 'large', prefix: <GlobalOutlined /> }}
+            placeholder="请输入站点code（选填）"
+          />
+        </ProForm>
       </div>
     </div>
   )

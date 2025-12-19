@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
+import { clearUserInfo, getToken } from '@/store/user'
 
-const uiHolder = {
+const globalUI = {
   message: {
     error: (msg: string) => console.error(msg),
     warning: console.warn,
@@ -13,9 +14,9 @@ const uiHolder = {
 }
 
 export const setRequestUi = (message: any, modal: any, navigate: any) => {
-  uiHolder.message = message
-  uiHolder.modal = modal
-  uiHolder.navigate = navigate
+  globalUI.message = message
+  globalUI.modal = modal
+  globalUI.navigate = navigate
 }
 
 export interface ApiResponse<T = any> {
@@ -34,20 +35,25 @@ let isRelogging = false
 
 instance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = getToken()
     if (token) config.headers.Authorization = `Bearer ${token}`
     return config
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 )
 
 instance.interceptors.response.use(
   (response) => {
     const { code, data, message } = response.data
-    if (code === 200 || code === 0) return data
+    if (code !== undefined) {
+      if (code === 200 || code === 0) {
+        return data !== undefined ? data : response.data
+      }
+      globalUI.message.error(message || '请求失败')
+      return Promise.reject(new Error(message || '请求失败'))
+    }
 
-    uiHolder.message.error(message || '请求失败')
-    return Promise.reject(new Error(message || '请求失败'))
+    return response.data
   },
   (error: AxiosError<any>) => {
     if (error.response) {
@@ -55,31 +61,31 @@ instance.interceptors.response.use(
         case 401:
           if (!isRelogging) {
             isRelogging = true
-            uiHolder.modal.warning({
+            globalUI.modal.warning({
               title: '登录过期',
               content: '您的登录已过期，请重新登录',
               onOk: () => {
                 isRelogging = false
-                localStorage.removeItem('token')
-                uiHolder.navigate('/login')
+                clearUserInfo()
+                globalUI.navigate('/login')
               },
             })
           }
           break
         case 403:
-          uiHolder.message.error('没有权限访问')
+          globalUI.message.error('没有权限访问')
           break
         case 500:
-          uiHolder.message.error('服务器错误')
+          globalUI.message.error('服务器错误')
           break
         default:
-          uiHolder.message.error(error.response.data?.message || '请求失败')
+          globalUI.message.error(error.response.data?.message || '请求失败')
       }
     } else {
-      uiHolder.message.error(error.message || '网络错误')
+      globalUI.message.error(error.message || '网络错误')
     }
     return Promise.reject(error)
-  }
+  },
 )
 
 export const request = async <T = any>(config: AxiosRequestConfig): Promise<T> => {
