@@ -1,0 +1,50 @@
+// SCSS 全局样式，可使用 variables.scss 中的变量
+@use 'sass:color';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans',
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: $bg-color-light;
+}
+
+::-webkit-scrollbar-thumb {
+  background: $border-color;
+  border-radius: $border-radius-base;
+
+  &:hover {
+    background: $text-color-secondary;
+  }
+}
+
+a {
+  color: $primary-color;
+  text-decoration: none;
+  transition: color $animation-duration-base;
+
+  &:hover {
+    color: color.adjust($primary-color, $lightness: 10%);
+  }
+
+  &:active {
+    color: color.adjust($primary-color, $lightness: -10%);
+  }
+}
