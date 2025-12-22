@@ -35,4 +35,10 @@ export const menuRoutes: AppRouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/profile',
+    name: '个人中心',
+    component: lazy(() => import('@/pages/Profile')),
+    hideInMenu: true, // 隐藏在菜单中，仅通过顶部操作栏访问
+  },
 ]

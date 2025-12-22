@@ -33,45 +33,47 @@ instance.interceptors.request.use(
 // 响应拦截器：统一处理业务错误和HTTP错误
 instance.interceptors.response.use(
   (response) => {
-    const { code, data, message } = response.data
+    const { message } = globalUI
+    const { code, data, message: msg } = response.data
     if (code !== undefined) {
       if (code === 200 || code === 0) {
         return data !== undefined ? data : response.data
       }
-      globalUI.message.error(message || '请求失败')
-      return Promise.reject(new Error(message || '请求失败'))
+      message.error(msg || '请求失败')
+      return Promise.reject(new Error(msg || '请求失败'))
     }
 
     return response.data
   },
   (error: AxiosError<any>) => {
+    const { message, modal, navigate } = globalUI
     if (error.response) {
       switch (error.response.status) {
         case 401: // 未授权，跳转登录
           if (!isRelogging) {
             isRelogging = true
-            globalUI.modal.warning({
+            modal.warning({
               title: '登录过期',
               content: '您的登录已过期，请重新登录',
               onOk: () => {
                 isRelogging = false
                 clearUserInfo()
-                globalUI.navigate('/login')
+                navigate('/login')
               },
             })
           }
           break
         case 403:
-          globalUI.message.error('没有权限访问')
+          message.error('没有权限访问')
           break
         case 500:
-          globalUI.message.error('服务器错误')
+          message.error('服务器错误')
           break
         default:
-          globalUI.message.error(error.response.data?.message || '请求失败')
+          message.error(error.response.data?.message || '请求失败')
       }
     } else {
-      globalUI.message.error(error.message || '网络错误')
+      message.error(error.message || '网络错误')
     }
     return Promise.reject(error)
   },

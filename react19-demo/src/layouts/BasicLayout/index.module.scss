@@ -1,0 +1,65 @@
+// 局部样式
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 16px;
+  height: 48px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 16px;
+  border-top: 1px solid #fff;
+  background: #001529;
+  transition: all 0.3s;
+}
+
+// Logo 区域样式
+.logoHeader {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 16px;
+  cursor: pointer;
+  width: 208px;
+  background: #001529;
+  z-index: 1001;
+  position: fixed;
+  top: 0;
+  left: 0;
+  transition: width 0.3s;
+
+  .logoImage {
+    height: 28px;
+    width: 28px;
+  }
+
+  .logoText {
+    margin: 0;
+    color: #fff;
+    font-weight: 600;
+    font-size: 18px;
+    white-space: nowrap;
+  }
+}
+
+// 占位与内容区域
+.spacer {
+  height: 48px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.layoutContent {
+  padding: 24px;
+}
+
+// 全局样式覆盖
+:global {
+  .ant-pro-sider-logo {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 48px !important;
+    line-height: 48px !important;
+  }
+}

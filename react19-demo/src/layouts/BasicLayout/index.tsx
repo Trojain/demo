@@ -1,23 +1,29 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider } from 'antd'
+import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { ProLayout } from '@ant-design/pro-components'
 import logo from '@/assets/images/logo.png'
+import HeaderActions from '@/components/HeaderActions'
 import { menuRoutes } from '@/router/config'
+import styles from './index.module.scss'
 
 const BasicLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const route = useMemo(() => ({ routes: menuRoutes }), [])
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
     <ConfigProvider theme={{ components: { Menu: { subMenuItemSelectedColor: '#fff' } } }}>
       <ProLayout
         title="管理系统"
-        logo={logo}
         route={route}
         location={location}
         menu={{ autoClose: false }}
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        // 自定义菜单颜色
         token={{
           sider: {
             colorMenuBackground: '#001529',
@@ -27,16 +33,43 @@ const BasicLayout = () => {
             colorBgMenuItemSelected: '#1890ff',
             colorTextMenuItemHover: '#1890ff',
           },
+          header: {
+            heightLayoutHeader: 48,
+            colorBgHeader: '#fff',
+          },
         }}
         menuItemRender={(item, dom) => (
           <div key={item.path} onClick={() => item.path && navigate(item.path)}>
             {dom}
           </div>
         )}
-        fixSiderbar
+        // 自定义菜单头部
+        menuHeaderRender={() => (
+          <>
+            <div className={styles.spacer} />
+            <div id="customize_menu_header" className={styles.logoHeader} onClick={() => navigate('/')}>
+              <img src={logo} alt="logo" className={styles.logoImage} />
+              <h1 className={styles.logoText}>管理系统</h1>
+            </div>
+          </>
+        )}
+        contentStyle={{ padding: 0, margin: 0 }}
+        // 自定义菜单折叠按钮
+        collapsedButtonRender={false}
+        menuFooterRender={() => (
+          <div onClick={() => setCollapsed(!collapsed)} className={styles.footer}>
+            {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+          </div>
+        )}
         fixedHeader
       >
-        <Outlet />
+        {/* 顶部操作栏 */}
+        <HeaderActions />
+
+        {/* 页面内容区域 */}
+        <div className={styles.layoutContent}>
+          <Outlet />
+        </div>
       </ProLayout>
     </ConfigProvider>
   )
