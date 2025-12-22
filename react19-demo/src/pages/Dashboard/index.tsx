@@ -4,7 +4,6 @@ import { ArrowUpOutlined, UserOutlined } from '@ant-design/icons'
 export default function Dashboard() {
   return (
     <div>
-      <h1 style={{ marginBottom: 24 }}>仪表盘</h1>
       <Row gutter={16}>
         <Col span={6}>
           <Card>

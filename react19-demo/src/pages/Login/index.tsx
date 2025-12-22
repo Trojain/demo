@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { message } from 'antd'
 import { GlobalOutlined, LockOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons'
 import { ProForm, ProFormText } from '@ant-design/pro-components'
-import { login } from '@/services/login'
+import { login } from '@/services/user'
 import { useUserStore } from '@/store/user'
 
 export default function Login() {
@@ -15,7 +15,7 @@ export default function Login() {
     try {
       const response = await login(values)
 
-      // 存入 Zustand (自动持久化到 localStorage)
+      // 存入 Zustand
       setUserInfo(response)
 
       message.success('登录成功')

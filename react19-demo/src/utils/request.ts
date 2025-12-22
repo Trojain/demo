@@ -1,24 +1,11 @@
+/**
+ * HTTP 请求封装：自动添加 token、统一错误处理、401 自动跳转
+ */
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 import { clearUserInfo, getToken } from '@/store/user'
+import { globalUI } from './globalUI'
 
-const globalUI = {
-  message: {
-    error: (msg: string) => console.error(msg),
-    warning: console.warn,
-    success: console.log,
-  } as any,
-  modal: { warning: console.warn, confirm: console.warn } as any,
-  navigate: (path: string) => {
-    window.location.href = path
-  },
-}
-
-export const setRequestUi = (message: any, modal: any, navigate: any) => {
-  globalUI.message = message
-  globalUI.modal = modal
-  globalUI.navigate = navigate
-}
-
+/** 统一响应结构 */
 export interface ApiResponse<T = any> {
   code: number
   data: T
@@ -31,8 +18,9 @@ const instance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-let isRelogging = false
+let isRelogging = false // 防止重复弹出登录过期提示
 
+// 请求拦截器：自动添加 token
 instance.interceptors.request.use(
   (config) => {
     const token = getToken()
@@ -42,6 +30,7 @@ instance.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
+// 响应拦截器：统一处理业务错误和HTTP错误
 instance.interceptors.response.use(
   (response) => {
     const { code, data, message } = response.data
@@ -58,7 +47,7 @@ instance.interceptors.response.use(
   (error: AxiosError<any>) => {
     if (error.response) {
       switch (error.response.status) {
-        case 401:
+        case 401: // 未授权，跳转登录
           if (!isRelogging) {
             isRelogging = true
             globalUI.modal.warning({
@@ -88,6 +77,7 @@ instance.interceptors.response.use(
   },
 )
 
+/** 导出请求函数 */
 export const request = async <T = any>(config: AxiosRequestConfig): Promise<T> => {
   return instance.request<any, T>(config)
 }

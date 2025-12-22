@@ -1,34 +1,40 @@
-import { AuthGuard } from '@/components/AuthGuard'
-import { lazyLoad } from '@/utils/lazyLoad'
 import { lazy } from 'react'
-import type { RouteObject } from 'react-router-dom'
+import { Navigate, RouteObject, createBrowserRouter } from 'react-router-dom'
+import { AuthGuard } from '@/components/AuthGuard'
+import GlobalLayout from '@/layouts/GlobalLayout'
+import { lazyLoad } from '@/utils/lazyLoad'
+import { menuRoutes } from './config'
+import { generateRoutes } from './utils'
 
 const Login = lazy(() => import('@/pages/Login'))
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const BasicLayout = lazy(() => import('@/layouts/BasicLayout/index'))
 const NotFound = lazy(() => import('@/pages/404'))
-const BasicLayout = lazy(() => import('@/layouts/BasicLayout'))
 
-export const routes: RouteObject[] = [
+const routes: RouteObject[] = [
   {
-    path: '/login',
-    element: lazyLoad(<Login />),
-  },
-  {
-    path: '/',
-    element: <AuthGuard>{lazyLoad(<BasicLayout />)}</AuthGuard>,
+    element: <GlobalLayout />,
     children: [
       {
-        index: true,
-        element: lazyLoad(<Dashboard />),
+        path: '/login',
+        element: lazyLoad(<Login />),
       },
       {
-        path: 'users',
-        element: <div style={{ padding: 24 }}>用户管理</div>,
+        path: '/',
+        element: <AuthGuard>{lazyLoad(<BasicLayout />)}</AuthGuard>,
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/dashboard" replace />,
+          },
+          ...generateRoutes(menuRoutes),
+          {
+            path: '*',
+            element: lazyLoad(<NotFound />),
+          },
+        ],
       },
     ],
   },
-  {
-    path: '*',
-    element: lazyLoad(<NotFound />),
-  },
 ]
+
+export const router = createBrowserRouter(routes)
