@@ -4,6 +4,10 @@ export const login = (params) => {
   return request({ method: 'POST', url: '/system/login', data: params })
 }
 
+export const logout = (params) => {
+  return request({ method: 'POST', url: '/system/loginOut', data: params })
+}
+
 // export const userApi = {
 //   login: (params) => {
 //     return request({ method: 'POST', url: '/auth/login', data: params })

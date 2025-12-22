@@ -1,16 +1,18 @@
 /**
  * 顶部操作栏
  */
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
 import { Badge, Dropdown } from 'antd'
 import { BellOutlined, GlobalOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons'
+import { logout } from '@/services/user'
 import { useUserStore } from '@/store/user'
 import { globalUI } from '@/utils/globalUI'
 import styles from './index.module.scss'
 
 export default function HeaderActions() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { userInfo, clearUserInfo } = useUserStore()
   const { message, modal } = globalUI
 
@@ -53,10 +55,11 @@ export default function HeaderActions() {
         modal.confirm({
           title: '确认退出？',
           content: '退出后需要重新登录',
-          onOk: () => {
+          onOk: async () => {
+            await logout()
             clearUserInfo()
             message.success('已退出登录')
-            navigate('/login')
+            navigate('/login', { state: { from: location } })
           },
         })
       },
