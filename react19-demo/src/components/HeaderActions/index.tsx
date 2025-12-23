@@ -36,13 +36,13 @@ export default function HeaderActions() {
       key: 'profile',
       icon: <UserOutlined />,
       label: '个人中心',
-      onClick: () => navigate('/profile'),
+      onClick: () => navigate('/system/user'),
     },
     {
-      key: 'settings',
+      key: 'setting',
       icon: <SettingOutlined />,
       label: '账号设置',
-      onClick: () => navigate('/settings'),
+      onClick: () => navigate('/system/setting'),
     },
     { type: 'divider' },
     {

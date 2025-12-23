@@ -1,6 +1,7 @@
 .tabsContainer {
-  padding: 6px 16px 0;
+  padding: 6px 24px 0;
   background-color: #f0f2f5;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 
   :global {
     .ant-tabs-nav {
@@ -8,6 +9,8 @@
     }
 
     .ant-tabs-tab {
+      font-size: 13px;
+      padding: 6px 16px;
       background-color: #fff !important;
       border: 0 !important;
       border-radius: 8px 8px 0 0 !important;
@@ -19,12 +22,13 @@
       }
 
       &.ant-tabs-tab-active {
-        background-color: #e6f7ff !important;
-        color: #1890ff !important;
+        background-color: #1890ff !important;
+        color: #fff !important;
         font-weight: 500;
 
+        .ant-tabs-tab-remove,
         .ant-tabs-tab-btn {
-          color: #1890ff !important;
+          color: #fff !important;
         }
       }
     }
