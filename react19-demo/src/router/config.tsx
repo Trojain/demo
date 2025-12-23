@@ -1,5 +1,5 @@
 import { lazy } from 'react'
-import { DashboardOutlined, UserOutlined } from '@ant-design/icons'
+import { DashboardOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons'
 
 export interface AppRouteConfig {
   path: string
@@ -23,22 +23,30 @@ export const menuRoutes: AppRouteConfig[] = [
     name: '支付管理',
     icon: <UserOutlined />,
     children: [
-      {
-        path: '/pay',
-        redirect: '/pay/channel',
-        hideInMenu: true,
-      },
+      { path: '/pay', redirect: '/pay/channel', hideInMenu: true },
       {
         path: 'channel',
         name: '支付渠道',
-        component: lazy(() => import('@/pages/pay/channel')),
+        component: lazy(() => import('@/pages/Pay/Channel')),
       },
     ],
   },
   {
-    path: '/profile',
-    name: '个人中心',
-    component: lazy(() => import('@/pages/Profile')),
-    hideInMenu: true, // 隐藏在菜单中，仅通过顶部操作栏访问
+    path: '/system',
+    name: '系统管理',
+    icon: <SettingOutlined />,
+    children: [
+      { path: '/system', redirect: '/system/user', hideInMenu: true },
+      {
+        path: 'user',
+        name: '个人中心',
+        component: lazy(() => import('@/pages/System/User')),
+      },
+      {
+        path: 'setting',
+        name: '账号设置',
+        component: lazy(() => import('@/pages/System/Setting')),
+      },
+    ],
   },
 ]
