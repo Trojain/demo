@@ -29,16 +29,12 @@ const BasicLayout = () => {
         token={{
           sider: {
             colorMenuBackground: '#001529',
-            colorTextMenuTitle: '#fff',
             colorTextMenu: '#fff',
             colorTextMenuSelected: '#fff',
             colorBgMenuItemSelected: '#1890ff',
             colorTextMenuItemHover: '#1890ff',
           },
-          header: {
-            heightLayoutHeader: 48,
-            colorBgHeader: '#fff',
-          },
+          header: { heightLayoutHeader: 48, colorBgHeader: '#fff' },
         }}
         menuItemRender={(item, dom) => (
           <div key={item.path} onClick={() => item.path && navigate(item.path)}>
