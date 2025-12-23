@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tabs } from 'antd'
+import { CloseOutlined, MinusOutlined, StopOutlined } from '@ant-design/icons'
 import { menuRoutes } from '@/router/config'
 import { useTabStore } from '@/store/tabs'
 import styles from './index.module.scss'
@@ -12,7 +13,7 @@ type TargetKey = React.MouseEvent | React.KeyboardEvent | string
 const RouteTabs = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { tabs, activeKey, addTab, removeTab, closeOtherTabs } = useTabStore()
+  const { tabs, activeKey, addTab, removeTab, closeOtherTabs, closeAllTabs } = useTabStore()
 
   // 扁平化路由配置以查找标签名称
   const findRouteName = useCallback((targetPath: string, routes: any[], parentPath = ''): string => {
@@ -43,7 +44,7 @@ const RouteTabs = () => {
       addTab({
         label: routeName,
         key: pathname,
-        closable: pathname !== '/dashboard', // 假设 dashboard 不可关闭
+        closable: pathname !== '/dashboard', // dashboard 不可关闭
       })
     }
   }, [location, addTab, findRouteName])
@@ -62,7 +63,7 @@ const RouteTabs = () => {
     navigate(key)
   }
 
-  //右键菜单
+  // 右键菜单
   const renderTabBar = (props: any, DefaultTabBar: any) => (
     <DefaultTabBar {...props}>
       {(node: any) => {
@@ -74,6 +75,7 @@ const RouteTabs = () => {
         const menuItems: MenuProps['items'] = [
           {
             key: 'close',
+            icon: <CloseOutlined />,
             label: '关闭标签',
             disabled: !tab.closable,
             onClick: () => {
@@ -86,10 +88,21 @@ const RouteTabs = () => {
           },
           {
             key: 'closeOthers',
+            icon: <MinusOutlined />,
             label: '关闭其他',
             onClick: () => {
               closeOtherTabs(key)
               navigate(key)
+            },
+          },
+          {
+            key: 'closeAll',
+            icon: <StopOutlined />,
+            label: '关闭全部',
+            onClick: () => {
+              closeAllTabs()
+              const { activeKey } = useTabStore.getState()
+              navigate(activeKey)
             },
           },
         ]

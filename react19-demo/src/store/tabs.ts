@@ -14,6 +14,7 @@ interface TabStore {
   addTab: (tab: TabItem) => void
   removeTab: (key: string) => void
   closeOtherTabs: (key: string) => void
+  closeAllTabs: () => void
   clearTabs: () => void
 }
 
@@ -47,6 +48,12 @@ export const useTabStore = create<TabStore>()(
         set((state) => {
           const newTabs = state.tabs.filter((t) => t.key === key || t.closable === false)
           return { tabs: newTabs, activeKey: key }
+        }),
+      closeAllTabs: () =>
+        set((state) => {
+          const newTabs = state.tabs.filter((t) => t.closable === false)
+          const newActiveKey = newTabs[0]?.key || '/dashboard'
+          return { tabs: newTabs, activeKey: newActiveKey }
         }),
       clearTabs: () => set({ tabs: [], activeKey: '/' }),
     }),
