@@ -1,6 +1,4 @@
-/**
- * 顶部操作栏
- */
+// 顶部操作栏
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
 import { Badge, Dropdown } from 'antd'

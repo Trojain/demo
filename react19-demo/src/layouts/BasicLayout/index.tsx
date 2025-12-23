@@ -1,3 +1,4 @@
+// 基础布局
 import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider } from 'antd'
@@ -5,6 +6,7 @@ import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { ProLayout } from '@ant-design/pro-components'
 import logo from '@/assets/images/logo.png'
 import HeaderActions from '@/components/HeaderActions'
+import RouteTabs from '@/components/RouteTabs'
 import { menuRoutes } from '@/router/config'
 import styles from './index.module.scss'
 
@@ -63,8 +65,11 @@ const BasicLayout = () => {
         )}
         fixedHeader
       >
-        {/* 顶部操作栏 */}
-        <HeaderActions />
+        {/* 顶部固定区域：包含操作栏和标签页 */}
+        <div className={styles.fixedHeaderWrapper}>
+          <HeaderActions />
+          <RouteTabs />
+        </div>
 
         {/* 页面内容区域 */}
         <div className={styles.layoutContent}>

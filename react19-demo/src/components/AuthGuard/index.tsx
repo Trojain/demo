@@ -1,3 +1,4 @@
+// 路由鉴权守卫
 import { Navigate, useLocation } from 'react-router-dom'
 import { useUserStore } from '@/store/user'
 

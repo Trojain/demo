@@ -1,6 +1,4 @@
-/**
- * 全局布局：注入 UI 实例到非 React 上下文
- */
+// 全局布局：注入 UI 实例到非 React 上下文
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { App as AntdApp } from 'antd'
