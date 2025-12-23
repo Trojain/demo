@@ -1,0 +1,32 @@
+.tabsContainer {
+  padding: 6px 16px 0;
+  background-color: #f0f2f5;
+
+  :global {
+    .ant-tabs-nav {
+      margin-bottom: 0;
+    }
+
+    .ant-tabs-tab {
+      background-color: #fff !important;
+      border: 0 !important;
+      border-radius: 8px 8px 0 0 !important;
+      margin-right: 4px !important;
+      transition: all 0.3s;
+
+      &:hover {
+        color: #1890ff;
+      }
+
+      &.ant-tabs-tab-active {
+        background-color: #e6f7ff !important;
+        color: #1890ff !important;
+        font-weight: 500;
+
+        .ant-tabs-tab-btn {
+          color: #1890ff !important;
+        }
+      }
+    }
+  }
+}
