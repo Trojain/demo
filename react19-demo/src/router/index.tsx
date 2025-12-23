@@ -27,11 +27,11 @@ const routes: RouteObject[] = [
             element: <Navigate to="/dashboard" replace />,
           },
           ...generateRoutes(menuRoutes),
-          {
-            path: '*',
-            element: lazyLoad(<NotFound />),
-          },
         ],
+      },
+      {
+        path: '*',
+        element: lazyLoad(<NotFound />),
       },
     ],
   },
