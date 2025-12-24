@@ -11,7 +11,7 @@ import {
   SunOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { logout } from '@/services/user'
+import { logout } from '@/services'
 import { useThemeStore } from '@/store/theme'
 import { useUserStore } from '@/store/user'
 import { globalUI } from '@/utils/globalUI'

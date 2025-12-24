@@ -1,11 +1,8 @@
-/**
- * HTTP 请求封装：自动添加 token、统一错误处理、401 自动跳转
- */
+// HTTP 请求封装
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 import { clearUserInfo, getToken } from '@/store/user'
 import { globalUI } from './globalUI'
 
-/** 统一响应结构 */
 export interface ApiResponse<T = any> {
   code: number
   data: T
@@ -18,43 +15,39 @@ const instance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-let isRelogging = false // 防止重复弹出登录过期提示
+let isRelogging = false
 
-// 请求拦截器：自动添加 token
+// 请求拦截器：注入 satoken
 instance.interceptors.request.use(
   (config) => {
     const token = getToken()
-    if (token) config.headers.Authorization = `Bearer ${token}`
+    if (token) config.headers.satoken = token
     return config
   },
   (error) => Promise.reject(error),
 )
 
-// 响应拦截器：统一处理业务错误和HTTP错误
+// 响应拦截器：统一错误处理
 instance.interceptors.response.use(
   (response) => {
     const { message } = globalUI
-    const { code, data, message: msg } = response.data
-    if (code !== undefined) {
-      if (code === 200 || code === 0) {
-        return data !== undefined ? data : response.data
-      }
+    const { code, message: msg } = response.data
+    if (code !== undefined && code !== 200 && code !== 0) {
       message.error(msg || '请求失败')
       return Promise.reject(new Error(msg || '请求失败'))
     }
-
     return response.data
   },
   (error: AxiosError<any>) => {
     const { message, modal, navigate } = globalUI
     if (error.response) {
       switch (error.response.status) {
-        case 401: // 未授权，跳转登录
+        case 401:
           if (!isRelogging) {
             isRelogging = true
             modal.warning({
               title: '登录过期',
-              content: '您的登录已过期，请重新登录',
+              content: '请重新登录',
               onOk: () => {
                 isRelogging = false
                 clearUserInfo()
@@ -64,7 +57,7 @@ instance.interceptors.response.use(
           }
           break
         case 403:
-          message.error('没有权限访问')
+          message.error('没有权限')
           break
         case 500:
           message.error('服务器错误')
@@ -79,7 +72,6 @@ instance.interceptors.response.use(
   },
 )
 
-/** 导出请求函数 */
 export const request = async <T = any>(config: AxiosRequestConfig): Promise<T> => {
   return instance.request<any, T>(config)
 }

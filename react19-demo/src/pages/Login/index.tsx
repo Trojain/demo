@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { message } from 'antd'
 import { GlobalOutlined, LockOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons'
 import { ProForm, ProFormText } from '@ant-design/pro-components'
-import { login } from '@/services/user'
+import { login } from '@/services'
 import { useUserStore } from '@/store/user'
 
 export default function Login() {
