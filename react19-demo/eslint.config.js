@@ -35,7 +35,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'warn',
         {
-          argsIgnorePattern: '^_',
+          argsIgnorePattern: '^_|^entity$',
           varsIgnorePattern: '^_',
         },
       ],
@@ -61,5 +61,5 @@ export default tseslint.config(
       'react/no-children-prop': 'off', // 允许 children 作为 prop 传递
     },
   },
-  eslintConfigPrettier
+  eslintConfigPrettier,
 )

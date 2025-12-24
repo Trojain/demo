@@ -1,13 +1,13 @@
-import { Button, Space, Switch, Tag } from 'antd'
+import { Button, Switch, Tag } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { ProTable } from '@ant-design/pro-components'
 import { useProTableConfig } from '@/hooks/useProTableConfig'
 
 export default function PayChannelPage() {
   const columns = [
-    { title: '渠道ID', dataIndex: 'id', width: 80 },
-    { title: '渠道名称', dataIndex: 'name', width: 120 },
-    { title: '描述', dataIndex: 'description', width: 120 },
+    { title: '渠道ID', dataIndex: 'id' },
+    { title: '渠道名称', dataIndex: 'name' },
+    { title: '描述', dataIndex: 'description' },
     {
       title: '备注',
       dataIndex: 'remark',
@@ -17,30 +17,25 @@ export default function PayChannelPage() {
     {
       title: '是否可见',
       dataIndex: 'visible',
-      width: 120,
       render: (visible: boolean) => <Tag color={visible ? 'green' : 'default'}>{visible ? '显示' : '隐藏'}</Tag>,
     },
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
       render: () => <Switch checked defaultChecked />,
     },
     {
       title: '操作',
-      key: 'action',
-      width: 120,
-      fixed: 'right',
-      render: () => (
-        <Space>
-          <Button type="link" size="small" icon={<EditOutlined />}>
-            编辑
-          </Button>
-          <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-            删除
-          </Button>
-        </Space>
-      ),
+      dataIndex: 'operate',
+      valueType: 'option',
+      render: (_, entity) => [
+        <Button type="link" key="edit" size="small" icon={<EditOutlined />}>
+          编辑
+        </Button>,
+        <Button type="link" key="delete" size="small" icon={<DeleteOutlined />} danger>
+          删除
+        </Button>,
+      ],
     },
   ]
 
