@@ -5,6 +5,7 @@ import { ConfigProvider, theme as antdTheme } from 'antd'
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { ProLayout } from '@ant-design/pro-components'
 import logo from '@/assets/images/logo.png'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import HeaderActions from '@/components/HeaderActions'
 import RouteTabs from '@/components/RouteTabs'
 import { menuRoutes } from '@/router/config'
@@ -79,7 +80,9 @@ const BasicLayout = () => {
 
           {/* 页面内容区域 */}
           <div className={styles.layoutContent}>
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </ProLayout>
       </ConfigProvider>
