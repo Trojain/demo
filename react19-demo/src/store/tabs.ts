@@ -57,8 +57,6 @@ export const useTabStore = create<TabStore>()(
         }),
       clearTabs: () => set({ tabs: [], activeKey: '/' }),
     }),
-    {
-      name: 'tabs-storage',
-    },
+    { name: 'tabs-storage' },
   ),
 )

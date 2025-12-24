@@ -1,6 +1,6 @@
 .tabsContainer {
   padding: 6px 24px 0;
-  background-color: #f0f2f5;
+  background-color: var(--bg-tabs, #f0f2f5);
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 
   :global {
@@ -11,7 +11,7 @@
     .ant-tabs-tab {
       font-size: 13px;
       padding: 6px 16px !important;
-      background-color: #fff !important;
+      background-color: var(--bg-tab, #fff) !important;
       border: 0 !important;
       border-radius: 8px 8px 0 0 !important;
       margin-right: 4px !important;

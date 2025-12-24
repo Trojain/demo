@@ -1,9 +1,18 @@
 // 顶部操作栏
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
-import { Badge, Dropdown } from 'antd'
-import { BellOutlined, GlobalOutlined, LogoutOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons'
+import { Badge, Dropdown, Tooltip } from 'antd'
+import {
+  BellOutlined,
+  GlobalOutlined,
+  LogoutOutlined,
+  MoonOutlined,
+  SettingOutlined,
+  SunOutlined,
+  UserOutlined,
+} from '@ant-design/icons'
 import { logout } from '@/services/user'
+import { useThemeStore } from '@/store/theme'
 import { useUserStore } from '@/store/user'
 import { globalUI } from '@/utils/globalUI'
 import styles from './index.module.scss'
@@ -12,6 +21,7 @@ export default function HeaderActions() {
   const navigate = useNavigate()
   const location = useLocation()
   const { userInfo, clearUserInfo } = useUserStore()
+  const { theme, toggleTheme } = useThemeStore()
   const { message, modal } = globalUI
 
   const langMenuItems: MenuProps['items'] = [
@@ -72,6 +82,17 @@ export default function HeaderActions() {
           <BellOutlined className={styles.iconFont} onClick={() => message.info('暂无新通知')} />
         </Badge>
       </div>
+
+      {/* 主题切换 */}
+      <Tooltip title={theme === 'light' ? '切换深色模式' : '切换浅色模式'}>
+        <div className={styles.actionIcon} onClick={toggleTheme}>
+          {theme === 'light' ? (
+            <SunOutlined className={styles.iconFont} />
+          ) : (
+            <MoonOutlined className={styles.iconFont} />
+          )}
+        </div>
+      </Tooltip>
 
       {/* 语言切换 */}
       <div className={styles.actionIcon}>
