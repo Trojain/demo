@@ -1,6 +1,7 @@
 import { Button, Space, Switch, Tag } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
 import { ProTable } from '@ant-design/pro-components'
+import { useProTableConfig } from '@/hooks/useProTableConfig'
 
 export default function PayChannelPage() {
   const columns = [
@@ -52,22 +53,28 @@ export default function PayChannelPage() {
     { key: 6, id: 46, name: 'AUD', description: 'AUD', remark: 'Australian Dollar', visible: true },
     { key: 7, id: 47, name: 'BGN', description: 'BGN', remark: 'BGN', visible: true },
     { key: 8, id: 48, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 9, id: 49, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 10, id: 50, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 11, id: 51, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 12, id: 52, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 13, id: 53, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 14, id: 54, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 15, id: 55, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 16, id: 56, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 17, id: 57, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 18, id: 58, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 19, id: 59, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 20, id: 60, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
+    { key: 21, id: 60, name: 'BRL', description: 'BRL', remark: 'BRL', visible: true },
   ]
 
   return (
     <ProTable
+      {...useProTableConfig()}
       headerTitle="支付渠道"
       columns={columns}
       dataSource={dataSource}
       rowKey="key"
-      search={{
-        labelWidth: 'auto',
-      }}
-      pagination={{
-        defaultPageSize: 10,
-        showSizeChanger: true,
-        showQuickJumper: true,
-      }}
       toolBarRender={() => [
         <Button key="export" icon={<ReloadOutlined />}>
           导出
