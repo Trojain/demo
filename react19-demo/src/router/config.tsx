@@ -1,13 +1,20 @@
 import { lazy } from 'react'
 import { DashboardOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons'
 
+// 懒加载页面组件
+const Dashboard = lazy(() => import('@/pages/Dashboard'))
+const PayChannel = lazy(() => import('@/pages/Pay/Channel'))
+const SystemUser = lazy(() => import('@/pages/System/User'))
+const SystemSetting = lazy(() => import('@/pages/System/Setting'))
+
 export interface AppRouteConfig {
-  path: string
+  path?: string
   name?: string
   icon?: React.ReactNode
   component?: React.LazyExoticComponent<any>
   hideInMenu?: boolean
   redirect?: string
+  index?: boolean
   children?: AppRouteConfig[]
 }
 
@@ -16,18 +23,18 @@ export const menuRoutes: AppRouteConfig[] = [
     path: '/dashboard',
     name: '仪表盘',
     icon: <DashboardOutlined />,
-    component: lazy(() => import('@/pages/Dashboard')),
+    component: Dashboard,
   },
   {
     path: '/pay',
     name: '支付管理',
     icon: <UserOutlined />,
     children: [
-      { path: '/pay', redirect: '/pay/channel', hideInMenu: true },
+      { index: true, redirect: '/pay/channel', hideInMenu: true },
       {
         path: 'channel',
         name: '支付渠道',
-        component: lazy(() => import('@/pages/Pay/Channel')),
+        component: PayChannel,
       },
     ],
   },
@@ -36,16 +43,16 @@ export const menuRoutes: AppRouteConfig[] = [
     name: '系统管理',
     icon: <SettingOutlined />,
     children: [
-      { path: '/system', redirect: '/system/user', hideInMenu: true },
+      { index: true, redirect: '/system/user', hideInMenu: true },
       {
         path: 'user',
         name: '个人中心',
-        component: lazy(() => import('@/pages/System/User')),
+        component: SystemUser,
       },
       {
         path: 'setting',
         name: '账号设置',
-        component: lazy(() => import('@/pages/System/Setting')),
+        component: SystemSetting,
       },
     ],
   },

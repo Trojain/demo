@@ -4,8 +4,13 @@ import { AppRouteConfig } from './config'
 
 export const generateRoutes = (routes: AppRouteConfig[]): RouteObject[] => {
   return routes.map((item) => {
-    const route: RouteObject = {
-      path: item.path,
+    const route: RouteObject = {}
+
+    // 处理 index 路由
+    if (item.index) {
+      route.index = true
+    } else if (item.path) {
+      route.path = item.path
     }
 
     if (item.redirect) {

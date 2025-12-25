@@ -1,6 +1,9 @@
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { defineConfig } from 'vite'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ mode }) => {
   const isProd = mode === 'production'
@@ -65,12 +68,12 @@ export default defineConfig(({ mode }) => {
         output: {
           chunkFileNames: 'js/[name]-[hash].js',
           entryFileNames: 'js/[name]-[hash].js',
-          assetFileNames: '[ext]/[name]-[hash].[ext]',
+          assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
           manualChunks: {
             'react-vendor': ['react', 'react-dom', 'react-router-dom'],
             'antd-vendor': ['antd', '@ant-design/icons', '@ant-design/cssinjs'],
             'utils-vendor': ['axios', 'dayjs', 'lodash-es', 'classnames'],
-            'charts-vendor': ['echarts', 'echarts-for-react'],
+            'charts-vendor': ['@ant-design/plots'],
           },
         },
       },
@@ -91,7 +94,7 @@ export default defineConfig(({ mode }) => {
         '@ant-design/icons',
         'axios',
         'dayjs',
-        'echarts',
+        '@ant-design/plots',
         'lodash-es',
       ],
     },
