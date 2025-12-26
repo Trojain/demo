@@ -8,8 +8,8 @@ import { editPayChannel, getPayChannelList, handleResponse } from '@/services'
 import FormModal from './components/FormModal'
 
 export default function PayChannelPage() {
-  const actionRef = useRef<ActionType>()
-  const formRef = useRef<ProFormInstance>()
+  const actionRef = useRef<ActionType>(null)
+  const formRef = useRef<ProFormInstance>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [currentRecord, setCurrentRecord] = useState<any>(null)
 
@@ -74,7 +74,7 @@ export default function PayChannelPage() {
       dataIndex: 'status',
       valueType: 'select',
       valueEnum: activeEnum,
-      render: (_, entity) => (
+      render: (_: any, entity: any) => (
         <Switch
           unCheckedChildren="禁用"
           checkedChildren="启用"
@@ -87,7 +87,7 @@ export default function PayChannelPage() {
       title: '操作',
       dataIndex: 'operate',
       valueType: 'option',
-      render: (_, entity) => [
+      render: (_: any, entity: any) => [
         <Button type="link" key="edit" size="small" icon={<EditOutlined />} onClick={() => handleEdit(entity)}>
           编辑
         </Button>,
@@ -101,7 +101,7 @@ export default function PayChannelPage() {
         {...useProTableConfig()}
         headerTitle="支付渠道"
         actionRef={actionRef}
-        formRef={formRef}
+        formRef={formRef as any}
         columns={columns}
         rowKey="channelId"
         request={getPayChannelList}

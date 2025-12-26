@@ -6,7 +6,7 @@ interface FormModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   record?: any
-  actionRef?: React.RefObject<ActionType | undefined>
+  actionRef?: React.RefObject<ActionType | null>
 }
 
 export default function FormModal({ open, onOpenChange, record, actionRef }: FormModalProps) {

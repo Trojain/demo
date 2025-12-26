@@ -1,9 +1,9 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
 import { App as AntdApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
-import React from 'react'
-import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/global.scss'
 
@@ -15,12 +15,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       locale={zhCN}
       theme={{
         token: { colorPrimary: '#1677ff' },
-        cssVar: true,
+        cssVar: { key: 'app' },
       }}
     >
       <AntdApp>
         <App />
       </AntdApp>
     </ConfigProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 )

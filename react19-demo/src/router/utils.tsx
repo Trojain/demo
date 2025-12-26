@@ -1,16 +1,23 @@
-import { Navigate, RouteObject } from 'react-router-dom'
+import { IndexRouteObject, Navigate, NonIndexRouteObject } from 'react-router-dom'
 import { lazyLoad } from '@/utils/lazyLoad'
 import { AppRouteConfig } from './config'
 
-export const generateRoutes = (routes: AppRouteConfig[]): RouteObject[] => {
-  return routes.map((item) => {
-    const route: RouteObject = {}
+type AppRouteObject = IndexRouteObject | NonIndexRouteObject
 
+export const generateRoutes = (routes: AppRouteConfig[]): AppRouteObject[] => {
+  return routes.map((item) => {
     // 处理 index 路由
     if (item.index) {
-      route.index = true
-    } else if (item.path) {
-      route.path = item.path
+      const route: IndexRouteObject = {
+        index: true,
+        element: item.redirect ? <Navigate to={item.redirect} replace /> : undefined,
+      }
+      return route
+    }
+
+    // 处理普通路由
+    const route: NonIndexRouteObject = {
+      path: item.path,
     }
 
     if (item.redirect) {

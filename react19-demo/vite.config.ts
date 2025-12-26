@@ -1,34 +1,30 @@
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { visualizer } from 'rollup-plugin-visualizer'
 import { fileURLToPath } from 'url'
 import { defineConfig } from 'vite'
+import compression from 'vite-plugin-compression'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ mode }) => {
   const isProd = mode === 'production'
+  const isAnalyze = mode === 'analyze'
 
   return {
     plugins: [
-      react({
-        // React 19 一般不再需要手动开启 fastRefresh，插件默认处理
-        // babel: { ... } // 除非你需要使用 React Compiler，否则暂时不需要配置 Babel
-      }),
-    ],
+      react(),
+      // 打包分析
+      isAnalyze && visualizer({ open: true, filename: 'dist/analyze.html', gzipSize: true, brotliSize: true }),
+      // 生产环境压缩
+      isProd && compression({ algorithm: 'gzip', ext: '.gz' }),
+      isProd && compression({ algorithm: 'brotliCompress', ext: '.br' }),
+    ].filter(Boolean),
 
     // 1. 路径别名
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '@components': path.resolve(__dirname, './src/components'),
-        '@pages': path.resolve(__dirname, './src/pages'),
-        '@utils': path.resolve(__dirname, './src/utils'),
-        '@hooks': path.resolve(__dirname, './src/hooks'),
-        '@store': path.resolve(__dirname, './src/store'),
-        '@services': path.resolve(__dirname, './src/services'),
-        '@types': path.resolve(__dirname, './src/types'),
-        '@assets': path.resolve(__dirname, './src/assets'),
-        '@styles': path.resolve(__dirname, './src/styles'),
       },
     },
 

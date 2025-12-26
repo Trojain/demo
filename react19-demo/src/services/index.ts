@@ -12,7 +12,7 @@ export * from './pay'
 interface HandleResponseOptions {
   sucMsg?: string
   errMsg?: string
-  actionRef?: React.RefObject<ActionType | undefined>
+  actionRef?: React.RefObject<ActionType | null>
 }
 
 export function handleResponse(response: any, options: HandleResponseOptions = {}) {
