@@ -18,6 +18,14 @@ const RouteTabs = () => {
   // 扁平化路由配置以查找标签名称
   const findRouteName = useCallback((targetPath: string, routes: any[], parentPath = ''): string => {
     for (const route of routes) {
+      if (!route.path) {
+        if (route.children) {
+          const name = findRouteName(targetPath, route.children, parentPath)
+          if (name) return name
+        }
+        continue
+      }
+
       let fullPath = route.path
       if (!fullPath.startsWith('/')) {
         fullPath = `${parentPath === '/' ? '' : parentPath}/${fullPath}`

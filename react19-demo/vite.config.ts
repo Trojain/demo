@@ -13,7 +13,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      react(),
+      react({
+        babel: {
+          plugins: [['babel-plugin-react-compiler', { target: '19' }]],
+        },
+      }),
       // 打包分析
       isAnalyze && visualizer({ open: true, filename: 'dist/analyze.html', gzipSize: true, brotliSize: true }),
       // 生产环境压缩
