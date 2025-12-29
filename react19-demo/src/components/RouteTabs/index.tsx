@@ -17,12 +17,18 @@ type TargetKey = React.MouseEvent | React.KeyboardEvent | string
 const RouteTabs = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { removeCachedPagesByPathname } = usePageCacheStore()
-  const { tabs, activeKey, addTab, removeTab, closeOtherTabs, closeAllTabs } = useTabStore()
+  const pathname = location.pathname
+  const removeCachedPagesByPathname = usePageCacheStore((s) => s.removeCachedPagesByPathname)
+  // 使用 selector 订阅具体字段，避免不必要的 rerender
+  const tabs = useTabStore((s) => s.tabs)
+  const activeKey = useTabStore((s) => s.activeKey)
+  const addTab = useTabStore((s) => s.addTab)
+  const removeTab = useTabStore((s) => s.removeTab)
+  const closeOtherTabs = useTabStore((s) => s.closeOtherTabs)
+  const closeAllTabs = useTabStore((s) => s.closeAllTabs)
 
   // 路由变化时添加标签
   useEffect(() => {
-    const { pathname } = location
     if (pathname === '/login' || pathname === '/') return
 
     const routeName = getRouteNameByPathname(pathname)
@@ -33,7 +39,7 @@ const RouteTabs = () => {
         closable: pathname !== '/dashboard', // dashboard 不可关闭
       })
     }
-  }, [location, addTab])
+  }, [pathname, addTab])
 
   // 标签关闭事件
   const onEdit = (targetKey: TargetKey, action: 'add' | 'remove') => {
@@ -41,7 +47,7 @@ const RouteTabs = () => {
       removeCachedPagesByPathname(targetKey as string)
       removeTab(targetKey as string)
       const { activeKey } = useTabStore.getState()
-      if (activeKey !== location.pathname) {
+      if (activeKey !== pathname) {
         navigate(activeKey)
       }
     }
@@ -69,7 +75,7 @@ const RouteTabs = () => {
               removeCachedPagesByPathname(key)
               removeTab(key)
               const { activeKey } = useTabStore.getState()
-              if (activeKey !== location.pathname) navigate(activeKey)
+              if (activeKey !== pathname) navigate(activeKey)
             },
           },
           {

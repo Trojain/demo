@@ -23,10 +23,13 @@ export const useTabStore = create<TabStore>()(
     (set) => ({
       tabs: [{ label: '首页', key: '/dashboard', closable: false }],
       activeKey: '/dashboard',
-      setActiveKey: (key) => set({ activeKey: key }),
+      setActiveKey: (key) => set((state) => (state.activeKey === key ? state : { activeKey: key })),
       addTab: (tab) =>
         set((state) => {
-          if (state.tabs.some((t) => t.key === tab.key)) {
+          const exists = state.tabs.some((t) => t.key === tab.key)
+          if (exists) {
+            // 相同 activeKey 不更新
+            if (state.activeKey === tab.key) return state
             return { activeKey: tab.key }
           }
           return {
