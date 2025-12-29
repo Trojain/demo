@@ -17,7 +17,7 @@ type TargetKey = React.MouseEvent | React.KeyboardEvent | string
 const RouteTabs = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { removeCachedPage, removeCachedPages } = usePageCacheStore()
+  const { removeCachedPagesByPathname } = usePageCacheStore()
   const { tabs, activeKey, addTab, removeTab, closeOtherTabs, closeAllTabs } = useTabStore()
 
   // 路由变化时添加标签
@@ -38,7 +38,7 @@ const RouteTabs = () => {
   // 标签关闭事件
   const onEdit = (targetKey: TargetKey, action: 'add' | 'remove') => {
     if (action === 'remove') {
-      removeCachedPage(targetKey as string) // 同步清除页面缓存
+      removeCachedPagesByPathname(targetKey as string)
       removeTab(targetKey as string)
       const { activeKey } = useTabStore.getState()
       if (activeKey !== location.pathname) {
@@ -66,7 +66,7 @@ const RouteTabs = () => {
             label: '关闭标签',
             disabled: !tab.closable,
             onClick: () => {
-              removeCachedPage(key)
+              removeCachedPagesByPathname(key)
               removeTab(key)
               const { activeKey } = useTabStore.getState()
               if (activeKey !== location.pathname) navigate(activeKey)
@@ -78,7 +78,7 @@ const RouteTabs = () => {
             label: '关闭其他',
             onClick: () => {
               const pathsToRemove = tabs.filter((t) => t.key !== key && t.closable !== false).map((t) => t.key)
-              removeCachedPages(pathsToRemove)
+              removeCachedPagesByPathname(pathsToRemove)
               closeOtherTabs(key)
               navigate(key)
             },
@@ -89,7 +89,7 @@ const RouteTabs = () => {
             label: '关闭全部',
             onClick: () => {
               const pathsToRemove = tabs.filter((t) => t.closable !== false).map((t) => t.key)
-              removeCachedPages(pathsToRemove)
+              removeCachedPagesByPathname(pathsToRemove)
               closeAllTabs()
               const { activeKey } = useTabStore.getState()
               navigate(activeKey)

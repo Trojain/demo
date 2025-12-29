@@ -17,6 +17,7 @@ interface PageCacheStore {
   updateLastAccess: (key: string) => void // 更新页面访问时间
   removeCachedPage: (key: string) => void // 移除单个缓存页面
   removeCachedPages: (keys: string[]) => void // 批量移除缓存页面
+  removeCachedPagesByPathname: (pathname: string | string[]) => void // 按 pathname 清理（包含所有查询参数）
   clearCache: () => void // 清空所有缓存
 }
 
@@ -108,6 +109,16 @@ export const usePageCacheStore = create<PageCacheStore>((set) => ({
 
   removeCachedPages: (keys) => {
     set((state) => ({ cachedPages: state.cachedPages.filter((p) => !keys.includes(p.key)) }))
+  },
+
+  // 按 pathname 清理（包含该路径的所有查询参数缓存）
+  removeCachedPagesByPathname: (pathname) => {
+    const pathnames = Array.isArray(pathname) ? pathname : [pathname]
+    if (pathnames.length === 0) return
+    set((state) => {
+      const pathnameSet = new Set(pathnames)
+      return { cachedPages: state.cachedPages.filter((p) => !pathnameSet.has(p.pathname)) }
+    })
   },
 
   clearCache: () => set({ cachedPages: [] }),
