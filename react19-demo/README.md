@@ -31,16 +31,17 @@ pnpm dev
 
 ## 🎯 核心特性一览
 
-| 特性                | 说明                   | 收益             |
-| ------------------- | ---------------------- | ---------------- |
-| ⚡ **懒加载**       | 页面按需加载           | 首屏速度快 50%+  |
-| 🔐 **路由鉴权**     | AuthGuard 自动拦截     | 安全可靠         |
-| 🎨 **主题切换**     | 亮/暗色主题 + CSS 变量 | 实时切换主题     |
-| 📦 **状态管理**     | Zustand + 持久化       | 轻量级、无 Redux |
-| 🛡️ **TypeScript**   | 严格模式类型检查       | 减少 Bug         |
-| 🔥 **Fast Refresh** | Vite 极速热更新        | 开发体验好       |
-| 🏷️ **路由标签页**   | RouteTabs 多标签管理   | 工作流程更高效   |
-| 🌐 **全局 UI 注入** | 任意文件使用 message   | 突破 Hooks 限制  |
+| 特性                | 说明                        | 收益             |
+| ------------------- | --------------------------- | ---------------- |
+| ⚡ **懒加载**       | 页面按需加载                | 首屏速度快 50%+  |
+| 🔐 **路由鉴权**     | AuthGuard 自动拦截          | 安全可靠         |
+| 🎨 **主题切换**     | 亮/暗色主题 + CSS 变量      | 实时切换主题     |
+| 📦 **状态管理**     | Zustand + 持久化            | 轻量级、无 Redux |
+| 🛡️ **TypeScript**   | 严格模式类型检查            | 减少 Bug         |
+| 🔥 **Fast Refresh** | Vite 极速热更新             | 开发体验好       |
+| 🏷️ **路由标签页**   | RouteTabs 多标签管理        | 工作流程更高效   |
+| 💾 **页面缓存**     | React 19 Activity KeepAlive | 切换不丢状态     |
+| 🌐 **全局 UI 注入** | 任意文件使用 message        | 突破 Hooks 限制  |
 
 ---
 
@@ -106,8 +107,10 @@ react19-demo/
     │
     ├── 📁 components/          # 【通用组件】可复用组件
     │   ├── AuthGuard/          # - 路由鉴权守卫
+    │   ├── ErrorBoundary/      # - 错误边界（防崩溃）
     │   ├── HeaderActions/      # - 头部操作栏（用户/通知）
     │   ├── Loading/            # - 加载动画
+    │   ├── PageCache/          # - 页面缓存（KeepAlive）
     │   └── RouteTabs/          # - 路由标签页
     │
     ├── 📁 hooks/               # 【自定义 Hooks】公共 Hook
@@ -127,13 +130,15 @@ react19-demo/
     │
     ├── 📁 router/              # 【路由配置】所有路由定义
     │   ├── index.tsx           # - 路由入口
-    │   ├── config.tsx          # - 路由配置（懒加载 + 嵌套）
-    │   └── utils.tsx           # - 路由工具函数
+    │   ├── config.tsx          # - 路由配置（懒加载 + keepAlive）
+    │   ├── routeUtils.ts       # - 路由工具（扁平化 + 匹配）
+    │   └── types.ts            # - 路由类型定义
     │
     ├── 📁 services/            # 【API 服务】后端接口封装
     │   └── user.ts             # - 用户相关 API
     │
     ├── 📁 store/               # 【状态管理】全局状态
+    │   ├── pageCache.ts        # - 页面缓存状态（LRU）
     │   ├── tabs.ts             # - 标签页状态
     │   ├── theme.ts            # - 主题状态
     │   └── user.ts             # - 用户状态
@@ -224,8 +229,8 @@ export const menuRoutes: AppRouteConfig[] = [
     name: '系统管理',
     icon: <SettingOutlined />,
     children: [
-      { path: 'user', name: '个人中心', component: lazy(() => import('@/pages/System/User')) },
-      { path: 'setting', name: '账号设置', component: lazy(() => import('@/pages/System/Setting')) },
+      { path: 'user', name: '个人中心', component: lazy(() => import('@/pages/System/User')), keepAlive: true },
+      { path: 'setting', name: '账号设置', component: lazy(() => import('@/pages/System/Setting')), keepAlive: true },
     ],
   },
 ]
@@ -235,11 +240,66 @@ export const menuRoutes: AppRouteConfig[] = [
 
 - ✅ 配置式路由：菜单与路由统一管理
 - ✅ `lazy()` 懒加载：自动代码分割
+- ✅ `keepAlive: true`：启用页面状态缓存
 - ✅ AuthGuard：自动拦截未登录用户
 
 ---
 
-### 4️⃣ 状态管理（Zustand + 持久化）
+### 4️⃣ 页面缓存（React 19 Activity KeepAlive）
+
+基于 React 19 的 `Activity` 组件实现页面状态缓存，切换页面时保留表单、列表滚动位置等状态。
+
+```typescript
+// src/router/config.tsx - 配置 keepAlive
+{
+  path: '/pay/channel',
+  name: '支付渠道',
+  component: PayChannel,
+  keepAlive: true,  // 启用缓存
+}
+```
+
+**核心实现**：
+
+```
+┌─────────────────────────────────────────────────────┐
+│  PageCache 组件                                      │
+│  ┌─────────────────────────────────────────────────┐│
+│  │ Activity (mode="visible" | "hidden")            ││
+│  │  ├─ ErrorBoundary (Tab级错误隔离)                ││
+│  │  │   └─ Suspense                                ││
+│  │  │       └─ 页面组件 (routeParams)              ││
+│  │  ...                                            ││
+│  └─────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────┐│
+│  │ 非缓存页面直接渲染 (keepAlive=false)             ││
+│  └─────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────┘
+```
+
+**特性**：
+
+| 特性         | 说明                                     |
+| ------------ | ---------------------------------------- |
+| LRU 缓存     | 最多缓存 10 个页面，超出自动淘汰最久未用 |
+| Tab 级隔离   | 单个页面崩溃不影响其他页面               |
+| 路由参数注入 | 通过 `routeParams` prop 统一获取参数     |
+| 查询参数缓存 | 同一页面不同参数分别缓存                 |
+
+**使用方式**：
+
+```typescript
+// 页面组件接收 routeParams
+export default function PayChannelPage({ routeParams }: PageComponentProps) {
+  const { params, searchParams } = routeParams ?? {}
+  // params: 动态路由参数 (/user/:id)
+  // searchParams: URL 查询参数 (?page=1)
+}
+```
+
+---
+
+### 5️⃣ 状态管理（Zustand + 持久化）
 
 ```typescript
 // src/store/user.ts
@@ -266,7 +326,7 @@ export const getToken = () => useUserStore.getState().userInfo?.token
 
 ---
 
-### 5️⃣ 样式管理（SCSS + 主题）
+### 6️⃣ 样式管理（SCSS + 主题）
 
 ```scss
 // src/styles/variables.scss
