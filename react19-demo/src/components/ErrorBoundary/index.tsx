@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button, Result } from 'antd'
 import { HomeOutlined, ReloadOutlined } from '@ant-design/icons'
 
-/** 错误回退组件 */
+// 错误回退组件
 function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
   const navigate = useNavigate()
   const isDev = import.meta.env.DEV
@@ -57,18 +57,22 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
+  resetKey?: string
 }
 
-/** 错误边界包装组件 */
-export function ErrorBoundary({ children }: ErrorBoundaryProps) {
+// 错误边界包装组件
+export function ErrorBoundary({ children, resetKey }: ErrorBoundaryProps) {
   const handleError = (error: Error, info: React.ErrorInfo) => {
-    // 可接入 Sentry 等错误监控平台
     console.error('[ErrorBoundary] 捕获到错误:', error)
     console.error('[ErrorBoundary] 组件堆栈:', info.componentStack)
   }
 
   return (
-    <ReactErrorBoundary FallbackComponent={ErrorFallback} onError={handleError}>
+    <ReactErrorBoundary
+      FallbackComponent={ErrorFallback}
+      onError={handleError}
+      resetKeys={resetKey ? [resetKey] : undefined}
+    >
       {children}
     </ReactErrorBoundary>
   )

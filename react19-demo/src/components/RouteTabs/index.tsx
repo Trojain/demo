@@ -1,53 +1,31 @@
-// 页面标签页
-import { useCallback, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { MenuProps } from 'antd'
 import { Dropdown, Tabs } from 'antd'
 import { CloseOutlined, MinusOutlined, StopOutlined } from '@ant-design/icons'
-import { menuRoutes } from '@/router/config'
+import { getRouteNameByPathname } from '@/router/routeUtils'
+import { usePageCacheStore } from '@/store/pageCache'
 import { useTabStore } from '@/store/tabs'
 import styles from './index.module.scss'
 
 type TargetKey = React.MouseEvent | React.KeyboardEvent | string
 
+// 路由标签页组件
+// - 显示已访问的页面标签
+// - 支持右键菜单：关闭当前/关闭其他/关闭全部
+// - 关闭标签时同步清除页面缓存
 const RouteTabs = () => {
   const navigate = useNavigate()
   const location = useLocation()
+  const { removeCachedPage, removeCachedPages } = usePageCacheStore()
   const { tabs, activeKey, addTab, removeTab, closeOtherTabs, closeAllTabs } = useTabStore()
 
-  // 扁平化路由配置以查找标签名称
-  const findRouteName = useCallback((targetPath: string, routes: any[], parentPath = ''): string => {
-    for (const route of routes) {
-      if (!route.path) {
-        if (route.children) {
-          const name = findRouteName(targetPath, route.children, parentPath)
-          if (name) return name
-        }
-        continue
-      }
-
-      let fullPath = route.path
-      if (!fullPath.startsWith('/')) {
-        fullPath = `${parentPath === '/' ? '' : parentPath}/${fullPath}`
-      }
-
-      if (fullPath === targetPath) return route.name
-
-      if (route.children) {
-        const name = findRouteName(targetPath, route.children, fullPath)
-        if (name) return name
-      }
-    }
-    return ''
-  }, [])
-
-  // 监听路由变化，添加标签
+  // 路由变化时添加标签
   useEffect(() => {
     const { pathname } = location
-    // 忽略登录页和根路径
     if (pathname === '/login' || pathname === '/') return
 
-    const routeName = findRouteName(pathname, menuRoutes)
+    const routeName = getRouteNameByPathname(pathname)
     if (routeName) {
       addTab({
         label: routeName,
@@ -55,10 +33,12 @@ const RouteTabs = () => {
         closable: pathname !== '/dashboard', // dashboard 不可关闭
       })
     }
-  }, [location, addTab, findRouteName])
+  }, [location, addTab])
 
+  // 标签关闭事件
   const onEdit = (targetKey: TargetKey, action: 'add' | 'remove') => {
     if (action === 'remove') {
+      removeCachedPage(targetKey as string) // 同步清除页面缓存
       removeTab(targetKey as string)
       const { activeKey } = useTabStore.getState()
       if (activeKey !== location.pathname) {
@@ -67,19 +47,18 @@ const RouteTabs = () => {
     }
   }
 
-  const onChange = (key: string) => {
-    navigate(key)
-  }
+  // 切换标签
+  const onChange = (key: string) => navigate(key)
 
-  // 右键菜单
+  // 自定义 TabBar，支持右键菜单
   const renderTabBar = (props: any, DefaultTabBar: any) => (
     <DefaultTabBar {...props}>
       {(node: any) => {
         const { key } = node
         const tab = tabs.find((t) => t.key === key)
-
         if (!tab) return node
 
+        // 右键菜单项
         const menuItems: MenuProps['items'] = [
           {
             key: 'close',
@@ -87,11 +66,10 @@ const RouteTabs = () => {
             label: '关闭标签',
             disabled: !tab.closable,
             onClick: () => {
+              removeCachedPage(key)
               removeTab(key)
               const { activeKey } = useTabStore.getState()
-              if (activeKey !== location.pathname) {
-                navigate(activeKey)
-              }
+              if (activeKey !== location.pathname) navigate(activeKey)
             },
           },
           {
@@ -99,6 +77,8 @@ const RouteTabs = () => {
             icon: <MinusOutlined />,
             label: '关闭其他',
             onClick: () => {
+              const pathsToRemove = tabs.filter((t) => t.key !== key && t.closable !== false).map((t) => t.key)
+              removeCachedPages(pathsToRemove)
               closeOtherTabs(key)
               navigate(key)
             },
@@ -108,6 +88,8 @@ const RouteTabs = () => {
             icon: <StopOutlined />,
             label: '关闭全部',
             onClick: () => {
+              const pathsToRemove = tabs.filter((t) => t.closable !== false).map((t) => t.key)
+              removeCachedPages(pathsToRemove)
               closeAllTabs()
               const { activeKey } = useTabStore.getState()
               navigate(activeKey)

@@ -1,12 +1,13 @@
 // 基础布局
 import { useMemo, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ConfigProvider, theme as antdTheme } from 'antd'
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { ProLayout } from '@ant-design/pro-components'
 import logo from '@/assets/images/logo.png'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import HeaderActions from '@/components/HeaderActions'
+import PageCache from '@/components/PageCache'
 import RouteTabs from '@/components/RouteTabs'
 import { menuRoutes } from '@/router/config'
 import { useThemeStore } from '@/store/theme'
@@ -81,7 +82,7 @@ const BasicLayout = () => {
           {/* 页面内容区域 */}
           <div className={styles.layoutContent}>
             <ErrorBoundary>
-              <Outlet />
+              <PageCache />
             </ErrorBoundary>
           </div>
         </ProLayout>
