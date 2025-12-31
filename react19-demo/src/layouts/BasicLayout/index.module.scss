@@ -72,5 +72,8 @@
 
   .layoutContent {
     padding: 12px;
+    .pageWrapper {
+      overflow-y: hidden;
+    }
   }
 }

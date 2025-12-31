@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
-import { Button, Switch, Tag } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Avatar, Button, Switch, Tag } from 'antd'
+import { EditOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
-import { ProTable } from '@ant-design/pro-components'
+import { ProList, ProTable } from '@ant-design/pro-components'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProTableConfig } from '@/hooks/useProTableConfig'
 import { editPayChannel, getPayChannelList, handleResponse } from '@/services'
@@ -41,6 +41,26 @@ export default function PayChannelPage() {
     handleResponse(response, { actionRef })
   }
 
+  // 通用配置：PC 和移动端共享
+  const commonProps = {
+    actionRef,
+    formRef,
+    rowKey: 'channelId',
+    request: getPayChannelList,
+    toolBarRender: () => [
+      <Button
+        key="add"
+        type="primary"
+        size={isMobile ? 'small' : 'default'}
+        icon={<PlusOutlined />}
+        onClick={handleAdd}
+      >
+        添加支付渠道
+      </Button>,
+    ],
+  }
+
+  // PC 端列配置
   const columns = [
     {
       title: '渠道ID',
@@ -61,6 +81,7 @@ export default function PayChannelPage() {
       title: '备注',
       dataIndex: 'mark',
       hideInSearch: true,
+      width: 200,
       ellipsis: true,
     },
     {
@@ -88,37 +109,66 @@ export default function PayChannelPage() {
       title: '操作',
       dataIndex: 'operate',
       valueType: 'option',
-      fixed: 'right',
-      width: 80,
       render: (_: any, entity: any) => [
-        <Button type="link" key="edit" size="small" onClick={() => handleEdit(entity)}>
+        <Button type="link" key="edit" size="small" icon={<EditOutlined />} onClick={() => handleEdit(entity)}>
           编辑
         </Button>,
       ],
     },
   ]
 
+  // 移动端 ProList metas 配置
+  const metas = {
+    title: {
+      title: '渠道名称',
+      dataIndex: 'channelName',
+    },
+    subTitle: {
+      title: '描述',
+      dataIndex: 'desc',
+      // hideInSearch: true,
+    },
+    description: {
+      title: '备注',
+      dataIndex: 'mark',
+      valueType: 'text',
+      // hideInSearch: true,
+    },
+    actions: {
+      render: (_: any, entity: any) => [
+        <Switch
+          key="status"
+          size="small"
+          checked={entity.status == 1}
+          onChange={(checked) => handlePayChannelStatus(checked, entity)}
+        />,
+        <a key="detail">详情</a>,
+        <a key="edit" onClick={() => handleEdit(entity)}>
+          编辑
+        </a>,
+      ],
+    },
+    avatar: {
+      search: false,
+      render: (_: any, entity: any) => (
+        // <Tag color={entity.status == 1 ? 'green' : 'red'}>{entity.status == 1 ? '启用' : '禁用'}</Tag>
+        <Avatar size={40} icon={<UserOutlined />} />
+      ),
+    },
+  }
+
+  // 获取 ProTable 配置（Hook 必须在顶层调用）
+  const tableConfig = useProTableConfig()
+
   return (
     <>
-      <ProTable
-        {...useProTableConfig()}
-        actionRef={actionRef}
-        rowKey="channelId"
-        request={getPayChannelList}
-        toolBarRender={() => [
-          <Button
-            key="add"
-            type="primary"
-            icon={<PlusOutlined />}
-            size={isMobile ? 'small' : 'default'}
-            onClick={handleAdd}
-          >
-            添加支付渠道
-          </Button>,
-        ]}
-        formRef={formRef as any}
-        columns={columns}
-      />
+      {isMobile ? (
+        // 移动端：ProList 卡片式
+        <ProList {...tableConfig} {...commonProps} metas={metas} />
+      ) : (
+        // PC 端：ProTable 表格
+        <ProTable {...tableConfig} {...commonProps} columns={columns} />
+      )}
 
       <FormModal open={modalOpen} onOpenChange={setModalOpen} record={currentRecord} actionRef={actionRef} />
     </>

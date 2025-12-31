@@ -48,7 +48,8 @@ export function useProTableConfig(overrides?: Partial<ProTableConfig>): ProTable
       defaultPageSize: isMobile ? 10 : 20,
       showSizeChanger: !isMobile,
       showQuickJumper: !isMobile,
-      simple: isMobile,
+      simple: !isMobile,
+      size: isMobile ? 'small' : 'default',
       ...overrides?.pagination,
     },
     options: isMobile

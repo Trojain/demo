@@ -5,6 +5,7 @@ import type { PageComponent } from './types'
 // 懒加载页面组件
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const PayChannel = lazy(() => import('@/pages/Pay/Channel'))
+const PayChannel1 = lazy(() => import('@/pages/Pay/Channel1'))
 const SystemUser = lazy(() => import('@/pages/System/User'))
 const SystemSetting = lazy(() => import('@/pages/System/Setting'))
 
@@ -37,6 +38,12 @@ export const menuRoutes: AppRouteConfig[] = [
         path: 'channel',
         name: '支付渠道',
         component: PayChannel,
+        keepAlive: true,
+      },
+      {
+        path: 'channel1',
+        name: '支付渠道1',
+        component: PayChannel1,
         keepAlive: true,
       },
     ],
