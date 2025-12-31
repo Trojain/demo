@@ -7,9 +7,10 @@ import type { PageComponentProps, RouteParams } from './types'
 export interface FlatRoute {
   pattern: string // 路由匹配模式
   name: string // 路由名称
-  component: React.ComponentType<PageComponentProps> // 页面组件
+  component?: React.ComponentType<PageComponentProps> // 页面组件
   keepAlive: boolean // 是否启用页面缓存
   isDynamic: boolean // 是否为动态路由
+  redirect?: string // 重定向目标
 }
 
 export type { PageComponentProps, RouteParams } from './types'
@@ -26,7 +27,8 @@ const isDynamicPattern = (pattern: string): boolean => {
 }
 
 // 递归扁平化路由配置
-const flattenRoutes = (routes: AppRouteConfig[], parentPath = ''): FlatRoute[] => {
+// 递归扁平化路由配置
+export const flattenRoutes = (routes: AppRouteConfig[], parentPath = ''): FlatRoute[] => {
   const result: FlatRoute[] = []
 
   for (const route of routes) {
@@ -41,14 +43,15 @@ const flattenRoutes = (routes: AppRouteConfig[], parentPath = ''): FlatRoute[] =
       fullPath = `${parentPath === '/' ? '' : parentPath}/${fullPath}`
     }
 
-    // 有组件和名称的路由才加入列表
-    if (route.component && route.name) {
+    // 有组件和名称或者有重定向的路由才加入列表
+    if ((route.component && route.name) || route.redirect) {
       result.push({
         pattern: fullPath,
-        name: route.name,
+        name: route.name ?? '',
         component: route.component,
         keepAlive: route.keepAlive ?? false,
         isDynamic: isDynamicPattern(fullPath),
+        redirect: route.redirect,
       })
     }
 

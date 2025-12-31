@@ -1,43 +1,37 @@
+@use '@/styles/variables' as *;
+
 .footer {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  padding-left: 16px;
+  padding-left: $spacing-md;
   height: 48px;
   cursor: pointer;
   color: #fff;
-  font-size: 16px;
+  font-size: $font-size-lg;
   border-top: 1px solid #fff;
-  background: #001529;
-  transition: all 0.3s;
+  background: $bg-color-dark;
+  transition: all $animation-duration-slow;
 }
 
 .logoHeader {
   height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding-left: 16px;
-  cursor: pointer;
-  width: 100%;
-  background: #001529;
-  z-index: 1001;
-  position: fixed;
-  top: 0;
-  left: 0;
-  transition: width 0.3s;
+  gap: 12px;
 
   .logoImage {
-    height: 32px;
+    height: 32px !important;
     width: 32px;
+    display: block;
   }
 
   .logoText {
     margin: 0;
-    color: #fff;
+    color: #fff !important;
     font-weight: 600;
     font-size: 18px;
+    line-height: 32px;
     white-space: nowrap;
+    opacity: 1;
   }
 }
 
@@ -49,15 +43,17 @@
 }
 
 .layoutContent {
-  padding: 16px 24px;
+  padding: $spacing-md $spacing-lg;
 }
 
 :global {
   .ant-pro-sider-logo {
-    padding: 0 !important;
-    margin: 0 !important;
-    height: 48px !important;
-    line-height: 48px !important;
+    padding: 0 12px !important;
+  }
+
+  .ant-pro-layout .ant-drawer {
+    position: fixed !important;
+    inset: 0 !important;
   }
 }
 
@@ -67,4 +63,14 @@
   z-index: 999;
   width: 100%;
   background-color: #f0f2f5;
+}
+
+@include mobile {
+  .spacer {
+    display: none;
+  }
+
+  .layoutContent {
+    padding: 12px;
+  }
 }

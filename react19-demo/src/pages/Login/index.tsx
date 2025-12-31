@@ -4,6 +4,7 @@ import { GlobalOutlined, LockOutlined, SafetyOutlined, UserOutlined } from '@ant
 import { ProForm, ProFormText } from '@ant-design/pro-components'
 import { login } from '@/services'
 import { useUserStore } from '@/store/user'
+import styles from './index.module.scss'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -26,25 +27,9 @@ export default function Login() {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      }}
-    >
-      <div
-        style={{
-          width: 450,
-          padding: '40px 50px',
-          background: 'white',
-          borderRadius: 8,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-        }}
-      >
-        <h1 style={{ textAlign: 'center', marginBottom: 32, fontSize: 24 }}>SaaS Admin</h1>
+    <div className={styles.container}>
+      <div className={styles.card}>
+        <h1 className={styles.title}>SaaS Admin</h1>
 
         <ProForm
           onFinish={onFinish}

@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { Button, Switch, Tag } from 'antd'
-import { EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
 import { ProTable } from '@ant-design/pro-components'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProTableConfig } from '@/hooks/useProTableConfig'
 import { editPayChannel, getPayChannelList, handleResponse } from '@/services'
 import FormModal from './components/FormModal'
@@ -12,6 +13,7 @@ export default function PayChannelPage() {
   const formRef = useRef<ProFormInstance>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [currentRecord, setCurrentRecord] = useState<any>(null)
+  const isMobile = useIsMobile()
 
   const enableEnum = {
     0: { text: '隐藏', status: 'error' },
@@ -59,7 +61,6 @@ export default function PayChannelPage() {
       title: '备注',
       dataIndex: 'mark',
       hideInSearch: true,
-      width: 200,
       ellipsis: true,
     },
     {
@@ -87,8 +88,10 @@ export default function PayChannelPage() {
       title: '操作',
       dataIndex: 'operate',
       valueType: 'option',
+      fixed: 'right',
+      width: 80,
       render: (_: any, entity: any) => [
-        <Button type="link" key="edit" size="small" icon={<EditOutlined />} onClick={() => handleEdit(entity)}>
+        <Button type="link" key="edit" size="small" onClick={() => handleEdit(entity)}>
           编辑
         </Button>,
       ],
@@ -99,17 +102,17 @@ export default function PayChannelPage() {
     <>
       <ProTable
         {...useProTableConfig()}
-        headerTitle="支付渠道"
         actionRef={actionRef}
-        formRef={formRef as any}
-        columns={columns}
         rowKey="channelId"
         request={getPayChannelList}
+        pagination={{ defaultPageSize: 10, showSizeChanger: !isMobile }}
         toolBarRender={() => [
           <Button key="add" type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
             添加支付渠道
           </Button>,
         ]}
+        formRef={formRef as any}
+        columns={columns}
       />
 
       <FormModal open={modalOpen} onOpenChange={setModalOpen} record={currentRecord} actionRef={actionRef} />

@@ -6,6 +6,8 @@ import {
   BellOutlined,
   GlobalOutlined,
   LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   MoonOutlined,
   SettingOutlined,
   SunOutlined,
@@ -17,7 +19,12 @@ import { useUserStore } from '@/store/user'
 import { globalUI } from '@/utils/globalUI'
 import styles from './index.module.scss'
 
-export default function HeaderActions() {
+type HeaderActionsProps = {
+  onToggleMenu?: () => void
+  collapsed?: boolean
+}
+
+export default function HeaderActions({ onToggleMenu, collapsed = false }: HeaderActionsProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const { userInfo, clearUserInfo } = useUserStore()
@@ -76,6 +83,14 @@ export default function HeaderActions() {
 
   return (
     <div className={styles.header}>
+      {/* 菜单折叠按钮 */}
+      <div className={`${styles.actionIcon} ${styles.menuToggle}`} onClick={() => onToggleMenu?.()}>
+        {collapsed ? (
+          <MenuUnfoldOutlined className={styles.iconFont} />
+        ) : (
+          <MenuFoldOutlined className={styles.iconFont} />
+        )}
+      </div>
       {/* 通知图标 */}
       <div className={styles.actionIcon}>
         <Badge count={1} offset={[2, -2]} size="small">
@@ -108,7 +123,7 @@ export default function HeaderActions() {
             <div className={styles.avatar}>
               <UserOutlined className={styles.avatarIcon} />
             </div>
-            <span>{userInfo?.currentUser?.account || '用户'}</span>
+            <span className={styles.userName}>{userInfo?.currentUser?.account || '用户'}</span>
           </div>
         </Dropdown>
       </div>

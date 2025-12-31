@@ -16,6 +16,7 @@ $border-color-light: #e8e8e8;
 
 // 背景色
 $bg-color: #ffffff;
+$bg-color-page: #f5f5f5;
 $bg-color-light: #fafafa;
 $bg-color-dark: #001529;
 
@@ -39,9 +40,53 @@ $font-size-xl: 20px;
 
 // 阴影
 $box-shadow-base: 0 2px 8px rgba(0, 0, 0, 0.15);
-$box-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 6px rgba(0, 0, 0, 0.06);
+$box-shadow-card:
+  0 1px 2px rgba(0, 0, 0, 0.03),
+  0 1px 6px rgba(0, 0, 0, 0.06);
 
 // 动画
 $animation-duration-slow: 0.3s;
 $animation-duration-base: 0.2s;
 $animation-duration-fast: 0.1s;
+
+// z-index 层级管理
+$z-index-base: 1;
+$z-index-header: 19;
+$z-index-dropdown: 1000;
+$z-index-fixed-header: 1001;
+$z-index-modal: 1000;
+$z-index-drawer: 1000;
+
+// === 响应式断点 (与 Ant Design 保持一致) ===
+$screen-xs: 480px;
+$screen-md: 768px; // 平板竖屏分界线
+$screen-lg: 992px; // 桌面分界线
+
+// === 响应式 Mixin ===
+
+// 手机端：严格小于 768px
+@mixin mobile {
+  @media screen and (max-width: ($screen-md - 0.02px)) {
+    @content;
+  }
+}
+
+// 平板及以上
+@mixin tablet-up {
+  @media screen and (min-width: $screen-md) {
+    @content;
+  }
+}
+
+// 桌面端
+@mixin desktop-up {
+  @media screen and (min-width: $screen-lg) {
+    @content;
+  }
+}
+
+// === 安全区 Mixin (处理 iPhone 底部横条) ===
+@mixin safe-area-bottom($padding: 0px) {
+  padding-bottom: $padding;
+  padding-bottom: calc(#{$padding} + env(safe-area-inset-bottom));
+}

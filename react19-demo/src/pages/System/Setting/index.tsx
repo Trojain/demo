@@ -1,14 +1,21 @@
 import { useState } from 'react'
-import { Button, Card, Form, Input, List, Switch, Tabs, Upload } from 'antd'
+import { Button, Card, Form, Grid, Input, List, Switch, Tabs, Upload } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 
-const BasicSettings = () => {
+const BasicSettings = ({ isMobile }: { isMobile: boolean }) => {
   return (
-    <div style={{ display: 'flex', gap: 24, maxWidth: 800 }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 24,
+        maxWidth: isMobile ? '100%' : 800,
+        flexDirection: isMobile ? 'column' : 'row',
+      }}
+    >
       <Form
         layout="vertical"
         initialValues={{ email: 'admin@example.com', name: 'Admin', profile: 'Super Administrator' }}
-        style={{ flex: 1 }}
+        style={{ flex: 1, minWidth: 0 }}
       >
         <Form.Item label="邮箱" name="email">
           <Input disabled />
@@ -23,7 +30,15 @@ const BasicSettings = () => {
           <Button type="primary">更新基本信息</Button>
         </Form.Item>
       </Form>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, width: 140 }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+          width: isMobile ? '100%' : 140,
+        }}
+      >
         <div
           style={{
             width: 100,
@@ -115,12 +130,14 @@ const NotificationSettings = () => {
 
 export default function AccountSettings() {
   const [activeTab, setActiveTab] = useState('basic')
+  const screens = Grid.useBreakpoint()
+  const isMobile = screens.md === false
 
   const items = [
     {
       key: 'basic',
       label: '基本设置',
-      children: <BasicSettings />,
+      children: <BasicSettings isMobile={isMobile} />,
     },
     {
       key: 'security',
@@ -136,7 +153,7 @@ export default function AccountSettings() {
 
   return (
     <Card title="账号设置">
-      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} tabPosition="left" />
+      <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} tabPosition={isMobile ? 'top' : 'left'} />
     </Card>
   )
 }

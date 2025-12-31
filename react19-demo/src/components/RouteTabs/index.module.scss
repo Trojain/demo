@@ -1,6 +1,8 @@
+@use '@/styles/variables' as *;
+
 .tabsContainer {
-  padding: 6px 24px 0;
-  background-color: var(--bg-tabs, #f0f2f5);
+  padding: 6px $spacing-lg 0;
+  background-color: var(--bg-tabs, $bg-color-light);
   box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
 
   :global {
@@ -10,19 +12,19 @@
 
     .ant-tabs-tab {
       font-size: 13px;
-      padding: 6px 16px !important;
-      background-color: var(--bg-tab, #fff) !important;
+      padding: 6px $spacing-md !important;
+      background-color: var(--bg-tab, $bg-color) !important;
       border: 0 !important;
-      border-radius: 8px 8px 0 0 !important;
-      margin-right: 4px !important;
-      transition: all 0.3s;
+      border-radius: $border-radius-lg $border-radius-lg 0 0 !important;
+      margin-right: $spacing-xs !important;
+      transition: all $animation-duration-slow;
 
       &:hover {
-        color: #1890ff;
+        color: $primary-color;
       }
 
       &.ant-tabs-tab-active {
-        background-color: #1890ff !important;
+        background-color: $primary-color !important;
         color: #fff !important;
         font-weight: 500;
 
@@ -30,6 +32,26 @@
         .ant-tabs-tab-btn {
           color: #fff !important;
         }
+      }
+    }
+  }
+}
+@include mobile {
+  .tabsContainer {
+    padding: 4px 12px 0;
+
+    :global {
+      .ant-tabs-nav-wrap {
+        overflow-x: auto;
+      }
+
+      .ant-tabs-nav-list {
+        flex-wrap: nowrap;
+      }
+
+      .ant-tabs-tab {
+        padding: 4px 12px !important;
+        font-size: $font-size-sm;
       }
     }
   }

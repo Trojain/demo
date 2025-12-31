@@ -61,4 +61,9 @@ export const menuRoutes: AppRouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/',
+    hideInMenu: true,
+    redirect: '/dashboard',
+  },
 ]

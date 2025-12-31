@@ -125,9 +125,9 @@ export default function Dashboard() {
   return (
     <div className={styles.dashboard}>
       {/* 统计卡片 */}
-      <Row gutter={16} className={styles.statsRow}>
+      <Row gutter={[16, 16]} className={styles.statsRow}>
         {statsData.map((stat) => (
-          <Col span={6} key={stat.title}>
+          <Col xs={24} sm={12} lg={6} key={stat.title}>
             <StatisticCard
               statistic={{
                 title: stat.title,
@@ -141,16 +141,12 @@ export default function Dashboard() {
       </Row>
 
       {/* 图表区域 */}
-      <Row gutter={16}>
-        <Col span={12}>
-          <Card title="有效充值占比" bordered={false} hoverable>
-            {renderChartContent(lineLoading, lineChartData, <Area {...areaConfig} />)}
-          </Card>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12}>
+          <Card title="有效充值占比">{renderChartContent(lineLoading, lineChartData, <Area {...areaConfig} />)}</Card>
         </Col>
-        <Col span={12}>
-          <Card title="当日充值排行" bordered={false} hoverable>
-            {renderChartContent(rankLoading, rankingData, <Bar {...barConfig} />)}
-          </Card>
+        <Col xs={24} md={12}>
+          <Card title="当日充值排行">{renderChartContent(rankLoading, rankingData, <Bar {...barConfig} />)}</Card>
         </Col>
       </Row>
     </div>

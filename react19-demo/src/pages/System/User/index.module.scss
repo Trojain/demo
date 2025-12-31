@@ -1,0 +1,30 @@
+@use '@/styles/variables' as *;
+
+.header {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+
+  @include mobile {
+    font-size: 20px;
+  }
+}
+
+.subtitle {
+  color: #666;
+  margin: 8px 0 0;
+}
+
+.token {
+  word-break: break-all;
+}
+
+.statusNormal {
+  color: #52c41a;
+}

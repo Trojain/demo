@@ -1,5 +1,5 @@
 import { Activity, Suspense, useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { Spin } from 'antd'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import { isRouteKeepAlive, resolveRoute } from '@/router/routeUtils'
@@ -83,6 +83,11 @@ const PageCache = () => {
 
   // 检查当前路由配置是否标记为 keepAlive
   const isCurrentRouteKeepAlive = currentResolved?.route.keepAlive ?? false
+
+  // 处理路由重定向
+  if (currentResolved?.route.redirect) {
+    return <Navigate to={currentResolved.route.redirect} replace />
+  }
 
   return (
     <div className={styles.pageCache}>

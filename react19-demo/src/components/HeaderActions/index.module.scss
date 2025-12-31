@@ -1,29 +1,31 @@
+@use '@/styles/variables' as *;
+
 .header {
   height: 48px;
   width: 100%;
-  background: #000;
+  background: $bg-color-dark;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 24px;
+  padding: 0 $spacing-lg;
   position: sticky;
   top: 0;
-  z-index: 19;
-  gap: 16px;
+  z-index: $z-index-header;
+  gap: $spacing-md;
 }
 
 .actionIcon {
   display: flex;
   align-items: center;
   height: 100%;
-  padding: 0 4px;
+  padding: 0 $spacing-xs;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all $animation-duration-slow;
 
   &:hover {
     background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
+    border-radius: $border-radius-base;
   }
 
   .iconFont {
@@ -36,9 +38,9 @@
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: $spacing-sm;
   color: #fff;
-  transition: opacity 0.3s;
+  transition: opacity $animation-duration-slow;
 
   &:hover {
     opacity: 0.8;
@@ -48,14 +50,75 @@
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: #1890ff;
+    background: $primary-color;
     display: flex;
     align-items: center;
     justify-content: center;
 
     .avatarIcon {
       color: #fff;
-      font-size: 14px;
+      font-size: $font-size-base;
+    }
+  }
+}
+
+.menuToggle {
+  margin-right: auto;
+}
+
+@include mobile {
+  .header {
+    padding: 0 12px;
+    gap: $spacing-sm;
+    background: $bg-color;
+    color: $text-color;
+    border-bottom: 1px solid $bg-color-light;
+
+    :global(.theme-dark) & {
+      background: #001529;
+      color: #fff;
+      border-bottom: none;
+    }
+  }
+
+  .actionIcon {
+    .iconFont {
+      font-size: $font-size-lg;
+      color: $text-color;
+
+      :global(.theme-dark) & {
+        color: #fff;
+      }
+    }
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+
+      :global(.theme-dark) & {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+    }
+  }
+
+  .userInfo {
+    color: $text-color;
+
+    :global(.theme-dark) & {
+      color: #fff;
+    }
+
+    .userName {
+      display: none;
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+
+      .avatarIcon {
+        color: #fff;
+        font-size: 16px;
+      }
     }
   }
 }

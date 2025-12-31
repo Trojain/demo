@@ -1,5 +1,6 @@
 import type { ActionType } from '@ant-design/pro-components'
 import { DrawerForm, ProFormRadio, ProFormText, ProFormTextArea } from '@ant-design/pro-components'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { addPayChannel, editPayChannel, handleResponse } from '@/services'
 
 interface FormModalProps {
@@ -11,6 +12,7 @@ interface FormModalProps {
 
 export default function FormModal({ open, onOpenChange, record, actionRef }: FormModalProps) {
   const isEdit = !!record
+  const isMobile = useIsMobile()
 
   return (
     <DrawerForm
@@ -18,7 +20,23 @@ export default function FormModal({ open, onOpenChange, record, actionRef }: For
       open={open}
       onOpenChange={onOpenChange}
       initialValues={record}
-      drawerProps={{ destroyOnClose: true }}
+      autoFocusFirstInput={!isMobile}
+      drawerProps={{
+        destroyOnClose: true,
+        placement: isMobile ? 'bottom' : 'right',
+        // 移动端用 height，PC 端用 width
+        height: isMobile ? '92vh' : undefined,
+        width: isMobile ? undefined : 520,
+        styles: {
+          body: {
+            paddingTop: isMobile ? 'env(safe-area-inset-top)' : 16,
+            paddingBottom: isMobile ? 'calc(16px + env(safe-area-inset-bottom))' : 16,
+          },
+        },
+      }}
+      submitter={{
+        render: (_, doms) => <div style={{ paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0 }}>{doms}</div>,
+      }}
       onFinish={async (values) => {
         const response = isEdit
           ? await editPayChannel({ channelId: record.channelId, ...values })

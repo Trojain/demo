@@ -1,10 +1,20 @@
 // SCSS 全局样式，可使用 variables.scss 中的变量
 @use 'sass:color';
+@use '@/styles/variables' as *;
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: 2px solid $primary-color;
+  outline-offset: 2px;
 }
 
 html,
@@ -51,15 +61,33 @@ a {
 
 .ant-pro-table {
   .ant-pro-query-filter {
-    padding: 16px 24px;
+    padding: $spacing-md $spacing-lg;
     .ant-pro-query-filter-row {
-      row-gap: 16px;
+      row-gap: $spacing-md;
+    }
+  }
+
+  @include mobile {
+    .ant-pro-table-list-toolbar-left:empty {
+      display: none;
+    }
+    .ant-pro-card-body {
+      padding-inline: 12px;
+    }
+    .ant-pro-query-filter {
+      padding: 12px;
+    }
+    .ant-typography-ellipsis {
+      max-width: 160px !important;
+    }
+    .ant-form-item .ant-form-item-label {
+      padding: 0 !important;
     }
   }
 }
 
 .ant-menu-submenu-popup .ant-menu {
-  background: #001529 !important;
+  background: $bg-color-dark !important;
 
   .ant-menu-item {
     color: rgba(255, 255, 255, 0.65) !important;
@@ -67,8 +95,31 @@ a {
       color: #fff !important;
     }
     &-selected {
-      background: #1890ff !important;
+      background: $primary-color !important;
       color: #fff !important;
     }
   }
+}
+
+// === 响应式工具类 ===
+
+// 手机端隐藏
+.mobile-hidden {
+  @include mobile {
+    display: none !important;
+  }
+}
+
+// 仅手机端显示
+.mobile-only {
+  display: none !important;
+
+  @include mobile {
+    display: block !important;
+  }
+}
+
+// 修复 iOS 滚动回弹
+body {
+  overscroll-behavior-y: none;
 }
