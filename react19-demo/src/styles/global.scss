@@ -86,6 +86,17 @@ a {
     .ant-pro-table-list-toolbar-container {
       padding-block: 12px;
     }
+    .ant-list-item-action {
+      li,
+      .ant-btn {
+        padding: 0 !important;
+      }
+    }
+    .ant-pro-form-light-filter {
+      .ant-select-content {
+        display: none;
+      }
+    }
   }
 }
 

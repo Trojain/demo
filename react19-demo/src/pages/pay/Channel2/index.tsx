@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Avatar, Button, Switch, Tag, message } from 'antd'
-import { PlusOutlined, RightOutlined, UserOutlined } from '@ant-design/icons'
+import { Avatar, Button, Dropdown, Popconfirm, Switch, Tag, message } from 'antd'
+import { EllipsisOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
 import { ProList, ProTable } from '@ant-design/pro-components'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -77,7 +77,7 @@ export default function PayChannelPage() {
     {
       title: '渠道ID',
       dataIndex: 'channelId',
-      // hideInSearch: true,
+      hideInSearch: true,
     },
     {
       title: '渠道名称',
@@ -86,13 +86,13 @@ export default function PayChannelPage() {
     {
       title: '描述',
       dataIndex: 'desc',
-      // hideInSearch: true,
+      hideInSearch: true,
       ellipsis: true,
     },
     {
       title: '备注',
       dataIndex: 'mark',
-      // hideInSearch: true,
+      hideInSearch: true,
       width: 200,
       ellipsis: true,
     },
@@ -101,13 +101,7 @@ export default function PayChannelPage() {
       dataIndex: 'enable',
       valueType: 'radio',
       valueEnum: enableEnum,
-      // hideInSearch: true,
-    },
-    {
-      title: '注册时间',
-      dataIndex: 'searchTime',
-      valueType: 'dateTimeRange',
-      hideInTable: true,
+      hideInSearch: true,
     },
     {
       title: '状态',
@@ -155,26 +149,6 @@ export default function PayChannelPage() {
       valueType: 'text',
       // hideInSearch: true,
     },
-    type: {
-      title: '状态',
-      dataIndex: 'status',
-      valueType: 'select',
-      valueEnum: activeEnum,
-      render: () => null,
-    },
-    content: {
-      title: '是否可见',
-      dataIndex: 'enable',
-      valueType: 'radio',
-      valueEnum: enableEnum,
-      render: () => null,
-    },
-    // extra: {
-    //   title: '注册时间',
-    //   dataIndex: 'searchTime',
-    //   valueType: 'dateTimeRange',
-    //   render: () => null,
-    // },
     actions: {
       render: (_: any, entity: any) => [
         <Switch
@@ -183,7 +157,39 @@ export default function PayChannelPage() {
           checked={entity.status == 1}
           onChange={(checked) => handlePayChannelStatus(checked, entity)}
         />,
-        <RightOutlined key="arrow" style={{ color: '#00000040' }} />,
+        <Dropdown
+          key="more"
+          trigger={['click']}
+          menu={{
+            items: [
+              {
+                key: 'detail',
+                label: '详情',
+                onClick: () => handleDetail(entity),
+              },
+              {
+                key: 'edit',
+                label: '编辑',
+                onClick: () => handleEdit(entity),
+              },
+              {
+                key: 'del',
+                danger: true,
+                label: (
+                  <Popconfirm
+                    title="确认删除？"
+                    onConfirm={() => handleDelete(entity)}
+                    onCancel={(e) => e?.stopPropagation()}
+                  >
+                    <div onClick={(e) => e.stopPropagation()}>删除</div>
+                  </Popconfirm>
+                ),
+              },
+            ],
+          }}
+        >
+          <Button type="text" size="small" icon={<EllipsisOutlined style={{ fontSize: 20 }} />} />
+        </Dropdown>,
       ],
     },
     avatar: {
@@ -205,9 +211,7 @@ export default function PayChannelPage() {
         <ProList
           {...tableConfig}
           {...commonProps}
-          search={{ filterType: 'light' }}
           metas={metas}
-          columns={columns as any}
           onRow={(record) => ({
             onClick: () => handleDetail(record),
           })}
@@ -223,14 +227,6 @@ export default function PayChannelPage() {
         onClose={() => setDetailOpen(false)}
         record={currentRecord}
         columns={columns as any}
-        onEdit={() => {
-          // setDetailOpen(false) // 根据需要决定是否关闭详情
-          handleEdit(currentRecord)
-        }}
-        onDelete={() => {
-          handleDelete(currentRecord)
-          setDetailOpen(false)
-        }}
       />
     </>
   )

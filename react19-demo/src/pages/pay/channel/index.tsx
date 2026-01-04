@@ -89,7 +89,7 @@ export default function PayChannelPage() {
       dataIndex: 'operate',
       valueType: 'option',
       fixed: 'right',
-      width: 80,
+      width: 'auto',
       render: (_: any, entity: any) => [
         <Button type="link" key="edit" size="small" onClick={() => handleEdit(entity)}>
           编辑
