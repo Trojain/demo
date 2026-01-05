@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
-import { Avatar, Button, Dropdown, Popconfirm, Switch, Tag, message } from 'antd'
-import { EllipsisOutlined, PlusOutlined, UserOutlined } from '@ant-design/icons'
+import { useMemo, useRef, useState } from 'react'
+import { Button, Switch, Tag, message } from 'antd'
+import { PlusOutlined, RightOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
 import { ProList, ProTable } from '@ant-design/pro-components'
+import MobileSearch, { SearchButton } from '@/components/MobileSearch'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProTableConfig } from '@/hooks/useProTableConfig'
 import { editPayChannel, getPayChannelList, handleResponse } from '@/services'
@@ -16,6 +17,10 @@ export default function PayChannelPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [currentRecord, setCurrentRecord] = useState<any>(null)
   const isMobile = useIsMobile()
+
+  // 移动端搜索相关状态
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchParams, setSearchParams] = useState({})
 
   const enableEnum = {
     0: { text: '隐藏', status: 'error' },
@@ -53,15 +58,20 @@ export default function PayChannelPage() {
     handleResponse(response, { actionRef })
   }
 
+  // 判断是否有搜索条件
+  const hasSearch = useMemo(() => Object.keys(searchParams).length > 0, [searchParams])
+
   // 通用配置：PC 和移动端共享
   const commonProps = {
     actionRef,
     formRef,
     rowKey: 'channelId',
-    request: getPayChannelList,
+    request: (params: any) => getPayChannelList(params),
+    params: isMobile ? searchParams : undefined,
     toolBarRender: () => [
+      isMobile && <SearchButton key="search" hasSearch={hasSearch} onClick={() => setSearchOpen(true)} />,
       <Button key="add" type="primary" size={isMobile ? 'small' : 'middle'} icon={<PlusOutlined />} onClick={handleAdd}>
-        添加支付渠道
+        新增渠道
       </Button>,
     ],
   }
@@ -71,7 +81,6 @@ export default function PayChannelPage() {
     {
       title: '渠道ID',
       dataIndex: 'channelId',
-      hideInSearch: true,
     },
     {
       title: '渠道名称',
@@ -80,22 +89,32 @@ export default function PayChannelPage() {
     {
       title: '描述',
       dataIndex: 'desc',
-      hideInSearch: true,
       ellipsis: true,
     },
     {
       title: '备注',
       dataIndex: 'mark',
-      hideInSearch: true,
       width: 200,
       ellipsis: true,
+      hideInSearch: true,
     },
     {
       title: '是否可见',
       dataIndex: 'enable',
       valueType: 'radio',
       valueEnum: enableEnum,
-      hideInSearch: true,
+    },
+    {
+      title: '注册时间',
+      dataIndex: 'searchTime',
+      valueType: 'dateTimeRange',
+      hideInTable: true,
+      search: {
+        transform: (value: string[]) => ({
+          startTime: value[0],
+          endTime: value[1],
+        }),
+      },
     },
     {
       title: '状态',
@@ -128,21 +147,10 @@ export default function PayChannelPage() {
 
   // 移动端 ProList metas 配置
   const metas = {
-    title: {
-      title: '渠道名称',
-      dataIndex: 'channelName',
-    },
-    subTitle: {
-      title: '描述',
-      dataIndex: 'desc',
-      // hideInSearch: true,
-    },
-    description: {
-      title: '备注',
-      dataIndex: 'mark',
-      valueType: 'text',
-      // hideInSearch: true,
-    },
+    avatar: { title: '渠道ID', dataIndex: 'channelId' },
+    title: { title: '渠道名称', dataIndex: 'channelName' },
+    subTitle: { title: '描述', dataIndex: 'desc' },
+    description: { title: '备注', dataIndex: 'mark' },
     actions: {
       render: (_: any, entity: any) => [
         <Switch
@@ -151,76 +159,50 @@ export default function PayChannelPage() {
           checked={entity.status == 1}
           onChange={(checked) => handlePayChannelStatus(checked, entity)}
         />,
-        <Dropdown
-          key="more"
-          trigger={['click']}
-          menu={{
-            items: [
-              {
-                key: 'detail',
-                label: '详情',
-                onClick: () => handleDetail(entity),
-              },
-              {
-                key: 'edit',
-                label: '编辑',
-                onClick: () => handleEdit(entity),
-              },
-              {
-                key: 'del',
-                danger: true,
-                label: (
-                  <Popconfirm
-                    title="确认删除？"
-                    onConfirm={() => handleDelete(entity)}
-                    onCancel={(e) => e?.stopPropagation()}
-                  >
-                    <div onClick={(e) => e.stopPropagation()}>删除</div>
-                  </Popconfirm>
-                ),
-              },
-            ],
-          }}
-        >
-          <Button type="text" size="small" icon={<EllipsisOutlined style={{ fontSize: 20 }} />} />
-        </Dropdown>,
+        <RightOutlined key="arrow" style={{ color: '#00000040' }} />,
       ],
-    },
-    avatar: {
-      search: false,
-      render: (_: any, entity: any) => (
-        // <Tag color={entity.status == 1 ? 'green' : 'red'}>{entity.status == 1 ? '启用' : '禁用'}</Tag>
-        <Avatar size={40} icon={<UserOutlined />} />
-      ),
     },
   }
 
-  // 获取 ProTable 配置（Hook 必须在顶层调用）
   const tableConfig = useProTableConfig()
 
   return (
     <>
       {isMobile ? (
-        // 移动端：ProList 卡片式
         <ProList
           {...tableConfig}
           {...commonProps}
+          search={false}
           metas={metas}
-          onRow={(record) => ({
-            onClick: () => handleDetail(record),
-          })}
+          columns={columns as any}
+          onRow={(record) => ({ onClick: () => handleDetail(record) })}
         />
       ) : (
-        // PC 端：ProTable 表格
         <ProTable {...tableConfig} {...commonProps} columns={columns} />
       )}
 
+      {/* 移动端搜索组件 */}
+      <MobileSearch
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSearch={setSearchParams}
+        onReset={() => setSearchParams({})}
+        columns={columns}
+        initialValues={searchParams}
+      />
+
       <FormModal open={modalOpen} onOpenChange={setModalOpen} record={currentRecord} actionRef={actionRef} />
+
       <DetailDrawer
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         record={currentRecord}
         columns={columns as any}
+        onEdit={() => handleEdit(currentRecord)}
+        onDelete={() => {
+          handleDelete(currentRecord)
+          setDetailOpen(false)
+        }}
       />
     </>
   )
