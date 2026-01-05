@@ -117,23 +117,40 @@ a {
 
 // === 响应式工具类 ===
 
-// 手机端隐藏
 .mobile-hidden {
   @include mobile {
     display: none !important;
   }
 }
 
-// 仅手机端显示
 .mobile-only {
   display: none !important;
-
   @include mobile {
     display: block !important;
+    display: unset !important;
   }
 }
 
-// 修复 iOS 滚动回弹
 body {
   overscroll-behavior-y: none;
+}
+
+@include mobile {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    -webkit-overflow-scrolling: touch;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  p,
+  code,
+  .ant-table,
+  .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 }
