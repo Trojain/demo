@@ -48,7 +48,7 @@ export default function MobileForm({ open, onOpenChange, record, onSaved }: Mobi
 
   return (
     <Popup visible={open} onClose={() => onOpenChange(false)} showCloseButton>
-      <NavBar back={null}>{isEdit ? '编辑支付渠道' : '添加支付渠道'}</NavBar>
+      <NavBar back={null}>{isEdit ? '编辑渠道' : '新增渠道'}</NavBar>
       <Form
         form={form}
         mode="card"

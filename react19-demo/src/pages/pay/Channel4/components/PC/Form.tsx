@@ -17,7 +17,7 @@ export default function Form({ open, onOpenChange, record, actionRef }: FormProp
 
   return (
     <DrawerForm
-      title={isEdit ? '编辑支付渠道' : '添加支付渠道'}
+      title={isEdit ? '编辑渠道' : '新增渠道'}
       open={open}
       onOpenChange={onOpenChange}
       initialValues={record}

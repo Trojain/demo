@@ -16,7 +16,7 @@ export default function FormModal({ open, onOpenChange, record, actionRef }: For
 
   return (
     <DrawerForm
-      title={isEdit ? '编辑支付渠道' : '添加支付渠道'}
+      title={isEdit ? '编辑渠道' : '新增渠道'}
       open={open}
       onOpenChange={onOpenChange}
       initialValues={record}

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
-import { Button, Switch, Tag, message } from 'antd'
-import { PlusOutlined, RightOutlined } from '@ant-design/icons'
+import { Avatar, Button, Switch, Tag, message } from 'antd'
+import { PlusOutlined, RightOutlined, UserOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
 import { ProList, ProTable } from '@ant-design/pro-components'
 import MobileSearch, { SearchButton } from '@/components/MobileSearch'
@@ -147,7 +147,14 @@ export default function PayChannelPage() {
 
   // 移动端 ProList metas 配置
   const metas = {
-    avatar: { title: '渠道ID', dataIndex: 'channelId' },
+    // avatar: { title: '渠道ID', dataIndex: 'channelId' },
+    avatar: {
+      search: false,
+      render: (_: any, entity: any) => (
+        // <Tag color={entity.status == 1 ? 'green' : 'red'}>{entity.status == 1 ? '启用' : '禁用'}</Tag>
+        <Avatar size={40} icon={<UserOutlined />} />
+      ),
+    },
     title: { title: '渠道名称', dataIndex: 'channelName' },
     subTitle: { title: '描述', dataIndex: 'desc' },
     description: { title: '备注', dataIndex: 'mark' },

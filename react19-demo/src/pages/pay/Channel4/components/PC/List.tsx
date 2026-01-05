@@ -54,7 +54,7 @@ const List = () => {
     request: getPayChannelList,
     toolBarRender: () => [
       <Button key="add" type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-        添加支付渠道
+        新增渠道
       </Button>,
     ],
   }

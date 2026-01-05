@@ -113,7 +113,7 @@ export default function PayChannelPage() {
             size={isMobile ? 'small' : 'middle'}
             onClick={handleAdd}
           >
-            添加支付渠道
+            新增渠道
           </Button>,
         ]}
         formRef={formRef}
