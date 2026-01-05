@@ -7,7 +7,7 @@ import { flattenRoutes } from '@/router/routeUtils'
 
 type ProTableConfig = Pick<
   ProTableProps<any, any>,
-  'search' | 'pagination' | 'options' | 'headerTitle' | 'ghost' | 'form'
+  'search' | 'pagination' | 'options' | 'headerTitle' | 'ghost' | 'form' | 'size' | 'scroll'
 >
 
 export function useProTableConfig(overrides?: Partial<ProTableConfig>): ProTableConfig {
@@ -52,7 +52,7 @@ export function useProTableConfig(overrides?: Partial<ProTableConfig>): ProTable
       size: isMobile ? 'small' : 'default',
       ...overrides?.pagination,
     },
-    size: isMobile ? 'small' : 'default',
+    size: isMobile ? 'small' : 'middle',
     options: isMobile
       ? false
       : {

@@ -114,7 +114,7 @@ const PageCache = () => {
         <ErrorBoundary resetKey={currentKey}>
           <div className={styles.pageWrapper}>
             <Suspense fallback={<Spin className={styles.loading} />}>
-              <currentResolved.route.component routeParams={currentRouteParams} />
+              {currentResolved.route.component && <currentResolved.route.component routeParams={currentRouteParams} />}
             </Suspense>
           </div>
         </ErrorBoundary>

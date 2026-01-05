@@ -3,17 +3,18 @@ import { Button, Switch, Tag } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import type { ActionType, ProFormInstance } from '@ant-design/pro-components'
 import { ProTable } from '@ant-design/pro-components'
-import { useIsMobile } from '@/hooks/useIsMobile'
 import { useProTableConfig } from '@/hooks/useProTableConfig'
 import { editPayChannel, getPayChannelList, handleResponse } from '@/services'
-import FormModal from './components/FormModal'
+import type { PayChannel } from '../types'
+import Detail from './Detail'
+import Form from './Form'
 
-export default function PayChannelPage() {
+const List = () => {
   const actionRef = useRef<ActionType>(null)
   const formRef = useRef<ProFormInstance>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [currentRecord, setCurrentRecord] = useState<any>(null)
-  const isMobile = useIsMobile()
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [currentRecord, setCurrentRecord] = useState<PayChannel | undefined>(undefined)
 
   const enableEnum = {
     0: { text: '隐藏', status: 'error' },
@@ -26,19 +27,36 @@ export default function PayChannelPage() {
   }
 
   const handleAdd = () => {
-    setCurrentRecord(null)
+    setCurrentRecord(undefined)
     setModalOpen(true)
   }
 
-  const handleEdit = (record: any) => {
+  const handleEdit = (record: PayChannel) => {
     setCurrentRecord(record)
     setModalOpen(true)
   }
 
-  const handlePayChannelStatus = async (checked: boolean, entity: any) => {
+  const handleDetail = (record: PayChannel) => {
+    setCurrentRecord(record)
+    setDetailOpen(true)
+  }
+
+  const handlePayChannelStatus = async (checked: boolean, entity: PayChannel) => {
     entity.status = checked ? 1 : 0
     const response = await editPayChannel(entity)
     handleResponse(response, { actionRef })
+  }
+
+  const commonProps = {
+    actionRef,
+    formRef,
+    rowKey: 'channelId',
+    request: getPayChannelList,
+    toolBarRender: () => [
+      <Button key="add" type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+        添加支付渠道
+      </Button>,
+    ],
   }
 
   const columns = [
@@ -61,6 +79,7 @@ export default function PayChannelPage() {
       title: '备注',
       dataIndex: 'mark',
       hideInSearch: true,
+      width: 200,
       ellipsis: true,
     },
     {
@@ -88,9 +107,10 @@ export default function PayChannelPage() {
       title: '操作',
       dataIndex: 'operate',
       valueType: 'option',
-      fixed: 'right',
-      width: 'auto',
       render: (_: any, entity: any) => [
+        <Button type="link" key="detail" size="small" onClick={() => handleDetail(entity)}>
+          详情
+        </Button>,
         <Button type="link" key="edit" size="small" onClick={() => handleEdit(entity)}>
           编辑
         </Button>,
@@ -98,29 +118,15 @@ export default function PayChannelPage() {
     },
   ]
 
+  const tableConfig = useProTableConfig()
+
   return (
     <>
-      <ProTable
-        {...useProTableConfig()}
-        actionRef={actionRef}
-        rowKey="channelId"
-        request={getPayChannelList}
-        toolBarRender={() => [
-          <Button
-            key="add"
-            type="primary"
-            icon={<PlusOutlined />}
-            size={isMobile ? 'small' : 'middle'}
-            onClick={handleAdd}
-          >
-            添加支付渠道
-          </Button>,
-        ]}
-        formRef={formRef}
-        columns={columns}
-      />
-
-      <FormModal open={modalOpen} onOpenChange={setModalOpen} record={currentRecord} actionRef={actionRef} />
+      <ProTable {...tableConfig} {...(commonProps as any)} columns={columns as any} />
+      <Form open={modalOpen} onOpenChange={setModalOpen} record={currentRecord} actionRef={actionRef} />
+      <Detail open={detailOpen} onClose={() => setDetailOpen(false)} record={currentRecord} />
     </>
   )
 }
+
+export default List

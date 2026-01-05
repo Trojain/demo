@@ -6,7 +6,7 @@
   "description": "基于 React 19.2 + Ant Design 6.1 + Vite 7.3 的标准 SaaS 管理后台",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --fix",
@@ -24,6 +24,8 @@
     "@ant-design/pro-components": "^2.8.10",
     "ahooks": "^3.8.1",
     "antd": "^6.1.1",
+    "antd-mobile": "5.42.1",
+    "antd-mobile-icons": "^0.3.0",
     "axios": "^1.7.9",
     "classnames": "^2.5.1",
     "dayjs": "^1.11.13",

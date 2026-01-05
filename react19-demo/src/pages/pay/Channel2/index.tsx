@@ -60,13 +60,7 @@ export default function PayChannelPage() {
     rowKey: 'channelId',
     request: getPayChannelList,
     toolBarRender: () => [
-      <Button
-        key="add"
-        type="primary"
-        size={isMobile ? 'small' : 'default'}
-        icon={<PlusOutlined />}
-        onClick={handleAdd}
-      >
+      <Button key="add" type="primary" size={isMobile ? 'small' : 'middle'} icon={<PlusOutlined />} onClick={handleAdd}>
         添加支付渠道
       </Button>,
     ],

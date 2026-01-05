@@ -42,25 +42,25 @@ export default function Login() {
         >
           <ProFormText
             name="username"
-            fieldProps={{ size: 'large', prefix: <UserOutlined /> }}
+            fieldProps={{ prefix: <UserOutlined /> }}
             placeholder="请输入用户名"
             rules={[{ required: true, message: '请输入用户名' }]}
           />
           <ProFormText.Password
             name="password"
-            fieldProps={{ size: 'large', prefix: <LockOutlined /> }}
+            fieldProps={{ prefix: <LockOutlined /> }}
             placeholder="请输入密码"
             rules={[{ required: true, message: '请输入密码' }]}
           />
           <ProFormText
             name="code"
-            fieldProps={{ size: 'large', prefix: <SafetyOutlined /> }}
+            fieldProps={{ prefix: <SafetyOutlined /> }}
             placeholder="请输入google验证码"
             rules={[{ required: true, message: '请输入google验证码' }]}
           />
           <ProFormText
             name="siteCode"
-            fieldProps={{ size: 'large', prefix: <GlobalOutlined /> }}
+            fieldProps={{ prefix: <GlobalOutlined /> }}
             placeholder="请输入站点code（选填）"
           />
         </ProForm>

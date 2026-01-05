@@ -7,6 +7,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const PayChannel = lazy(() => import('@/pages/Pay/Channel'))
 const PayChannel1 = lazy(() => import('@/pages/Pay/Channel1'))
 const PayChannel2 = lazy(() => import('@/pages/Pay/Channel2'))
+const PayChannel3 = lazy(() => import('@/pages/Pay/Channel3'))
 const SystemUser = lazy(() => import('@/pages/System/User'))
 const SystemSetting = lazy(() => import('@/pages/System/Setting'))
 
@@ -51,6 +52,12 @@ export const menuRoutes: AppRouteConfig[] = [
         path: 'channel2',
         name: '支付渠道2',
         component: PayChannel2,
+        keepAlive: true,
+      },
+      {
+        path: 'channel3',
+        name: '支付渠道3',
+        component: PayChannel3,
         keepAlive: true,
       },
     ],

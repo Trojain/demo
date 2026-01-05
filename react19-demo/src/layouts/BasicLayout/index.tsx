@@ -56,7 +56,6 @@ const BasicLayout = () => {
           location={location}
           menu={{ autoClose: false }}
           breakpoint="lg"
-          collapsedWidth={isMobile ? 0 : 80}
           collapsed={collapsed}
           onCollapse={setCollapsed}
           // 自定义菜单颜色
@@ -77,7 +76,7 @@ const BasicLayout = () => {
           )}
           // 自定义菜单头部
           // 自定义菜单头部
-          menuHeaderRender={(_, defaultDom, props) => (
+          menuHeaderRender={(_, __, props) => (
             <Link to="/" className={styles.logoHeader} onClick={() => isMobile && setCollapsed(true)}>
               <img src={logo} alt="logo" className={styles.logoImage} />
               {!props?.collapsed && <h1 className={styles.logoText}>管理系统</h1>}
