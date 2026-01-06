@@ -1,8 +1,6 @@
 @use '@/styles/variables' as *;
 
 .dashboard {
-  background-color: $bg-color-page;
-
   :global(.ant-card-body) {
     padding: 0 24px;
   }

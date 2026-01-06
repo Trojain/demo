@@ -52,7 +52,7 @@ export function useProTableConfig(overrides?: Partial<ProTableConfig>): ProTable
       size: isMobile ? 'small' : 'default',
       ...overrides?.pagination,
     },
-    size: isMobile ? 'small' : 'middle',
+    // size: isMobile ? 'small' : 'middle',
     options: isMobile
       ? false
       : {

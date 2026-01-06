@@ -11,6 +11,11 @@
   --bg-tabs: #18181c;
   --bg-tab: #303030;
 
+  &,
+  & * {
+    --ant-color-border-secondary: #404040;
+  }
+
   // 内容区域背景
   .ant-layout-content {
     background-color: var(--bg-content) !important;
