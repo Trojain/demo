@@ -1,0 +1,74 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
+      "path": "pages/material/index/index",
+      "style": {
+        "navigationBarTitleText": "精选素材"
+      }
+    },
+    {
+      "path": "pages/material/search/index",
+      "style": {
+        "navigationBarTitleText": "搜索素材"
+      }
+    },
+    {
+      "path": "pages/material/detail/index",
+      "style": {
+        "navigationBarTitleText": "素材详情"
+      }
+    },
+    {
+      "path": "pages/wallpaper/index/index",
+      "style": {
+        "navigationBarTitleText": "高清壁纸"
+      }
+    },
+    {
+      "path": "pages/wallpaper/list/index",
+      "style": {
+        "navigationBarTitleText": "壁纸列表"
+      }
+    },
+    {
+      "path": "pages/wallpaper/detail/index",
+      "style": {
+        "navigationBarTitleText": "壁纸详情"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "uniapp-demo",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f6f7fb"
+  },
+  "tabBar": {
+    "color": "#667085",
+    "selectedColor": "#101828",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  }
+}

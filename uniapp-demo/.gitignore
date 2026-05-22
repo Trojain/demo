@@ -1,0 +1,7 @@
+node_modules/
+dist/
+unpackage/
+.pnpm-store/
+.pnpm-cache/
+.npm-cache/
+*.local

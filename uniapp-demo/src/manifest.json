@@ -1,0 +1,27 @@
+{
+  "name": "uniapp-demo",
+  "appid": "",
+  "description": "兼容微信、支付宝、抖音小程序的 uni-app JavaScript 项目",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false
+    },
+    "usingComponents": true
+  },
+  "mp-alipay": {
+    "appid": "",
+    "usingComponents": true
+  },
+  "mp-toutiao": {
+    "appid": "",
+    "usingComponents": true
+  },
+  "uniStatistics": {
+    "enable": false
+  },
+  "vueVersion": "3"
+}
