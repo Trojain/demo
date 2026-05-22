@@ -7,8 +7,8 @@
 
     <view class="notice-card">
       <text class="notice-card__title">使用前配置</text>
-      <text class="notice-card__item">1. 在 src/config/material.js 填写素材模块 API key。</text>
-      <text class="notice-card__item">2. 在小程序后台配置 pixabay.com、cdn.pixabay.com、cdn.apc.360.cn、wallpaper.apc.360.cn 及 360 返回的实际图片域名。</text>
+      <text class="notice-card__item">1. 在 src/config/material.js、src/config/movie.js 中维护素材和影视模块的接口配置。</text>
+      <text class="notice-card__item">2. 在小程序后台配置 pixabay.com、cdn.pixabay.com、cdn.apc.360.cn、wallpaper.apc.360.cn、api.themoviedb.org、image.tmdb.org 及各模块实际返回的资源域名。</text>
       <text class="notice-card__item">3. 保存素材和壁纸时按平台提示授权相册权限。</text>
     </view>
 

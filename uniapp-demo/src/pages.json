@@ -43,6 +43,30 @@
       }
     },
     {
+      "path": "pages/movie/index/index",
+      "style": {
+        "navigationBarTitleText": "影视 Demo"
+      }
+    },
+    {
+      "path": "pages/movie/discover/index",
+      "style": {
+        "navigationBarTitleText": "电影分类"
+      }
+    },
+    {
+      "path": "pages/movie/search/index",
+      "style": {
+        "navigationBarTitleText": "搜索影视"
+      }
+    },
+    {
+      "path": "pages/movie/detail/index",
+      "style": {
+        "navigationBarTitleText": "影视详情"
+      }
+    },
+    {
       "path": "pages/profile/index",
       "style": {
         "navigationBarTitleText": "我的"

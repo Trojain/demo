@@ -14,6 +14,14 @@
         <text class="entry-card__arrow">›</text>
       </view>
 
+      <view class="entry-card entry-card--movie" @tap="goMovie">
+        <view class="entry-card__content">
+          <text class="entry-card__title entry-card__title--light">影视 Demo</text>
+          <text class="entry-card__desc entry-card__desc--light">热门电影、剧集、趋势推荐、分类浏览、关键词搜索和详情推荐</text>
+        </view>
+        <text class="entry-card__arrow entry-card__arrow--light">›</text>
+      </view>
+
       <!-- <view class="entry-card entry-card--dark" @tap="goWallpaper">
         <view class="entry-card__content">
           <text class="entry-card__title entry-card__title--light">高清壁纸</text>
@@ -31,6 +39,11 @@ export default {
     goMaterial() {
       uni.navigateTo({
         url: '/pages/material/index/index',
+      })
+    },
+    goMovie() {
+      uni.navigateTo({
+        url: '/pages/movie/index/index',
       })
     },
     goWallpaper() {
@@ -86,6 +99,11 @@ export default {
 
 .entry-card--dark {
   background: linear-gradient(135deg, #111827, #374151);
+  box-shadow: none;
+}
+
+.entry-card--movie {
+  background: linear-gradient(135deg, #1d4ed8, #0f172a);
   box-shadow: none;
 }
 
