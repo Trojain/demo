@@ -1,7 +1,7 @@
 <template>
   <view class="page">
     <view class="hero-card">
-      <text class="hero-card__title">影视 Demo</text>
+      <text class="hero-card__title">热门影视</text>
       <text class="hero-card__desc">热门内容、分类浏览、关键词搜索和详情推荐。</text>
 
       <view class="hero-actions">

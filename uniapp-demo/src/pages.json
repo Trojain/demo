@@ -45,7 +45,7 @@
     {
       "path": "pages/movie/index/index",
       "style": {
-        "navigationBarTitleText": "影视 Demo"
+        "navigationBarTitleText": "热门影视"
       }
     },
     {
@@ -64,6 +64,36 @@
       "path": "pages/movie/detail/index",
       "style": {
         "navigationBarTitleText": "影视详情"
+      }
+    },
+    {
+      "path": "pages/tv/index/index",
+      "style": {
+        "navigationBarTitleText": "今日追剧"
+      }
+    },
+    {
+      "path": "pages/tv/search/index",
+      "style": {
+        "navigationBarTitleText": "搜索剧集"
+      }
+    },
+    {
+      "path": "pages/tv/show-detail/index",
+      "style": {
+        "navigationBarTitleText": "剧集详情"
+      }
+    },
+    {
+      "path": "pages/tv/season/index",
+      "style": {
+        "navigationBarTitleText": "季 / 集结构"
+      }
+    },
+    {
+      "path": "pages/tv/person-detail/index",
+      "style": {
+        "navigationBarTitleText": "演员详情"
       }
     },
     {

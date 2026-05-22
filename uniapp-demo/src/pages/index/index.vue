@@ -6,18 +6,26 @@
     </view>
 
     <view class="entry-list">
-      <view class="entry-card" @tap="goMaterial">
+      <view class="entry-card entry-card--material" @tap="goMaterial">
         <view class="entry-card__content">
-          <text class="entry-card__title">精选素材</text>
-          <text class="entry-card__desc">图片和视频素材查询，支持分类、筛选和下载</text>
+          <text class="entry-card__title entry-card__title--light">精选素材</text>
+          <text class="entry-card__desc entry-card__desc--light">图片和视频素材查询，支持分类、筛选和下载</text>
         </view>
-        <text class="entry-card__arrow">›</text>
+        <text class="entry-card__arrow entry-card__arrow--light">›</text>
       </view>
 
       <view class="entry-card entry-card--movie" @tap="goMovie">
         <view class="entry-card__content">
-          <text class="entry-card__title entry-card__title--light">影视 Demo</text>
+          <text class="entry-card__title entry-card__title--light">热门影视</text>
           <text class="entry-card__desc entry-card__desc--light">热门电影、剧集、趋势推荐、分类浏览、关键词搜索和详情推荐</text>
+        </view>
+        <text class="entry-card__arrow entry-card__arrow--light">›</text>
+      </view>
+
+      <view class="entry-card entry-card--tv" @tap="goTv">
+        <view class="entry-card__content">
+          <text class="entry-card__title entry-card__title--light">今日追剧</text>
+          <text class="entry-card__desc entry-card__desc--light">今日更新、流媒体播出、高评分推荐、剧名搜索和季集浏览</text>
         </view>
         <text class="entry-card__arrow entry-card__arrow--light">›</text>
       </view>
@@ -44,6 +52,11 @@ export default {
     goMovie() {
       uni.navigateTo({
         url: '/pages/movie/index/index',
+      })
+    },
+    goTv() {
+      uni.navigateTo({
+        url: '/pages/tv/index/index',
       })
     },
     goWallpaper() {
@@ -102,8 +115,18 @@ export default {
   box-shadow: none;
 }
 
+.entry-card--material {
+  background: linear-gradient(135deg, #0f766e, #164e63);
+  box-shadow: none;
+}
+
 .entry-card--movie {
   background: linear-gradient(135deg, #1d4ed8, #0f172a);
+  box-shadow: none;
+}
+
+.entry-card--tv {
+  background: linear-gradient(135deg, #166534, #0f172a);
   box-shadow: none;
 }
 
