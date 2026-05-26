@@ -1,0 +1,38 @@
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - img "thunderbolt" [ref=e8]:
+          - img [ref=e9]
+        - generic [ref=e11]:
+          - generic [ref=e12]: Web3 Monitor
+          - generic [ref=e13]: 半自动交易台
+      - menu [ref=e14]:
+        - menuitem "dashboard 监控总览" [ref=e15] [cursor=pointer]:
+          - img "dashboard" [ref=e16]:
+            - img [ref=e17]
+          - link "监控总览" [ref=e20]:
+            - /url: /overview
+        - menuitem "ordered-list 监控规则" [ref=e21] [cursor=pointer]:
+          - img "ordered-list" [ref=e22]:
+            - img [ref=e23]
+          - link "监控规则" [ref=e26]:
+            - /url: /rules
+        - menuitem "bell 触发确认" [ref=e27] [cursor=pointer]:
+          - img "bell" [ref=e28]:
+            - img [ref=e29]
+          - link "触发确认" [ref=e32]:
+            - /url: /triggers
+        - menuitem "thunderbolt 订单记录" [ref=e33] [cursor=pointer]:
+          - img "thunderbolt" [ref=e34]:
+            - img [ref=e35]
+          - link "订单记录" [ref=e38]:
+            - /url: /orders
+  - generic [ref=e39]:
+    - banner [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e43]: 模拟下单默认开启
+        - generic [ref=e45]: OKX 可用
+        - generic [ref=e47]: Binance 预留
+    - main [ref=e48]:
+      - generic [ref=e58]: 页面加载中

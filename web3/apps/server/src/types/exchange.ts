@@ -1,0 +1,87 @@
+import type { ExchangeCode, OrderSide, OrderType, UnifiedOrderStatus } from './domain.js';
+
+export interface TickerPrice {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 最新成交价，使用字符串保留精度 */
+  price: string;
+  /** 行情更新时间 */
+  eventTime: string;
+}
+
+export interface MarketTickerSnapshot extends TickerPrice {
+  /** 24 小时开盘价，用于计算涨跌幅 */
+  open24h: string;
+  /** 24 小时涨跌幅百分比，正数表示上涨 */
+  changePercent24h: string;
+  /** 24 小时基础币成交量 */
+  volume24h: string;
+  /** 24 小时计价币成交额，USDT 交易对通常可视为 USDT 成交额 */
+  volumeCurrency24h: string;
+  /** 市值字段预留，后续接入 CoinGecko 等第三方数据 */
+  marketCap?: string;
+}
+
+export interface MarketCandle {
+  /** 统一交易对 */
+  symbol: string;
+  /** K 线时间 */
+  time: string;
+  /** 开盘价 */
+  open: string;
+  /** 最高价 */
+  high: string;
+  /** 最低价 */
+  low: string;
+  /** 收盘价 */
+  close: string;
+  /** 基础币成交量 */
+  volume: string;
+  /** 计价币成交额 */
+  volumeCurrency: string;
+}
+
+export interface PlaceOrderRequest {
+  /** 统一交易对 */
+  symbol: string;
+  /** 买入或卖出 */
+  side: OrderSide;
+  /** 市价或限价 */
+  type: OrderType;
+  /** 基础币数量 */
+  baseQuantity?: string;
+  /** 计价币金额 */
+  quoteAmount?: string;
+  /** 限价单价格 */
+  price?: string;
+  /** 客户端订单号，方便幂等和排查 */
+  clientOrderId: string;
+  /** 是否模拟下单 */
+  simulationMode: boolean;
+}
+
+export interface PlaceOrderResult {
+  /** 交易所订单号或本地模拟订单号 */
+  exchangeOrderId: string;
+  /** 统一订单状态 */
+  status: UnifiedOrderStatus;
+  /** 原始响应摘要 */
+  rawMessage: string;
+}
+
+export interface ExchangeAdapter {
+  /** 交易所编码 */
+  readonly code: ExchangeCode;
+  /** 订阅行情，收到价格后通过回调交给行情服务 */
+  connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void): void;
+  /** 查询最新价格，WebSocket 暂无数据时作为补偿 */
+  getLatestPrice(symbol: string): Promise<TickerPrice>;
+  /** 查询完整行情快照，用于总览行情列表 */
+  getTickerSnapshot?(symbol: string): Promise<MarketTickerSnapshot>;
+  /** 查询 K 线，用于价格走势，after 用于向更早时间分页 */
+  getCandles?(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]>;
+  /** 下单接口，第一版只开放模拟下单，真实下单预留 */
+  placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult>;
+}

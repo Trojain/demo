@@ -1,0 +1,3 @@
+[     609ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=ab6825a6:20102
+[     825ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:42
+[    1171ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
