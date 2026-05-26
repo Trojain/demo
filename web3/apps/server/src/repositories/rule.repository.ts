@@ -1,31 +1,31 @@
-import type Database from 'better-sqlite3';
-import type { MonitorRule, RuleRuntimeStatus } from '../types/domain.js';
+import type Database from 'better-sqlite3'
+import type { MonitorRule, RuleRuntimeStatus } from '../types/domain.js'
 
 type RuleRow = {
-  id: string;
-  exchange: MonitorRule['exchange'];
-  symbol: string;
-  operator: MonitorRule['operator'];
-  target_price: string;
-  check_interval_ms: number;
-  side: MonitorRule['side'];
-  order_type: MonitorRule['orderType'];
-  base_quantity?: string;
-  quote_amount?: string;
-  limit_price?: string;
-  max_slippage_percent: string;
-  cooldown_ms: number;
-  max_trigger_count: number;
-  triggered_count: number;
-  simulation_mode: number;
-  enabled: number;
-  runtime_status: RuleRuntimeStatus;
-  last_error_message?: string;
-  last_checked_at?: string;
-  last_triggered_at?: string;
-  created_at: string;
-  updated_at: string;
-};
+  id: string
+  exchange: MonitorRule['exchange']
+  symbol: string
+  operator: MonitorRule['operator']
+  target_price: string
+  check_interval_ms: number
+  side: MonitorRule['side']
+  order_type: MonitorRule['orderType']
+  base_quantity?: string
+  quote_amount?: string
+  limit_price?: string
+  max_slippage_percent: string
+  cooldown_ms: number
+  max_trigger_count: number
+  triggered_count: number
+  simulation_mode: number
+  enabled: number
+  runtime_status: RuleRuntimeStatus
+  last_error_message?: string
+  last_checked_at?: string
+  last_triggered_at?: string
+  created_at: string
+  updated_at: string
+}
 
 function mapRule(row: RuleRow): MonitorRule {
   return {
@@ -51,8 +51,8 @@ function mapRule(row: RuleRow): MonitorRule {
     lastCheckedAt: row.last_checked_at,
     lastTriggeredAt: row.last_triggered_at,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
+    updatedAt: row.updated_at,
+  }
 }
 
 export class RuleRepository {
@@ -62,19 +62,19 @@ export class RuleRepository {
     return this.db
       .prepare('SELECT * FROM monitor_rules ORDER BY created_at DESC')
       .all()
-      .map((row) => mapRule(row as RuleRow));
+      .map(row => mapRule(row as RuleRow))
   }
 
   listEnabled(): MonitorRule[] {
     return this.db
       .prepare('SELECT * FROM monitor_rules WHERE enabled = 1 ORDER BY created_at DESC')
       .all()
-      .map((row) => mapRule(row as RuleRow));
+      .map(row => mapRule(row as RuleRow))
   }
 
   findById(id: string): MonitorRule | undefined {
-    const row = this.db.prepare('SELECT * FROM monitor_rules WHERE id = ?').get(id) as RuleRow | undefined;
-    return row ? mapRule(row) : undefined;
+    const row = this.db.prepare('SELECT * FROM monitor_rules WHERE id = ?').get(id) as RuleRow | undefined
+    return row ? mapRule(row) : undefined
   }
 
   create(rule: MonitorRule): MonitorRule {
@@ -90,7 +90,7 @@ export class RuleRepository {
           @baseQuantity, @quoteAmount, @limitPrice, @maxSlippagePercent, @cooldownMs,
           @maxTriggerCount, @triggeredCount, @simulationMode, @enabled, @runtimeStatus,
           @lastErrorMessage, @lastCheckedAt, @lastTriggeredAt, @createdAt, @updatedAt
-        )`
+        )`,
       )
       .run({
         ...rule,
@@ -102,10 +102,10 @@ export class RuleRepository {
         runtimeStatus: rule.runtimeStatus,
         lastErrorMessage: rule.lastErrorMessage ?? null,
         lastCheckedAt: rule.lastCheckedAt ?? null,
-        lastTriggeredAt: rule.lastTriggeredAt ?? null
-      });
+        lastTriggeredAt: rule.lastTriggeredAt ?? null,
+      })
 
-    return rule;
+    return rule
   }
 
   update(rule: MonitorRule): MonitorRule | undefined {
@@ -130,7 +130,7 @@ export class RuleRepository {
              runtime_status = @runtimeStatus,
              last_error_message = @lastErrorMessage,
              updated_at = @updatedAt
-         WHERE id = @id`
+         WHERE id = @id`,
       )
       .run({
         ...rule,
@@ -141,25 +141,25 @@ export class RuleRepository {
         enabled: rule.enabled ? 1 : 0,
         runtimeStatus: rule.enabled ? 'idle' : 'paused',
         lastErrorMessage: null,
-        updatedAt: new Date().toISOString()
-      });
+        updatedAt: new Date().toISOString(),
+      })
 
-    return this.findById(rule.id);
+    return this.findById(rule.id)
   }
 
   updateRuntimeState(
     id: string,
     updates: {
-      lastCheckedAt?: string;
-      lastTriggeredAt?: string;
-      triggeredCount?: number;
-      runtimeStatus?: RuleRuntimeStatus;
-      lastErrorMessage?: string | null;
-    }
+      lastCheckedAt?: string
+      lastTriggeredAt?: string
+      triggeredCount?: number
+      runtimeStatus?: RuleRuntimeStatus
+      lastErrorMessage?: string | null
+    },
   ) {
-    const current = this.findById(id);
+    const current = this.findById(id)
     if (!current) {
-      return;
+      return
     }
 
     this.db
@@ -171,7 +171,7 @@ export class RuleRepository {
              runtime_status = @runtimeStatus,
              last_error_message = @lastErrorMessage,
              updated_at = @updatedAt
-         WHERE id = @id`
+         WHERE id = @id`,
       )
       .run({
         id,
@@ -179,19 +179,19 @@ export class RuleRepository {
         lastTriggeredAt: updates.lastTriggeredAt ?? current.lastTriggeredAt ?? null,
         triggeredCount: updates.triggeredCount ?? current.triggeredCount,
         runtimeStatus: updates.runtimeStatus ?? current.runtimeStatus,
-        lastErrorMessage: updates.lastErrorMessage === undefined ? current.lastErrorMessage ?? null : updates.lastErrorMessage,
-        updatedAt: new Date().toISOString()
-      });
+        lastErrorMessage: updates.lastErrorMessage === undefined ? (current.lastErrorMessage ?? null) : updates.lastErrorMessage,
+        updatedAt: new Date().toISOString(),
+      })
   }
 
   setEnabled(id: string, enabled: boolean): MonitorRule | undefined {
     this.db
       .prepare('UPDATE monitor_rules SET enabled = ?, runtime_status = ?, updated_at = ? WHERE id = ?')
-      .run(enabled ? 1 : 0, enabled ? 'idle' : 'paused', new Date().toISOString(), id);
-    return this.findById(id);
+      .run(enabled ? 1 : 0, enabled ? 'idle' : 'paused', new Date().toISOString(), id)
+    return this.findById(id)
   }
 
   delete(id: string) {
-    this.db.prepare('DELETE FROM monitor_rules WHERE id = ?').run(id);
+    this.db.prepare('DELETE FROM monitor_rules WHERE id = ?').run(id)
   }
 }

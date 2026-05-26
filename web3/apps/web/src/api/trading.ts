@@ -1,5 +1,17 @@
 import { apiClient } from './client';
-import type { CreateRulePayload, MarketCandle, MarketTickerSnapshot, MonitorRule, OrderRecord, TickerPrice, TriggerEvent, UpdateRulePayload } from '../types';
+import type {
+  AuditLog,
+  CreateRulePayload,
+  ExchangeCode,
+  InstrumentRule,
+  MarketCandle,
+  MarketTickerSnapshot,
+  MonitorRule,
+  OrderRecord,
+  TickerPrice,
+  TriggerEvent,
+  UpdateRulePayload
+} from '../types';
 
 export const tradingApi = {
   getRules: async () => {
@@ -35,6 +47,18 @@ export const tradingApi = {
   },
   getOrders: async () => {
     const { data } = await apiClient.get<OrderRecord[]>('/orders');
+    return data;
+  },
+  getAuditLogs: async (limit = 100) => {
+    const { data } = await apiClient.get<AuditLog[]>('/audit-logs', {
+      params: { limit }
+    });
+    return data;
+  },
+  getTradingRules: async (exchange: ExchangeCode = 'okx', symbol?: string) => {
+    const { data } = await apiClient.get<InstrumentRule[]>('/trading-rules', {
+      params: { exchange, symbol }
+    });
     return data;
   },
   getTickers: async () => {

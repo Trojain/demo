@@ -4,20 +4,10 @@ import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Statistic, To
 import { LineChartOutlined } from '@ant-design/icons'
 import { PageContainer, ProCard, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { tradingApi } from '../api/trading'
+import { DEFAULT_MARKET_SYMBOL, MARKET_SYMBOL_OPTIONS, getCoinMeta, getCoinSymbol } from '../constants/market'
 import { useTradingStore } from '../stores/tradingStore'
 import type { MarketCandle, MarketTickerSnapshot } from '../types'
 import styles from './page.module.scss'
-
-const overviewSymbols = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT']
-
-const coinMeta: Record<string, { name: string; icon: string }> = {
-  BTC: { name: 'Bitcoin', icon: '/coin-icons/BTC.png' },
-  ETH: { name: 'Ethereum', icon: '/coin-icons/ETH.png' },
-  SOL: { name: 'Solana', icon: '/coin-icons/SOL.png' },
-  DOGE: { name: 'Dogecoin', icon: '/coin-icons/DOGE.png' },
-  OKB: { name: 'OKB', icon: '/coin-icons/OKB.png' },
-  BNB: { name: 'Build and Build', icon: '/coin-icons/BNB.png' },
-}
 
 function formatMoneyCompact(value?: string) {
   const numberValue = Number(value)
@@ -62,7 +52,7 @@ function formatUsd(value: number) {
 
 export function OverviewPage() {
   const { message } = AntApp.useApp()
-  const [selectedSymbol, setSelectedSymbol] = useState('BTC-USDT')
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
   const enabledRuleCount = useTradingStore(state => state.rules.filter(rule => rule.enabled).length)
@@ -94,8 +84,8 @@ export function OverviewPage() {
         title: '名称',
         dataIndex: 'symbol',
         render: (_, row) => {
-          const coin = row.symbol.replace('-USDT', '')
-          const meta = coinMeta[coin] ?? { name: coin, icon: '' }
+          const coin = getCoinSymbol(row.symbol)
+          const meta = getCoinMeta(row.symbol)
           return (
             <div className={styles.coinCell}>
               <img className={styles.coinIcon} src={meta.icon} alt={coin} />
@@ -324,14 +314,7 @@ export function OverviewPage() {
         <Col xs={24} lg={24}>
           <ProCard
             title={`实时价格曲线 ${selectedSymbol}`}
-            extra={
-              <Select
-                value={selectedSymbol}
-                options={overviewSymbols.map(symbol => ({ label: symbol.replace('-USDT', ''), value: symbol }))}
-                onChange={handleSelectSymbol}
-                style={{ width: 128 }}
-              />
-            }
+            extra={<Select value={selectedSymbol} options={MARKET_SYMBOL_OPTIONS} onChange={handleSelectSymbol} style={{ width: 128 }} />}
             bodyStyle={{ height: 360 }}
           >
             {candlesLoading ? (

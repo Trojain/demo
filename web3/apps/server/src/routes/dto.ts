@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod'
 
 export const createRuleSchema = z
   .object({
@@ -31,30 +31,32 @@ export const createRuleSchema = z
     /** 是否模拟下单 */
     simulationMode: z.boolean().default(true),
     /** 是否启用 */
-    enabled: z.boolean().default(true)
+    enabled: z.boolean().default(true),
   })
-  .refine((data) => data.baseQuantity || data.quoteAmount, {
-    message: 'baseQuantity 和 quoteAmount 至少填写一个'
+  .refine(data => data.baseQuantity || data.quoteAmount, {
+    message: 'baseQuantity 和 quoteAmount 至少填写一个',
   })
-  .refine((data) => data.orderType === 'market' || data.limitPrice, {
-    message: '限价单必须填写 limitPrice'
-  });
+  .refine(data => data.orderType === 'market' || data.limitPrice, {
+    message: '限价单必须填写 limitPrice',
+  })
 
 export const toggleRuleSchema = z.object({
   /** 是否启用监控规则 */
-  enabled: z.boolean()
-});
+  enabled: z.boolean(),
+})
 
-export const updateRuleSchema = createRuleSchema;
+export const updateRuleSchema = createRuleSchema
+
+export type CreateRuleInput = z.infer<typeof createRuleSchema>
 
 export const confirmOrderSchema = z.object({
   /** 待确认的触发事件 ID */
-  triggerId: z.string().min(1)
-});
+  triggerId: z.string().min(1),
+})
 
 export const marketCandlesQuerySchema = z.object({
   /** K 线交易对，当前总览页支持固定 USDT 交易对 */
   symbol: z.string().default('BTC-USDT'),
   /** K 线周期，1m 会返回最近 24 小时 1440 个点 */
-  bar: z.enum(['1m', '5m', '15m']).default('1m')
-});
+  bar: z.enum(['1m', '5m', '15m']).default('1m'),
+})

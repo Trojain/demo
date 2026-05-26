@@ -68,9 +68,25 @@ export function createDatabase(databasePath: string) {
       FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
     );
 
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      level TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      rule_id TEXT,
+      trigger_id TEXT,
+      order_id TEXT,
+      message TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_monitor_rules_enabled ON monitor_rules(enabled);
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
   `);
 
   migrateMonitorRules(db);

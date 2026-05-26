@@ -17,7 +17,16 @@ interface TradingState {
   priceSeries: Array<{ time: string; symbol: string; price: number }>;
   /** 全局加载状态 */
   loading: boolean;
+  /** 规则列表加载状态 */
+  rulesLoading: boolean;
+  /** 触发事件加载状态 */
+  triggersLoading: boolean;
+  /** 订单记录加载状态 */
+  ordersLoading: boolean;
   refreshAll: () => Promise<void>;
+  refreshRules: () => Promise<void>;
+  refreshTriggers: () => Promise<void>;
+  refreshOrders: () => Promise<void>;
   setTicker: (ticker: TickerPrice) => void;
   prependTrigger: (trigger: TriggerEvent) => void;
 }
@@ -38,6 +47,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   marketOverview: [],
   priceSeries: [],
   loading: false,
+  rulesLoading: false,
+  triggersLoading: false,
+  ordersLoading: false,
   refreshAll: async () => {
     set({ loading: true });
     try {
@@ -54,6 +66,33 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       set({ rules, triggers, orders, tickers, marketOverview, priceSeries: nextSeries.slice(-80) });
     } finally {
       set({ loading: false });
+    }
+  },
+  refreshRules: async () => {
+    set({ rulesLoading: true });
+    try {
+      const rules = await tradingApi.getRules();
+      set({ rules });
+    } finally {
+      set({ rulesLoading: false });
+    }
+  },
+  refreshTriggers: async () => {
+    set({ triggersLoading: true });
+    try {
+      const triggers = await tradingApi.getTriggers();
+      set({ triggers });
+    } finally {
+      set({ triggersLoading: false });
+    }
+  },
+  refreshOrders: async () => {
+    set({ ordersLoading: true });
+    try {
+      const orders = await tradingApi.getOrders();
+      set({ orders });
+    } finally {
+      set({ ordersLoading: false });
     }
   },
   setTicker: (ticker) => {

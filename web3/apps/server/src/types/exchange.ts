@@ -43,6 +43,25 @@ export interface MarketCandle {
   volumeCurrency: string;
 }
 
+export interface InstrumentRule {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对，例如 BTC-USDT */
+  symbol: string;
+  /** 基础币，例如 BTC */
+  baseCurrency: string;
+  /** 计价币，例如 USDT */
+  quoteCurrency: string;
+  /** 价格最小变动单位，对应 OKX tickSz */
+  tickSize: string;
+  /** 数量最小变动单位，对应 OKX lotSz */
+  lotSize: string;
+  /** 最小下单数量，对应 OKX minSz，现货场景是基础币数量 */
+  minSize: string;
+  /** 交易对状态，OKX live 表示可交易 */
+  state: string;
+}
+
 export interface PlaceOrderRequest {
   /** 统一交易对 */
   symbol: string;
@@ -82,6 +101,8 @@ export interface ExchangeAdapter {
   getTickerSnapshot?(symbol: string): Promise<MarketTickerSnapshot>;
   /** 查询 K 线，用于价格走势，after 用于向更早时间分页 */
   getCandles?(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]>;
+  /** 查询交易规则，用于下单前校验 */
+  getInstrumentRules?(): Promise<InstrumentRule[]>;
   /** 下单接口，第一版只开放模拟下单，真实下单预留 */
   placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult>;
 }

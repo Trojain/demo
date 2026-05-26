@@ -3,14 +3,17 @@ import cors from '@fastify/cors';
 import { appConfig } from '../config/env.js';
 import { createDatabase } from '../database/database.js';
 import { ExchangeFactory } from '../exchange/exchange-factory.js';
+import { AuditLogRepository } from '../repositories/audit-log.repository.js';
 import { OrderRepository } from '../repositories/order.repository.js';
 import { RuleRepository } from '../repositories/rule.repository.js';
 import { TriggerRepository } from '../repositories/trigger.repository.js';
 import { registerApiRoutes } from '../routes/api.routes.js';
+import { AuditLogService } from '../services/audit-log.service.js';
 import { MarketService } from '../services/market.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { OrderService } from '../services/order.service.js';
 import { StrategyService } from '../services/strategy.service.js';
+import { TradingRuleService } from '../services/trading-rule.service.js';
 
 export interface ServerRuntime {
   app: FastifyInstance;
@@ -21,10 +24,23 @@ export interface ServerRuntime {
 }
 
 export async function createServerRuntime(): Promise<ServerRuntime> {
+  const isDevelopment = process.env.NODE_ENV !== 'production';
   const app = Fastify({
-    logger: {
-      level: 'info'
-    }
+    logger: isDevelopment
+      ? {
+          level: 'info',
+          transport: {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+              ignore: 'pid,hostname'
+            }
+          }
+        }
+      : {
+          level: 'info'
+        }
   });
 
   await app.register(cors, {
@@ -36,17 +52,22 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const ruleRepository = new RuleRepository(db);
   const triggerRepository = new TriggerRepository(db);
   const orderRepository = new OrderRepository(db);
+  const auditLogRepository = new AuditLogRepository(db);
   const notificationService = new NotificationService();
+  const auditLogService = new AuditLogService(auditLogRepository);
   const marketService = new MarketService(exchangeFactory);
-  const orderService = new OrderService(exchangeFactory, ruleRepository, triggerRepository, orderRepository);
-  const strategyService = new StrategyService(ruleRepository, triggerRepository, marketService, notificationService);
+  const tradingRuleService = new TradingRuleService(exchangeFactory);
+  const orderService = new OrderService(exchangeFactory, ruleRepository, triggerRepository, orderRepository, auditLogService);
+  const strategyService = new StrategyService(ruleRepository, triggerRepository, marketService, notificationService, auditLogService);
 
   await registerApiRoutes(app, {
+    auditLogService,
     exchangeFactory,
     marketService,
     orderService,
     orderRepository,
     ruleRepository,
+    tradingRuleService,
     triggerRepository
   });
 

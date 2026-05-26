@@ -1,23 +1,23 @@
-import type Database from 'better-sqlite3';
-import type { OrderRecord } from '../types/domain.js';
+import type Database from 'better-sqlite3'
+import type { OrderRecord } from '../types/domain.js'
 
 type OrderRow = {
-  id: string;
-  trigger_id: string;
-  rule_id: string;
-  exchange: OrderRecord['exchange'];
-  symbol: string;
-  side: OrderRecord['side'];
-  order_type: OrderRecord['orderType'];
-  base_quantity?: string;
-  quote_amount?: string;
-  price?: string;
-  exchange_order_id: string;
-  status: OrderRecord['status'];
-  simulation_mode: number;
-  raw_message: string;
-  created_at: string;
-};
+  id: string
+  trigger_id: string
+  rule_id: string
+  exchange: OrderRecord['exchange']
+  symbol: string
+  side: OrderRecord['side']
+  order_type: OrderRecord['orderType']
+  base_quantity?: string
+  quote_amount?: string
+  price?: string
+  exchange_order_id: string
+  status: OrderRecord['status']
+  simulation_mode: number
+  raw_message: string
+  created_at: string
+}
 
 function mapOrder(row: OrderRow): OrderRecord {
   return {
@@ -35,8 +35,8 @@ function mapOrder(row: OrderRow): OrderRecord {
     status: row.status,
     simulationMode: Boolean(row.simulation_mode),
     rawMessage: row.raw_message,
-    createdAt: row.created_at
-  };
+    createdAt: row.created_at,
+  }
 }
 
 export class OrderRepository {
@@ -46,7 +46,7 @@ export class OrderRepository {
     return this.db
       .prepare('SELECT * FROM order_records ORDER BY created_at DESC LIMIT ?')
       .all(limit)
-      .map((row) => mapOrder(row as OrderRow));
+      .map(row => mapOrder(row as OrderRow))
   }
 
   create(order: OrderRecord): OrderRecord {
@@ -58,16 +58,16 @@ export class OrderRepository {
         ) VALUES (
           @id, @triggerId, @ruleId, @exchange, @symbol, @side, @orderType, @baseQuantity,
           @quoteAmount, @price, @exchangeOrderId, @status, @simulationMode, @rawMessage, @createdAt
-        )`
+        )`,
       )
       .run({
         ...order,
         baseQuantity: order.baseQuantity ?? null,
         quoteAmount: order.quoteAmount ?? null,
         price: order.price ?? null,
-        simulationMode: order.simulationMode ? 1 : 0
-      });
+        simulationMode: order.simulationMode ? 1 : 0,
+      })
 
-    return order;
+    return order
   }
 }

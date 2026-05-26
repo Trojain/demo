@@ -1,128 +1,160 @@
-import { Decimal } from 'decimal.js';
-import { nanoid } from 'nanoid';
-import type { MonitorRule } from '../types/domain.js';
-import type { RuleRepository } from '../repositories/rule.repository.js';
-import type { TriggerRepository } from '../repositories/trigger.repository.js';
-import type { MarketService } from './market.service.js';
-import type { NotificationService } from './notification.service.js';
+import { Decimal } from 'decimal.js'
+import { nanoid } from 'nanoid'
+import type { MonitorRule } from '../types/domain.js'
+import type { RuleRepository } from '../repositories/rule.repository.js'
+import type { TriggerRepository } from '../repositories/trigger.repository.js'
+import type { MarketService } from './market.service.js'
+import type { NotificationService } from './notification.service.js'
+import type { AuditLogService } from './audit-log.service.js'
 
 export class StrategyService {
-  private timer?: NodeJS.Timeout;
-  private scanning = false;
+  private timer?: NodeJS.Timeout
+  private scanning = false
 
   constructor(
     private readonly ruleRepository: RuleRepository,
     private readonly triggerRepository: TriggerRepository,
     private readonly marketService: MarketService,
-    private readonly notificationService: NotificationService
+    private readonly notificationService: NotificationService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   start() {
     this.timer = setInterval(() => {
-      void this.scanRules();
-    }, 1000);
+      void this.scanRules()
+    }, 1000)
   }
 
   stop() {
-    clearInterval(this.timer);
+    clearInterval(this.timer)
   }
 
   async scanRules() {
     if (this.scanning) {
-      return;
+      return
     }
 
-    this.scanning = true;
-    const scanStartedAt = new Date().toISOString();
-    let enabledRules: MonitorRule[] = [];
+    this.scanning = true
+    const scanStartedAt = new Date().toISOString()
+    let enabledRules: MonitorRule[] = []
     try {
-      enabledRules = this.ruleRepository.listEnabled();
+      enabledRules = this.ruleRepository.listEnabled()
       try {
-        const overviewSnapshots = await this.marketService.refreshOverviewSnapshots('okx');
-        overviewSnapshots.forEach((ticker) => {
-          this.notificationService.broadcast('ticker.updated', ticker);
-        });
+        const overviewSnapshots = await this.marketService.refreshOverviewSnapshots('okx')
+        overviewSnapshots.forEach(ticker => {
+          this.notificationService.broadcast('ticker.updated', ticker)
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : '总览行情刷新失败';
+        const message = error instanceof Error ? error.message : '总览行情刷新失败'
         // 总览行情刷新失败不阻断单条规则检测，规则详情中保留最近公共行情错误。
-        enabledRules.forEach((rule) => {
+        enabledRules.forEach(rule => {
           this.ruleRepository.updateRuntimeState(rule.id, {
             lastCheckedAt: scanStartedAt,
             runtimeStatus: 'error',
-            lastErrorMessage: message
-          });
-        });
+            lastErrorMessage: message,
+          })
+          this.auditLogService.record({
+            level: 'error',
+            action: 'strategy.error',
+            entityType: 'rule',
+            entityId: rule.id,
+            ruleId: rule.id,
+            message,
+            dedupeKey: `strategy.error:overview:${rule.id}:${message}`,
+            dedupeMs: 60_000,
+            payload: {
+              exchange: rule.exchange,
+              symbol: rule.symbol,
+              scope: 'overview',
+            },
+          })
+        })
       }
 
-      this.marketService.refreshSubscriptions(enabledRules, (ticker) => {
-        this.notificationService.broadcast('ticker.updated', ticker);
-      });
+      this.marketService.refreshSubscriptions(enabledRules, ticker => {
+        this.notificationService.broadcast('ticker.updated', ticker)
+      })
 
       for (const rule of enabledRules) {
-        await this.checkRule(rule);
+        await this.checkRule(rule)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '策略扫描失败';
+      const message = error instanceof Error ? error.message : '策略扫描失败'
       // 外层保护用于兜底未知错误，避免单次扫描异常导致服务进程退出。
-      enabledRules.forEach((rule) => {
+      enabledRules.forEach(rule => {
         this.ruleRepository.updateRuntimeState(rule.id, {
           lastCheckedAt: scanStartedAt,
           runtimeStatus: 'error',
-          lastErrorMessage: message
-        });
-      });
+          lastErrorMessage: message,
+        })
+        this.auditLogService.record({
+          level: 'error',
+          action: 'strategy.error',
+          entityType: 'rule',
+          entityId: rule.id,
+          ruleId: rule.id,
+          message,
+          dedupeKey: `strategy.error:scan:${rule.id}:${message}`,
+          dedupeMs: 60_000,
+          payload: {
+            exchange: rule.exchange,
+            symbol: rule.symbol,
+            scope: 'scan',
+          },
+        })
+      })
     } finally {
-      this.scanning = false;
+      this.scanning = false
     }
   }
 
   private async checkRule(rule: MonitorRule) {
     try {
-      const now = Date.now();
-      const lastChecked = rule.lastCheckedAt ? new Date(rule.lastCheckedAt).getTime() : 0;
+      const now = Date.now()
+      const lastChecked = rule.lastCheckedAt ? new Date(rule.lastCheckedAt).getTime() : 0
       if (now - lastChecked < rule.checkIntervalMs) {
-        return;
+        return
       }
 
-      const ticker = await this.marketService.refreshLatestPrice(rule.exchange, rule.symbol);
-      this.notificationService.broadcast('ticker.updated', ticker);
+      const ticker = await this.marketService.refreshLatestPrice(rule.exchange, rule.symbol)
+      this.notificationService.broadcast('ticker.updated', ticker)
 
       if (rule.triggeredCount >= rule.maxTriggerCount) {
         this.ruleRepository.updateRuntimeState(rule.id, {
           lastCheckedAt: new Date(now).toISOString(),
           runtimeStatus: 'limit_reached',
-          lastErrorMessage: null
-        });
-        return;
+          lastErrorMessage: null,
+        })
+        return
       }
 
       this.ruleRepository.updateRuntimeState(rule.id, {
         lastCheckedAt: new Date(now).toISOString(),
         runtimeStatus: 'running',
-        lastErrorMessage: null
-      });
+        lastErrorMessage: null,
+      })
 
-      const lastTriggered = rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).getTime() : 0;
+      const lastTriggered = rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).getTime() : 0
       if (lastTriggered && now - lastTriggered < rule.cooldownMs) {
-        return;
+        return
       }
 
-      const marketPrice = new Decimal(ticker.price);
-      const targetPrice = new Decimal(rule.targetPrice);
-      const matched = rule.operator === 'gte' ? marketPrice.greaterThanOrEqualTo(targetPrice) : marketPrice.lessThanOrEqualTo(targetPrice);
+      const marketPrice = new Decimal(ticker.price)
+      const targetPrice = new Decimal(rule.targetPrice)
+      const matched = rule.operator === 'gte' ? marketPrice.greaterThanOrEqualTo(targetPrice) : marketPrice.lessThanOrEqualTo(targetPrice)
 
       if (!matched) {
-        return;
+        return
       }
 
-      const pendingEvent = this.triggerRepository.findPendingByRuleId(rule.id);
+      const pendingEvent = this.triggerRepository.findPendingByRuleId(rule.id)
       if (pendingEvent) {
         this.ruleRepository.updateRuntimeState(rule.id, {
           lastTriggeredAt: pendingEvent.createdAt,
           runtimeStatus: 'running',
-          lastErrorMessage: null
-        });
-        return;
+          lastErrorMessage: null,
+        })
+        return
       }
 
       const event = this.triggerRepository.create({
@@ -133,21 +165,52 @@ export class StrategyService {
         marketPrice: ticker.price,
         targetPrice: rule.targetPrice,
         status: 'pending',
-        createdAt: new Date(now).toISOString()
-      });
+        createdAt: new Date(now).toISOString(),
+      })
 
       this.ruleRepository.updateRuntimeState(rule.id, {
         lastTriggeredAt: event.createdAt,
         triggeredCount: rule.triggeredCount + 1,
         runtimeStatus: rule.triggeredCount + 1 >= rule.maxTriggerCount ? 'limit_reached' : 'running',
-        lastErrorMessage: null
-      });
-      this.notificationService.broadcast('trigger.created', event);
+        lastErrorMessage: null,
+      })
+      this.auditLogService.record({
+        action: 'trigger.created',
+        entityType: 'trigger',
+        entityId: event.id,
+        ruleId: rule.id,
+        triggerId: event.id,
+        message: `${rule.symbol} 已触发目标价`,
+        payload: {
+          exchange: rule.exchange,
+          symbol: rule.symbol,
+          operator: rule.operator,
+          marketPrice: ticker.price,
+          targetPrice: rule.targetPrice,
+        },
+      })
+      this.notificationService.broadcast('trigger.created', event)
     } catch (error) {
+      const message = error instanceof Error ? error.message : '策略检测失败'
       this.ruleRepository.updateRuntimeState(rule.id, {
         runtimeStatus: 'error',
-        lastErrorMessage: error instanceof Error ? error.message : '策略检测失败'
-      });
+        lastErrorMessage: message,
+      })
+      this.auditLogService.record({
+        level: 'error',
+        action: 'strategy.error',
+        entityType: 'rule',
+        entityId: rule.id,
+        ruleId: rule.id,
+        message,
+        dedupeKey: `strategy.error:rule:${rule.id}:${message}`,
+        dedupeMs: 60_000,
+        payload: {
+          exchange: rule.exchange,
+          symbol: rule.symbol,
+          scope: 'rule',
+        },
+      })
     }
   }
 }

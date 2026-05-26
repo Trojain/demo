@@ -1,2 +1,130 @@
 [      66ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=ab6825a6:20102
 [     185ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:42
+[ 3128507ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
+[ 3128859ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:42
+[ 3147221ms] Error: Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate. React limits the number of nested updates to prevent infinite loops.
+    at getRootForUpdatedFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:3526:128)
+    at enqueueConcurrentRenderForLane (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:3514:16)
+    at forceStoreRerender (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:6104:21)
+    at http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:6090:107
+    at http://localhost:5173/node_modules/.vite/deps/zustand.js?v=78090971:17:39
+    at Set.forEach (<anonymous>)
+    at setState (http://localhost:5173/node_modules/.vite/deps/zustand.js?v=78090971:17:17)
+    at setTicker (http://localhost:5173/src/stores/tradingStore.ts?t=1779788202295:72:5)
+    at Object.onMessage (http://localhost:5173/src/hooks/useRealtimeTrading.ts?t=1779788202295:13:11)
+    at socket.onmessage (http://localhost:5173/src/api/realtime.ts?t=1779782343688:24:15)
+[ 4489126ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/rules:0
+[ 4489129ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/triggers:0
+[ 4489131ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/orders:0
+[ 4489185ms] AxiosError: Request failed with status code 500
+    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:1441:12)
+    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:1845:7)
+    at Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:2670:41)
+    at async Object.getRules (http://localhost:5173/src/api/trading.ts?t=1779790365365:4:22)
+    at async Promise.all (index 0)
+    at async refreshAll (http://localhost:5173/src/stores/tradingStore.ts?t=1779790365365:24:66)
+[ 4489151ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tickers:0
+[ 4489152ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/market/overview:0
+[ 4489488ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/market/candles?symbol=BTC-USDT&bar=1m:0
+[ 4489512ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/market/candles?symbol=BTC-USDT&bar=1m:0
+[ 4667438ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/rules:0
+[ 4667443ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/triggers:0
+[ 4667444ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/orders:0
+[ 4667501ms] AxiosError: Request failed with status code 500
+    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:1441:12)
+    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:1845:7)
+    at Axios.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=78090971:2670:41)
+    at async Object.getRules (http://localhost:5173/src/api/trading.ts?t=1779790543787:4:22)
+    at async Promise.all (index 0)
+    at async refreshAll (http://localhost:5173/src/stores/tradingStore.ts?t=1779790543787:24:66)
+[ 4667473ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tickers:0
+[ 4667475ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/market/overview:0
+[ 5141446ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:864
+[ 5144749ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5149055ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5154362ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5160701ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5168167ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5176282ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5188008ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5198335ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5209212ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5219718ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5228911ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5241118ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5251760ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5262419ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5273310ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5282274ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5293471ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5304897ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5316785ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5327639ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5336516ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5346251ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5357747ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5366805ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5375830ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5384317ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5392711ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5403570ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5414198ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5425453ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5434012ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5444017ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5454887ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5465363ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5476904ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5486961ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5496154ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5504845ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5515272ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5526322ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5537300ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5549285ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5559719ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5569574ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5577893ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5588528ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5600407ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5612420ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5622074ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5631573ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5640089ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5649431ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5661684ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5671797ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5681005ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5691275ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5701714ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5710486ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5719849ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5730064ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5739741ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5749673ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5758406ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5768585ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5778319ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5790248ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5799710ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5809073ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5819029ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5827433ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5838268ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5848145ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5859515ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5870020ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts?t=1779782343688:18
+[ 5879417ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
+[ 5879677ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts:42
+[ 7197620ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET @ http://localhost:5173/src/api/realtime.ts:18
+[ 7220758ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 7225068ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 7236390ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 7240709ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 7252090ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
+[ 7252220ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts:42
+[ 7258054ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
+[ 7258186ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts:42
+[ 7259396ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:864
+[ 7260364ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
+[ 7260521ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts:42

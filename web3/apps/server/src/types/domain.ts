@@ -10,6 +10,16 @@ export type TriggerStatus = 'pending' | 'confirmed' | 'ignored';
 
 export type RuleRuntimeStatus = 'idle' | 'running' | 'paused' | 'limit_reached' | 'error';
 
+export type AuditLogLevel = 'info' | 'warning' | 'error';
+
+export type AuditLogAction =
+  | 'trigger.created'
+  | 'trigger.confirmed'
+  | 'trigger.ignored'
+  | 'order.submitted'
+  | 'order.failed'
+  | 'strategy.error';
+
 export type UnifiedOrderStatus =
   | 'submitted'
   | 'partially_filled'
@@ -117,6 +127,31 @@ export interface OrderRecord {
   simulationMode: boolean;
   /** 交易所响应摘要或错误说明 */
   rawMessage: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+export interface AuditLog {
+  /** 审计日志主键 */
+  id: string;
+  /** 日志级别，区分普通记录、警告和错误 */
+  level: AuditLogLevel;
+  /** 操作动作，使用固定枚举方便前端筛选 */
+  action: AuditLogAction;
+  /** 关联实体类型，例如 trigger、order、strategy */
+  entityType: string;
+  /** 关联实体 ID，可为空 */
+  entityId?: string;
+  /** 关联规则 ID，可为空 */
+  ruleId?: string;
+  /** 关联触发事件 ID，可为空 */
+  triggerId?: string;
+  /** 关联订单 ID，可为空 */
+  orderId?: string;
+  /** 面向用户和排查人员的摘要信息 */
+  message: string;
+  /** 结构化详情 JSON 字符串，保留关键上下文 */
+  payloadJson?: string;
   /** 创建时间 */
   createdAt: string;
 }

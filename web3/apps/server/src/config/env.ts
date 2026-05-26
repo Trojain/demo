@@ -1,19 +1,17 @@
-import path from 'node:path';
-import { config } from 'dotenv';
-import { z } from 'zod';
+import path from 'node:path'
+import { config } from 'dotenv'
+import { z } from 'zod'
 
-config();
-config({ path: path.resolve(process.cwd(), '../../.env'), override: false });
+config()
+config({ path: path.resolve(process.cwd(), '../../.env'), override: false })
 
-const booleanString = z
-  .union([z.boolean(), z.string()])
-  .transform((value) => {
-    if (typeof value === 'boolean') {
-      return value;
-    }
+const booleanString = z.union([z.boolean(), z.string()]).transform(value => {
+  if (typeof value === 'boolean') {
+    return value
+  }
 
-    return value.toLowerCase() === 'true';
-  });
+  return value.toLowerCase() === 'true'
+})
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(3001),
@@ -26,10 +24,10 @@ const envSchema = z.object({
   OKX_API_PASSPHRASE: z.string().default(''),
   OKX_SIMULATED: booleanString.default(true),
   BINANCE_API_KEY: z.string().default(''),
-  BINANCE_API_SECRET: z.string().default('')
-});
+  BINANCE_API_SECRET: z.string().default(''),
+})
 
-const parsedEnv = envSchema.parse(process.env);
+const parsedEnv = envSchema.parse(process.env)
 
 export const appConfig = {
   /** 服务端口，前端 Vite 代理默认访问该端口 */
@@ -50,12 +48,12 @@ export const appConfig = {
     /** OKX Passphrase，真实下单时必填 */
     passphrase: parsedEnv.OKX_API_PASSPHRASE,
     /** OKX 模拟盘标记，后续真实下单时用于请求头 */
-    simulated: parsedEnv.OKX_SIMULATED
+    simulated: parsedEnv.OKX_SIMULATED,
   },
   binance: {
     /** Binance API Key，后续接入真实下单时使用 */
     apiKey: parsedEnv.BINANCE_API_KEY,
     /** Binance API Secret，后续接入真实下单时使用 */
-    apiSecret: parsedEnv.BINANCE_API_SECRET
-  }
-} as const;
+    apiSecret: parsedEnv.BINANCE_API_SECRET,
+  },
+} as const

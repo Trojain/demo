@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import { Decimal } from 'decimal.js';
 import WebSocket from 'ws';
-import type { ExchangeAdapter, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js';
+import type { ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js';
 import { fetchExchangeJson } from '../http-client.js';
 import { toDisplaySymbol, toOkxInstId } from '../symbol.js';
 
@@ -20,17 +20,39 @@ type OkxCandlesResponse = {
   data?: Array<[string, string, string, string, string, string, string, string, string]>;
 };
 
+type OkxInstrumentsResponse = {
+  data?: Array<{
+    instId: string;
+    baseCcy: string;
+    quoteCcy: string;
+    tickSz: string;
+    lotSz: string;
+    minSz: string;
+    state: string;
+  }>;
+};
+
 export class OkxAdapter implements ExchangeAdapter {
   readonly code = 'okx' as const;
   private ws?: WebSocket;
   private reconnectTimer?: NodeJS.Timeout;
+  private currentTickerSignature = '';
+  private tickerHandler?: (ticker: TickerPrice) => void;
 
   connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void) {
-    const uniqueSymbols = [...new Set(symbols.map(toOkxInstId))];
+    const uniqueSymbols = [...new Set(symbols.map(toOkxInstId))].sort();
     if (uniqueSymbols.length === 0) {
       return;
     }
 
+    const signature = uniqueSymbols.join('|');
+    this.tickerHandler = onTicker;
+    const tickerSocketActive = this.ws?.readyState === WebSocket.CONNECTING || this.ws?.readyState === WebSocket.OPEN;
+    if (this.currentTickerSignature === signature && tickerSocketActive) {
+      return;
+    }
+
+    this.currentTickerSignature = signature;
     this.ws?.close();
     this.ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
 
@@ -50,7 +72,7 @@ export class OkxAdapter implements ExchangeAdapter {
         return;
       }
 
-      onTicker({
+      this.tickerHandler?.({
         exchange: this.code,
         symbol: toDisplaySymbol(ticker.instId),
         price: ticker.last,
@@ -60,7 +82,14 @@ export class OkxAdapter implements ExchangeAdapter {
 
     this.ws.on('close', () => {
       clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = setTimeout(() => this.connectTickerStream(symbols, onTicker), 3000);
+      const reconnectSymbols = this.currentTickerSignature.split('|').filter(Boolean);
+      const reconnectHandler = this.tickerHandler;
+      if (reconnectSymbols.length > 0 && reconnectHandler) {
+        this.reconnectTimer = setTimeout(() => {
+          this.currentTickerSignature = '';
+          this.connectTickerStream(reconnectSymbols, reconnectHandler);
+        }, 3000);
+      }
     });
 
     this.ws.on('error', () => {
@@ -127,6 +156,21 @@ export class OkxAdapter implements ExchangeAdapter {
         volumeCurrency: item[6]
       }))
       .reverse();
+  }
+
+  async getInstrumentRules(): Promise<InstrumentRule[]> {
+    const payload = await fetchExchangeJson<OkxInstrumentsResponse>('https://www.okx.com/api/v5/public/instruments?instType=SPOT');
+
+    return (payload.data ?? []).map((item) => ({
+      exchange: this.code,
+      symbol: toDisplaySymbol(item.instId),
+      baseCurrency: item.baseCcy,
+      quoteCurrency: item.quoteCcy,
+      tickSize: item.tickSz,
+      lotSize: item.lotSz,
+      minSize: item.minSz,
+      state: item.state
+    }));
   }
 
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {

@@ -4,6 +4,8 @@ export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
 export type TriggerStatus = 'pending' | 'confirmed' | 'ignored';
 export type RuleRuntimeStatus = 'idle' | 'running' | 'paused' | 'limit_reached' | 'error';
+export type AuditLogLevel = 'info' | 'warning' | 'error';
+export type AuditLogAction = 'trigger.created' | 'trigger.confirmed' | 'trigger.ignored' | 'order.submitted' | 'order.failed' | 'strategy.error';
 
 export interface MonitorRule {
   /** 规则主键 */
@@ -149,6 +151,50 @@ export interface OrderRecord {
   rawMessage: string;
   /** 创建时间 */
   createdAt: string;
+}
+
+export interface AuditLog {
+  /** 审计日志主键 */
+  id: string;
+  /** 日志级别 */
+  level: AuditLogLevel;
+  /** 审计动作 */
+  action: AuditLogAction;
+  /** 关联实体类型 */
+  entityType: string;
+  /** 关联实体 ID */
+  entityId?: string;
+  /** 关联规则 ID */
+  ruleId?: string;
+  /** 关联触发事件 ID */
+  triggerId?: string;
+  /** 关联订单 ID */
+  orderId?: string;
+  /** 摘要信息 */
+  message: string;
+  /** 结构化详情 JSON 字符串 */
+  payloadJson?: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+export interface InstrumentRule {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 基础币 */
+  baseCurrency: string;
+  /** 计价币 */
+  quoteCurrency: string;
+  /** 价格最小变动单位 */
+  tickSize: string;
+  /** 数量最小变动单位 */
+  lotSize: string;
+  /** 最小下单数量 */
+  minSize: string;
+  /** 交易对状态 */
+  state: string;
 }
 
 export interface CreateRulePayload {
