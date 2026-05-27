@@ -1,17 +1,17 @@
-import { ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Layout, Menu, Space, Tag, Typography } from 'antd';
-import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, OrderedListOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import styles from './DashboardLayout.module.scss';
+import { ReactNode } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { Layout, Menu, Space, Tag, Typography } from 'antd'
+import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, OrderedListOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import styles from './DashboardLayout.module.scss'
 
-const { Header, Content, Sider } = Layout;
+const { Header, Content, Sider } = Layout
 
 interface DashboardLayoutProps {
-  children: ReactNode;
+  children: ReactNode
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const location = useLocation();
+  const location = useLocation()
 
   return (
     <Layout className={styles.shell}>
@@ -24,32 +24,32 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
         </div>
         <Menu
-          mode="inline"
+          mode='inline'
           selectedKeys={[location.pathname]}
           className={styles.menu}
           items={[
-            { key: '/overview', icon: <DashboardOutlined />, label: <Link to="/overview">监控总览</Link> },
-            { key: '/rules', icon: <OrderedListOutlined />, label: <Link to="/rules">监控规则</Link> },
-            { key: '/triggers', icon: <BellOutlined />, label: <Link to="/triggers">触发确认</Link> },
-            { key: '/orders', icon: <ThunderboltOutlined />, label: <Link to="/orders">订单记录</Link> },
-            { key: '/signals', icon: <ThunderboltOutlined />, label: <Link to="/signals">交易信号</Link> },
-            { key: '/risk-checks', icon: <SafetyOutlined />, label: <Link to="/risk-checks">风控检查</Link> },
-            { key: '/risk-config', icon: <SafetyOutlined />, label: <Link to="/risk-config">风控配置</Link> },
-            { key: '/market-health', icon: <LineChartOutlined />, label: <Link to="/market-health">行情健康</Link> },
-            { key: '/audit-logs', icon: <AuditOutlined />, label: <Link to="/audit-logs">审计日志</Link> }
+            { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>监控总览</Link> },
+            { key: '/rules', icon: <OrderedListOutlined />, label: <Link to='/rules'>监控规则</Link> },
+            { key: '/signals', icon: <ThunderboltOutlined />, label: <Link to='/signals'>交易信号</Link> },
+            { key: '/risk-checks', icon: <SafetyOutlined />, label: <Link to='/risk-checks'>风控检查</Link> },
+            { key: '/triggers', icon: <BellOutlined />, label: <Link to='/triggers'>触发确认</Link> },
+            { key: '/orders', icon: <ThunderboltOutlined />, label: <Link to='/orders'>订单记录</Link> },
+            { key: '/audit-logs', icon: <AuditOutlined />, label: <Link to='/audit-logs'>审计日志</Link> },
+            { key: '/risk-config', icon: <SafetyOutlined />, label: <Link to='/risk-config'>风控配置</Link> },
+            { key: '/market-health', icon: <LineChartOutlined />, label: <Link to='/market-health'>行情健康</Link> },
           ]}
         />
       </Sider>
       <Layout>
         <Header className={styles.header}>
           <Space>
-            <Tag color="processing">模拟下单默认开启</Tag>
-            <Tag color="default">OKX 可用</Tag>
-            <Tag color="default">Binance 预留</Tag>
+            <Tag color='processing'>模拟下单默认开启</Tag>
+            <Tag color='default'>OKX 可用</Tag>
+            <Tag color='default'>Binance 预留</Tag>
           </Space>
         </Header>
         <Content>{children}</Content>
       </Layout>
     </Layout>
-  );
+  )
 }

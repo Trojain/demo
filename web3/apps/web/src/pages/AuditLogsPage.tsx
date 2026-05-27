@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Space, Tag, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Popconfirm, Space, Tag, Tooltip, Typography } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { AuditLog, AuditLogAction, AuditLogLevel } from '../types'
 
@@ -38,6 +38,7 @@ function renderPayload(payloadJson?: string) {
 }
 
 export function AuditLogsPage() {
+  const { message } = AntApp.useApp()
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -107,12 +108,34 @@ export function AuditLogsPage() {
         width: 180,
         valueType: 'dateTime',
       },
+      {
+        title: '操作',
+        valueType: 'option',
+        width: 100,
+        render: (_, row) => (
+          <Space>
+            <Popconfirm
+              title='删除审计日志'
+              description='将直接从数据库删除该审计日志记录'
+              onConfirm={async () => {
+                await tradingApi.deleteAuditLog(row.id)
+                message.success('审计日志已删除')
+                await refreshAuditLogs()
+              }}
+            >
+              <Button danger type='link'>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
     ],
-    [],
+    [message],
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='追踪信号、风控、触发、下单和异常的全流程日志'>
       <ProTable<AuditLog>
         rowKey='id'
         search={false}

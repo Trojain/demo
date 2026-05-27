@@ -111,4 +111,9 @@ export class SignalRepository {
     const row = this.db.prepare('SELECT * FROM trading_signals WHERE id = ?').get(id) as SignalRow | undefined;
     return row ? mapSignal(row) : undefined;
   }
+
+  delete(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM trading_signals WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
 }

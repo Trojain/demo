@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Statistic, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Space, Statistic, Tooltip, Typography } from 'antd'
 import { LineChartOutlined } from '@ant-design/icons'
 import { PageContainer, ProCard, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { tradingApi } from '../api/trading'
-import { DEFAULT_MARKET_SYMBOL, MARKET_SYMBOL_OPTIONS, getCoinMeta, getCoinSymbol } from '../constants/market'
+import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSymbol, getMarketSymbolOptions } from '../constants/market'
 import { useTradingStore } from '../stores/tradingStore'
-import type { MarketCandle, MarketTickerSnapshot } from '../types'
+import type { ExchangeCode, MarketCandle, MarketTickerSnapshot } from '../types'
 import styles from './page.module.scss'
 
 function formatMoneyCompact(value?: string) {
@@ -52,15 +52,19 @@ function formatUsd(value: number) {
 
 export function OverviewPage() {
   const { message } = AntApp.useApp()
+  const [selectedExchange, setSelectedExchange] = useState<ExchangeCode>('okx')
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
+  const [exchangeOverview, setExchangeOverview] = useState<MarketTickerSnapshot[]>([])
+  const [overviewLoading, setOverviewLoading] = useState(false)
   const enabledRuleCount = useTradingStore(state => state.rules.filter(rule => rule.enabled).length)
   const ruleCount = useTradingStore(state => state.rules.length)
   const pendingTriggerCount = useTradingStore(state => state.triggers.filter(item => item.status === 'pending').length)
   const orderCount = useTradingStore(state => state.orders.length)
   const tickerCount = useTradingStore(state => state.tickers.length)
   const marketOverview = useTradingStore(state => state.marketOverview)
+  const displayedOverview = selectedExchange === 'okx' && exchangeOverview.length === 0 ? marketOverview : exchangeOverview
   const [candleError, setCandleError] = useState('')
   const candleSeries = useMemo(
     () =>
@@ -74,6 +78,14 @@ export function OverviewPage() {
   const handleSelectSymbol = useCallback((symbol: string) => {
     setSelectedSymbol(symbol)
     // 切换币种时先清空旧 K 线，避免请求期间继续显示上一个币种的走势。
+    setCandles([])
+    setCandleError('')
+  }, [])
+
+  const handleSelectExchange = useCallback((exchange: ExchangeCode) => {
+    const options = getMarketSymbolOptions(exchange)
+    setSelectedExchange(exchange)
+    setSelectedSymbol(options[0]?.value ?? DEFAULT_MARKET_SYMBOL)
     setCandles([])
     setCandleError('')
   }, [])
@@ -163,7 +175,7 @@ export function OverviewPage() {
       setCandlesLoading(true)
       setCandleError('')
       try {
-        const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, '1m')
+        const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, '1m', selectedExchange)
         if (!ignore) {
           setCandles(nextCandles)
         }
@@ -186,7 +198,31 @@ export function OverviewPage() {
     return () => {
       ignore = true
     }
-  }, [message, selectedSymbol])
+  }, [message, selectedExchange, selectedSymbol])
+
+  useEffect(() => {
+    let ignore = false
+
+    const loadOverview = async () => {
+      setOverviewLoading(true)
+      try {
+        const snapshots = await tradingApi.getMarketOverview(selectedExchange)
+        if (!ignore) {
+          setExchangeOverview(snapshots)
+        }
+      } finally {
+        if (!ignore) {
+          setOverviewLoading(false)
+        }
+      }
+    }
+
+    void loadOverview()
+
+    return () => {
+      ignore = true
+    }
+  }, [selectedExchange])
 
   const option = useMemo(
     () => ({
@@ -267,7 +303,7 @@ export function OverviewPage() {
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='查看行情、规则、触发和订单的整体运行概况'>
       <Row gutter={[16, 16]}>
         <Col xs={24} md={6}>
           <ProCard>
@@ -295,28 +331,33 @@ export function OverviewPage() {
         <Col xs={24} lg={14}>
           <ProCard
             title={`实时价格曲线 ${selectedSymbol}`}
-            extra={<Select value={selectedSymbol} options={MARKET_SYMBOL_OPTIONS} onChange={handleSelectSymbol} style={{ width: 160 }} />}
-            bodyStyle={{ height: 436 }}
+            extra={
+              <Space>
+                <Select value={selectedExchange} options={MARKET_EXCHANGE_OPTIONS} onChange={handleSelectExchange} style={{ width: 120 }} />
+                <Select value={selectedSymbol} options={getMarketSymbolOptions(selectedExchange)} onChange={handleSelectSymbol} style={{ width: 160 }} />
+              </Space>
+            }
           >
             {candlesLoading ? (
               <Skeleton active paragraph={{ rows: 8 }} />
             ) : candleSeries.length > 0 ? (
-              <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 320 }} />
+              <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 405 }} />
             ) : (
               <Empty description={candleError || '暂无 24 小时行情'} />
             )}
           </ProCard>
         </Col>
         <Col xs={24} lg={10}>
-          <ProCard title='最新行情' bodyStyle={{ minHeight: 360, padding: 0 }}>
-            {marketOverview.length === 0 ? (
+          <ProCard title='最新行情' bodyStyle={{ padding: 0 }}>
+            {displayedOverview.length === 0 ? (
               <Empty description='暂无行情缓存' />
             ) : (
               <ProTable<MarketTickerSnapshot>
                 rowKey={row => `${row.exchange}-${row.symbol}`}
                 className={styles.marketTable}
                 columns={marketColumns}
-                dataSource={marketOverview}
+                loading={overviewLoading}
+                dataSource={displayedOverview}
                 search={false}
                 options={false}
                 pagination={false}

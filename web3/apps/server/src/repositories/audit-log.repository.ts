@@ -63,4 +63,9 @@ export class AuditLogRepository {
 
     return log
   }
+
+  delete(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM audit_logs WHERE id = ?').run(id)
+    return result.changes > 0
+  }
 }

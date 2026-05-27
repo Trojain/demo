@@ -4,6 +4,10 @@ import { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { MarketCapService } from './market-cap.service.js'
 
 export const OVERVIEW_SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT'] as const
+export const OVERVIEW_SYMBOLS_BY_EXCHANGE: Record<ExchangeCode, readonly string[]> = {
+  okx: OVERVIEW_SYMBOLS,
+  binance: ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'BNB-USDT'],
+}
 
 const OVERVIEW_REFRESH_INTERVAL_MS = 5_000
 const TICKER_REST_MIN_INTERVAL_MS = 3_000
@@ -67,7 +71,7 @@ export class MarketService {
     }
   }
 
-  private listOverviewSnapshotsBySymbols(exchange: ExchangeCode, symbols: readonly string[] = OVERVIEW_SYMBOLS) {
+  private listOverviewSnapshotsBySymbols(exchange: ExchangeCode, symbols: readonly string[] = OVERVIEW_SYMBOLS_BY_EXCHANGE[exchange]) {
     return symbols
       .map(symbol => this.overviewSnapshots.get(this.cacheKey(exchange, symbol)))
       .filter((snapshot): snapshot is MarketTickerSnapshot => Boolean(snapshot))
@@ -139,9 +143,10 @@ export class MarketService {
 
   async refreshOverviewSnapshots(exchange: ExchangeCode = 'okx') {
     const now = Date.now()
-    const cached = this.listOverviewSnapshotsBySymbols(exchange)
+    const overviewSymbols = OVERVIEW_SYMBOLS_BY_EXCHANGE[exchange]
+    const cached = this.listOverviewSnapshotsBySymbols(exchange, overviewSymbols)
     const lastRefreshAt = this.overviewRefreshedAt.get(exchange) ?? 0
-    if (cached.length === OVERVIEW_SYMBOLS.length && now - lastRefreshAt < OVERVIEW_REFRESH_INTERVAL_MS) {
+    if (cached.length === overviewSymbols.length && now - lastRefreshAt < OVERVIEW_REFRESH_INTERVAL_MS) {
       return cached
     }
 
@@ -156,9 +161,9 @@ export class MarketService {
     const adapter = this.exchangeFactory.getAdapter(exchange)
     try {
       const snapshots = adapter.getTickerSnapshots
-        ? await adapter.getTickerSnapshots([...OVERVIEW_SYMBOLS])
+        ? await adapter.getTickerSnapshots([...overviewSymbols])
         : await Promise.all(
-            OVERVIEW_SYMBOLS.map(async symbol => {
+            overviewSymbols.map(async symbol => {
               const snapshot = adapter.getTickerSnapshot
                 ? await adapter.getTickerSnapshot(symbol)
                 : {
@@ -174,7 +179,7 @@ export class MarketService {
 
       let marketCaps = new Map<string, string>()
       try {
-        marketCaps = this.marketCapService ? await this.marketCapService.getMarketCaps(OVERVIEW_SYMBOLS) : marketCaps
+        marketCaps = this.marketCapService ? await this.marketCapService.getMarketCaps(overviewSymbols) : marketCaps
       } catch (error) {
         this.lastRestError.set(exchange, error instanceof Error ? error.message : '市值数据刷新失败')
       }

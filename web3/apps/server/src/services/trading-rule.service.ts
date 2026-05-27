@@ -73,6 +73,13 @@ export class TradingRuleService {
       }
     }
 
+    if (instrumentRule.minNotional) {
+      const estimatedNotional = this.estimateNotional(input.targetPrice, input.baseQuantity, input.quoteAmount)
+      if (estimatedNotional && estimatedNotional.lessThan(instrumentRule.minNotional)) {
+        issues.push({ path: 'quoteAmount', message: `预估成交额不能小于最小成交额 ${instrumentRule.minNotional}` })
+      }
+    }
+
     this.validatePositiveDecimal(input.maxSlippagePercent, 'maxSlippagePercent', '最大滑点百分比', issues)
 
     if (issues.length > 0) {
@@ -122,5 +129,21 @@ export class TradingRuleService {
     } catch {
       issues.push({ path, message: `${label}步长校验失败` })
     }
+  }
+
+  private estimateNotional(targetPrice: string, baseQuantity?: string, quoteAmount?: string) {
+    try {
+      if (quoteAmount) {
+        return new Decimal(quoteAmount)
+      }
+
+      if (baseQuantity) {
+        return new Decimal(baseQuantity).mul(targetPrice)
+      }
+    } catch {
+      return undefined
+    }
+
+    return undefined
   }
 }

@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
-import { Button, Tag } from 'antd'
+import { App as AntApp, Button, Popconfirm, Space, Tag } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { tradingApi } from '../api/trading'
 import { useTradingStore } from '../stores/tradingStore'
 import type { OrderRecord } from '../types'
-import styles from './page.module.scss'
 
 export function OrdersPage() {
+  const { message } = AntApp.useApp()
   const orders = useTradingStore(state => state.orders)
   const loading = useTradingStore(state => state.ordersLoading)
   const refreshOrders = useTradingStore(state => state.refreshOrders)
@@ -63,12 +64,34 @@ export function OrdersPage() {
         dataIndex: 'createdAt',
         valueType: 'dateTime',
       },
+      {
+        title: '操作',
+        valueType: 'option',
+        width: 100,
+        render: (_, row) => (
+          <Space>
+            <Popconfirm
+              title='删除订单记录'
+              description='将直接从数据库删除该订单记录，不会撤销交易所订单'
+              onConfirm={async () => {
+                await tradingApi.deleteOrder(row.id)
+                message.success('订单记录已删除')
+                await refreshOrders()
+              }}
+            >
+              <Button danger type='link'>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
     ],
-    [],
+    [message, refreshOrders],
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='查看确认后生成的模拟或真实订单记录'>
       <ProTable<OrderRecord>
         rowKey='id'
         search={false}

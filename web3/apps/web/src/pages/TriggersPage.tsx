@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, App as AntApp, Button, Descriptions, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { CheckCircleOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, DeleteOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { Decimal } from 'decimal.js'
 import { tradingApi } from '../api/trading'
@@ -160,17 +160,41 @@ export function TriggersPage() {
       {
         title: '操作',
         valueType: 'option',
-        width: 220,
+        width: 300,
         render: (_, row) => {
+          const deleteAction = (
+            <Popconfirm
+              title='删除触发事件'
+              description='将直接从数据库删除该触发事件记录，不影响已生成的订单记录'
+              onConfirm={async () => {
+                try {
+                  await tradingApi.deleteTrigger(row.id)
+                  message.success('触发事件已删除')
+                  await refreshTriggers()
+                } catch (error) {
+                  message.error(getErrorMessage(error))
+                }
+              }}
+            >
+              <Button danger type='link'>
+                删除
+              </Button>
+            </Popconfirm>
+          )
+
           if (row.status !== 'pending') {
-            return <Tag>已处理</Tag>
+            return (
+              <Space>
+                <Tag>已处理</Tag>
+                {deleteAction}
+              </Space>
+            )
           }
 
           return (
             <Space>
               <Button
-                type='primary'
-                icon={<CheckCircleOutlined />}
+                type='link'
                 onClick={() => {
                   setSelectedTrigger(row)
                   setPreviewOpen(true)
@@ -191,18 +215,19 @@ export function TriggersPage() {
                   }
                 }}
               >
-                <Button icon={<StopOutlined />}>忽略</Button>
+                <Button type='link'>忽略</Button>
               </Popconfirm>
+              {deleteAction}
             </Space>
           )
         },
       },
     ],
-    [],
+    [message, refreshTriggers],
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='人工确认或忽略已通过风控的待执行触发'>
       <ProTable<TriggerEvent>
         rowKey='id'
         search={false}

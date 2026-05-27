@@ -9,8 +9,10 @@ import type { RiskConfigService } from '../services/risk-config.service.js'
 import type { SignalService } from '../services/signal.service.js'
 import { RuleValidationError, type TradingRuleService } from '../services/trading-rule.service.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
+import type { AuditLogRepository } from '../repositories/audit-log.repository.js'
 import type { RiskCheckRepository } from '../repositories/risk-check.repository.js'
 import type { RuleRepository } from '../repositories/rule.repository.js'
+import type { SignalRepository } from '../repositories/signal.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import { appConfig } from '../config/env.js'
 import {
@@ -22,12 +24,13 @@ import {
   listSignalsQuerySchema,
   previewOrderSchema,
   listRiskChecksQuerySchema,
-  updateRiskConfigSchema
+  updateRiskConfigSchema,
+  idParamSchema
 } from './dto.js'
-
-const allowedCandleSymbols = new Set(['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT'])
+import { OVERVIEW_SYMBOLS_BY_EXCHANGE } from '../services/market.service.js'
 
 export interface ApiRouteDeps {
+  auditLogRepository: AuditLogRepository
   auditLogService: AuditLogService
   exchangeFactory: ExchangeFactory
   marketService: MarketService
@@ -37,6 +40,7 @@ export interface ApiRouteDeps {
   riskCheckRepository: RiskCheckRepository
   riskConfigService: RiskConfigService
   ruleRepository: RuleRepository
+  signalRepository: SignalRepository
   signalService: SignalService
   tradingRuleService: TradingRuleService
   triggerRepository: TriggerRepository
@@ -75,18 +79,34 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     return deps.auditLogService.list(limit)
   })
 
+  app.delete('/api/audit-logs/:id', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '审计日志 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const deleted = deps.auditLogRepository.delete(parsed.data.id)
+    return deleted ? reply.status(204).send() : reply.status(404).send({ message: '审计日志不存在' })
+  })
+
   app.get('/api/tickers', async () => deps.marketService.listLatestTickers())
 
-  app.get('/api/market/overview', async () => {
-    const cached = deps.marketService.listOverviewSnapshots()
+  app.get('/api/market/overview', async request => {
+    const query = request.query as { exchange?: string }
+    const exchange = query.exchange === 'binance' ? 'binance' : 'okx'
+    const cached = deps.marketService.listOverviewSnapshots().filter(snapshot => snapshot.exchange === exchange)
     if (cached.length > 0) {
       return cached
     }
 
-    return deps.marketService.refreshOverviewSnapshots('okx')
+    return deps.marketService.refreshOverviewSnapshots(exchange)
   })
 
-  app.get('/api/market/health', async () => deps.marketService.getHealth('okx'))
+  app.get('/api/market/health', async request => {
+    const query = request.query as { exchange?: string }
+    const exchange = query.exchange === 'binance' ? 'binance' : 'okx'
+    return deps.marketService.getHealth(exchange)
+  })
 
   app.get('/api/market/candles', async (request, reply) => {
     const parsed = marketCandlesQuerySchema.safeParse(request.query)
@@ -96,12 +116,13 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
 
     const symbol = parsed.data.symbol.trim().toUpperCase()
     const bar = parsed.data.bar
+    const exchange = parsed.data.exchange
 
-    if (!allowedCandleSymbols.has(symbol)) {
+    if (!OVERVIEW_SYMBOLS_BY_EXCHANGE[exchange].includes(symbol)) {
       return reply.status(400).send({ message: '暂不支持该交易对的 K 线查询' })
     }
 
-    return deps.marketService.getRecentCandles('okx', symbol, bar)
+    return deps.marketService.getRecentCandles(exchange, symbol, bar)
   })
 
   app.get('/api/rules', async () => deps.ruleRepository.list())
@@ -115,6 +136,16 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     return deps.signalService.list(parsed.data.limit)
   })
 
+  app.delete('/api/signals/:id', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易信号 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const deleted = deps.signalRepository.delete(parsed.data.id)
+    return deleted ? reply.status(204).send() : reply.status(404).send({ message: '交易信号不存在' })
+  })
+
   app.get('/api/risk-checks', async (request, reply) => {
     const parsed = listRiskChecksQuerySchema.safeParse(request.query)
     if (!parsed.success) {
@@ -122,6 +153,16 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
 
     return deps.riskCheckRepository.list(parsed.data.limit)
+  })
+
+  app.delete('/api/risk-checks/:id', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '风控检查 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const deleted = deps.riskCheckRepository.delete(parsed.data.id)
+    return deleted ? reply.status(204).send() : reply.status(404).send({ message: '风控检查不存在' })
   })
 
   app.get('/api/risk-config', async () => deps.riskConfigService.getConfig())
@@ -238,12 +279,26 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   })
 
   app.delete('/api/rules/:id', async (request, reply) => {
-    const params = request.params as { id: string }
-    deps.ruleRepository.delete(params.id)
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '监控规则 ID 不合法', issues: parsed.error.issues })
+    }
+
+    deps.ruleRepository.delete(parsed.data.id)
     return reply.status(204).send()
   })
 
   app.get('/api/triggers', async () => deps.triggerRepository.list())
+
+  app.delete('/api/triggers/:id', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '触发事件 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const deleted = deps.triggerRepository.delete(parsed.data.id)
+    return deleted ? reply.status(204).send() : reply.status(404).send({ message: '触发事件不存在' })
+  })
 
   app.patch('/api/triggers/:id/ignore', async (request, reply) => {
     const params = request.params as { id: string }
@@ -276,6 +331,16 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   })
 
   app.get('/api/orders', async () => deps.orderRepository.list())
+
+  app.delete('/api/orders/:id', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '订单记录 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const deleted = deps.orderRepository.delete(parsed.data.id)
+    return deleted ? reply.status(204).send() : reply.status(404).send({ message: '订单记录不存在' })
+  })
 
   app.post('/api/orders/preview', async (request, reply) => {
     const parsed = previewOrderSchema.safeParse(request.body)

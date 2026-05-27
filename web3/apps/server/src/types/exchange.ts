@@ -56,8 +56,10 @@ export interface InstrumentRule {
   tickSize: string;
   /** 数量最小变动单位，对应 OKX lotSz */
   lotSize: string;
-  /** 最小下单数量，对应 OKX minSz，现货场景是基础币数量 */
+  /** 最小下单数量，对应 OKX minSz 或 Binance LOT_SIZE minQty */
   minSize: string;
+  /** 最小成交额，对应 Binance MIN_NOTIONAL 或 NOTIONAL */
+  minNotional?: string;
   /** 交易对状态，OKX live 表示可交易 */
   state: string;
 }

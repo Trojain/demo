@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Descriptions, Space, Tag } from 'antd'
+import { Alert, Button, Descriptions, Select, Space, Tag } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
-import type { MarketHealth, MarketHealthTicker } from '../types'
+import { MARKET_EXCHANGE_OPTIONS } from '../constants/market'
+import type { ExchangeCode, MarketHealth, MarketHealthTicker } from '../types'
 
 function formatAge(ageMs: number) {
   if (ageMs < 1000) {
@@ -15,12 +16,13 @@ function formatAge(ageMs: number) {
 
 export function MarketHealthPage() {
   const [health, setHealth] = useState<MarketHealth>()
+  const [exchange, setExchange] = useState<ExchangeCode>('okx')
   const [loading, setLoading] = useState(false)
 
   const refreshHealth = async () => {
     setLoading(true)
     try {
-      const nextHealth = await tradingApi.getMarketHealth()
+      const nextHealth = await tradingApi.getMarketHealth(exchange)
       setHealth(nextHealth)
     } finally {
       setLoading(false)
@@ -29,7 +31,7 @@ export function MarketHealthPage() {
 
   useEffect(() => {
     void refreshHealth()
-  }, [])
+  }, [exchange])
 
   const columns = useMemo<ProColumns<MarketHealthTicker>[]>(
     () => [
@@ -56,7 +58,7 @@ export function MarketHealthPage() {
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='查看交易所行情缓存、订阅和 REST 退避状态'>
       <Space direction='vertical' size={16} style={{ width: '100%' }}>
         {health?.lastRestError ? <Alert type='warning' message='最近 REST 错误' description={health.lastRestError} showIcon /> : null}
         <Descriptions bordered size='small' column={2}>
@@ -80,6 +82,13 @@ export function MarketHealthPage() {
           dataSource={health?.tickers ?? []}
           pagination={{ pageSize: 10 }}
           toolBarRender={() => [
+            <Select
+              key='exchange'
+              value={exchange}
+              options={MARKET_EXCHANGE_OPTIONS}
+              onChange={setExchange}
+              style={{ width: 140 }}
+            />,
             <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshHealth()}>
               刷新
             </Button>,

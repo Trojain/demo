@@ -51,7 +51,7 @@ export function RiskConfigPage() {
   }
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='配置交易金额、行情时效、日内次数和交易模式限制'>
       <ProCard
         title='风控配置'
         extra={

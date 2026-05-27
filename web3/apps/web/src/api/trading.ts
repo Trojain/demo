@@ -43,17 +43,26 @@ export const tradingApi = {
     const { data } = await apiClient.get<TriggerEvent[]>('/triggers');
     return data;
   },
+  deleteTrigger: async (id: string) => {
+    await apiClient.delete(`/triggers/${id}`);
+  },
   getSignals: async (limit = 100) => {
     const { data } = await apiClient.get<TradingSignal[]>('/signals', {
       params: { limit }
     });
     return data;
   },
+  deleteSignal: async (id: string) => {
+    await apiClient.delete(`/signals/${id}`);
+  },
   getRiskChecks: async (limit = 100) => {
     const { data } = await apiClient.get<RiskCheck[]>('/risk-checks', {
       params: { limit }
     });
     return data;
+  },
+  deleteRiskCheck: async (id: string) => {
+    await apiClient.delete(`/risk-checks/${id}`);
   },
   getRiskConfig: async () => {
     const { data } = await apiClient.get<RiskConfig>('/risk-config');
@@ -79,11 +88,17 @@ export const tradingApi = {
     const { data } = await apiClient.get<OrderRecord[]>('/orders');
     return data;
   },
+  deleteOrder: async (id: string) => {
+    await apiClient.delete(`/orders/${id}`);
+  },
   getAuditLogs: async (limit = 100) => {
     const { data } = await apiClient.get<AuditLog[]>('/audit-logs', {
       params: { limit }
     });
     return data;
+  },
+  deleteAuditLog: async (id: string) => {
+    await apiClient.delete(`/audit-logs/${id}`);
   },
   getTradingRules: async (exchange: ExchangeCode = 'okx', symbol?: string) => {
     const { data } = await apiClient.get<InstrumentRule[]>('/trading-rules', {
@@ -95,17 +110,21 @@ export const tradingApi = {
     const { data } = await apiClient.get<TickerPrice[]>('/tickers');
     return data;
   },
-  getMarketOverview: async () => {
-    const { data } = await apiClient.get<MarketTickerSnapshot[]>('/market/overview');
+  getMarketOverview: async (exchange: ExchangeCode = 'okx') => {
+    const { data } = await apiClient.get<MarketTickerSnapshot[]>('/market/overview', {
+      params: { exchange }
+    });
     return data;
   },
-  getMarketHealth: async () => {
-    const { data } = await apiClient.get<MarketHealth>('/market/health');
+  getMarketHealth: async (exchange: ExchangeCode = 'okx') => {
+    const { data } = await apiClient.get<MarketHealth>('/market/health', {
+      params: { exchange }
+    });
     return data;
   },
-  getMarketCandles: async (symbol: string, bar = '1m') => {
+  getMarketCandles: async (symbol: string, bar = '1m', exchange: ExchangeCode = 'okx') => {
     const { data } = await apiClient.get<MarketCandle[]>('/market/candles', {
-      params: { symbol, bar }
+      params: { exchange, symbol, bar }
     });
     return data;
   }

@@ -3,10 +3,10 @@ import { App as AntApp, Button, Popconfirm, Space, Switch, Tag, Tooltip, Typogra
 import { DrawerForm, PageContainer, ProFormDependency, ProFormDigit, ProFormSelect, ProFormText, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
-import { BooleanTag, RuleRuntimeStatusTag } from '../components/StatusTag'
-import { DEFAULT_MARKET_SYMBOL, MARKET_SYMBOL_OPTIONS } from '../constants/market'
+import { RuleRuntimeStatusTag } from '../components/StatusTag'
+import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getMarketSymbolOptions } from '../constants/market'
 import { useTradingStore } from '../stores/tradingStore'
-import type { CreateRulePayload, MonitorRule, UpdateRulePayload } from '../types'
+import type { CreateRulePayload, ExchangeCode, MonitorRule, OrderSide, OrderType, TriggerOperator, UpdateRulePayload } from '../types'
 import styles from './page.module.scss'
 
 const defaultRule: Partial<CreateRulePayload> = {
@@ -23,6 +23,87 @@ const defaultRule: Partial<CreateRulePayload> = {
   maxTriggerCount: 1,
   simulationMode: true,
   enabled: true,
+}
+
+// 表单提示语参考 OKX 与 Binance 现货下单字段，前端仅做展示说明，最终校验以后端为准。
+const RULE_FIELD_TOOLTIPS = {
+  exchange: '选择行情和交易规则来源，当前支持 OKX 与 Binance',
+  symbol: '交易对标识，例如 BTC-USDT；会按交易所支持列表校验',
+  operator: '仅表示价格触发条件，常见用法是上涨提醒卖出，下跌提醒买入',
+  targetPrice: '用于判断触发条件的目标价格，按计价币 USDT 输入',
+  checkIntervalMs: '策略扫描间隔，数值越小请求越频繁，最低 1000 毫秒',
+  side: '买入表示花费计价币；卖出表示出售基础币',
+  orderType: '市价按市场成交；限价按指定价格成交',
+  baseQuantity: '基础币数量，例如 BTC 数量',
+  limitPrice: '限价单价格，市价单无需填写',
+  maxSlippagePercent: '允许成交价偏离预估价的最大百分比',
+  cooldownMs: '同一规则触发后的冷却时间，避免短时间重复触发',
+  maxTriggerCount: '规则生命周期内最多生成多少次触发事件',
+  simulationMode: '模拟下单只写入本地订单记录，不发送真实交易请求',
+  enabled: '启用后参与策略扫描，停用后不会继续触发',
+} as const
+
+type DescribedSelectOption<T extends string> = {
+  label: ReactElement
+  title: string
+  value: T
+  description: string
+}
+
+const ORDER_SIDE_OPTIONS: Array<{ label: string; value: OrderSide }> = [
+  { label: '买入', value: 'buy' },
+  { label: '卖出', value: 'sell' },
+]
+
+function SelectOptionLabel({ title, description }: { title: string; description: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+      <span>{title}</span>
+      <span style={{ color: 'rgba(0, 0, 0, 0.45)', fontSize: 12, textAlign: 'right', flex: 1 }}>{description}</span>
+    </span>
+  )
+}
+
+function createDescribedOption<T extends string>(option: { title: string; value: T; description: string }): DescribedSelectOption<T> {
+  return {
+    ...option,
+    label: <SelectOptionLabel title={option.title} description={option.description} />,
+  }
+}
+
+const TRIGGER_OPERATOR_OPTIONS: Array<DescribedSelectOption<TriggerOperator>> = [
+  createDescribedOption({ title: '上涨触发：市场价 >= 目标价', value: 'gte', description: '到达或高于目标价时触发' }),
+  createDescribedOption({ title: '下跌触发：市场价 <= 目标价', value: 'lte', description: '到达或低于目标价时触发' }),
+]
+
+const ORDER_TYPE_OPTIONS: Array<DescribedSelectOption<OrderType>> = [
+  createDescribedOption({ title: '市价', value: 'market', description: '按当前市场尽快成交' }),
+  createDescribedOption({ title: '限价', value: 'limit', description: '按指定价格或更优价格成交' }),
+]
+
+// 常见交易直觉：上涨到目标价更常用于卖出提醒，下跌到目标价更常用于买入提醒。
+const SUGGESTED_SIDE_BY_OPERATOR: Record<TriggerOperator, OrderSide> = {
+  gte: 'sell',
+  lte: 'buy',
+}
+
+// quoteAmount 对应交易所的计价币金额，表单按买卖方向换成更易理解的中文名称。
+const QUOTE_AMOUNT_LABEL_BY_SIDE: Record<OrderSide, string> = {
+  buy: '投入金额',
+  sell: '卖出金额',
+}
+
+const QUOTE_AMOUNT_TOOLTIP_BY_SIDE: Record<OrderSide, string> = {
+  buy: '计划花费的 USDT 金额；金额和数量至少填写一个',
+  sell: '按预估 USDT 价值卖出；金额和数量至少填写一个',
+}
+
+function getQuoteAmountLabel(side?: OrderSide) {
+  return side ? QUOTE_AMOUNT_LABEL_BY_SIDE[side] : '交易金额'
+}
+
+function getQuoteAmountTooltip(side?: OrderSide) {
+  return side ? QUOTE_AMOUNT_TOOLTIP_BY_SIDE[side] : '按 USDT 计价的交易金额；金额和数量至少填写一个'
 }
 
 function toRuleFormValues(rule: MonitorRule): UpdateRulePayload {
@@ -64,58 +145,78 @@ function RuleFormFields({ statusLabel }: { statusLabel: string }) {
       <ProFormSelect
         name='exchange'
         label='交易所'
-        options={[
-          { label: 'OKX', value: 'okx' },
-          { label: 'Binance 预留', value: 'binance' },
-        ]}
+        tooltip={RULE_FIELD_TOOLTIPS.exchange}
+        options={MARKET_EXCHANGE_OPTIONS}
         rules={[{ required: true, message: '请选择交易所' }]}
       />
-      <ProFormSelect
-        name='symbol'
-        label='交易对'
-        tooltip='当前只支持固定 USDT 交易对，保存前仍会统一标准化'
-        options={MARKET_SYMBOL_OPTIONS}
-        showSearch
-        rules={[{ required: true, message: '请选择交易对' }]}
-      />
-      <ProFormSelect
-        name='operator'
-        label='触发方向'
-        options={[
-          { label: '市场价大于等于目标价', value: 'gte' },
-          { label: '市场价小于等于目标价', value: 'lte' },
-        ]}
+      <ProFormDependency name={['exchange']}>
+        {({ exchange }) => (
+          <ProFormSelect
+            name='symbol'
+            label='交易对'
+            tooltip={RULE_FIELD_TOOLTIPS.symbol}
+            options={getMarketSymbolOptions((exchange ?? 'okx') as ExchangeCode)}
+            showSearch
+            rules={[{ required: true, message: '请选择交易对' }]}
+          />
+        )}
+      </ProFormDependency>
+      <ProFormDependency name={['side']}>
+        {(_, form) => (
+          <ProFormSelect
+            name='operator'
+            label='触发方向'
+            tooltip={RULE_FIELD_TOOLTIPS.operator}
+            options={TRIGGER_OPERATOR_OPTIONS}
+            fieldProps={{
+              optionLabelProp: 'title',
+              onChange: (operator: TriggerOperator) => {
+                form.setFieldsValue({ side: SUGGESTED_SIDE_BY_OPERATOR[operator] })
+              },
+            }}
+            rules={[{ required: true }]}
+          />
+        )}
+      </ProFormDependency>
+      <ProFormText name='targetPrice' label='目标价格' tooltip={RULE_FIELD_TOOLTIPS.targetPrice} rules={[{ required: true, message: '请输入目标价格' }]} />
+      <ProFormDigit
+        name='checkIntervalMs'
+        label='检测频率毫秒'
+        tooltip={RULE_FIELD_TOOLTIPS.checkIntervalMs}
+        min={1000}
+        fieldProps={{ precision: 0 }}
         rules={[{ required: true }]}
       />
-      <ProFormText name='targetPrice' label='目标价格' rules={[{ required: true, message: '请输入目标价格' }]} />
-      <ProFormDigit name='checkIntervalMs' label='检测频率毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true }]} />
 
       <Typography.Title level={5}>下单计划</Typography.Title>
-      <ProFormSelect
-        name='side'
-        label='下单方向'
-        options={[
-          { label: '买入', value: 'buy' },
-          { label: '卖出', value: 'sell' },
-        ]}
-        rules={[{ required: true }]}
-      />
+      <ProFormSelect name='side' label='下单方向' tooltip={RULE_FIELD_TOOLTIPS.side} options={ORDER_SIDE_OPTIONS} rules={[{ required: true }]} />
       <ProFormSelect
         name='orderType'
         label='订单类型'
-        options={[
-          { label: '市价', value: 'market' },
-          { label: '限价', value: 'limit' },
-        ]}
+        tooltip={RULE_FIELD_TOOLTIPS.orderType}
+        options={ORDER_TYPE_OPTIONS}
+        fieldProps={{ optionLabelProp: 'title' }}
         rules={[{ required: true }]}
       />
-      <ProFormDependency name={['baseQuantity']}>
-        {({ baseQuantity }) => (
+      <ProFormDependency name={['orderType']}>
+        {({ orderType }) =>
+          orderType === 'limit' ? (
+            <ProFormText
+              name='limitPrice'
+              label='限价价格'
+              tooltip={RULE_FIELD_TOOLTIPS.limitPrice}
+              rules={[{ required: true, message: '限价单必须填写限价价格' }]}
+            />
+          ) : null
+        }
+      </ProFormDependency>
+      <ProFormDependency name={['baseQuantity', 'side']}>
+        {({ baseQuantity, side }) => (
           <ProFormText
             name='quoteAmount'
-            label='计价币金额'
-            tooltip='例如用 50 USDT 买入 BTC；计价币金额和基础币数量至少填写一个'
-            rules={[{ required: !baseQuantity, message: '计价币金额和基础币数量至少填写一个' }]}
+            label={getQuoteAmountLabel(side as OrderSide | undefined)}
+            tooltip={getQuoteAmountTooltip(side as OrderSide | undefined)}
+            rules={[{ required: !baseQuantity, message: '交易金额和基础币数量至少填写一个' }]}
           />
         )}
       </ProFormDependency>
@@ -124,24 +225,40 @@ function RuleFormFields({ statusLabel }: { statusLabel: string }) {
           <ProFormText
             name='baseQuantity'
             label='基础币数量'
-            tooltip='例如卖出 0.01 BTC；计价币金额和基础币数量至少填写一个'
-            rules={[{ required: !quoteAmount, message: '计价币金额和基础币数量至少填写一个' }]}
+            tooltip={RULE_FIELD_TOOLTIPS.baseQuantity}
+            rules={[{ required: !quoteAmount, message: '交易金额和基础币数量至少填写一个' }]}
           />
         )}
       </ProFormDependency>
-      <ProFormDependency name={['orderType']}>
-        {({ orderType }) =>
-          orderType === 'limit' ? <ProFormText name='limitPrice' label='限价价格' rules={[{ required: true, message: '限价单必须填写限价价格' }]} /> : null
-        }
-      </ProFormDependency>
 
       <Typography.Title level={5}>风控与运行</Typography.Title>
-      <ProFormText name='maxSlippagePercent' label='最大滑点百分比' rules={[{ required: true }]} />
-      <ProFormDigit name='cooldownMs' label='冷却时间毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true }]} />
-      <ProFormDigit name='maxTriggerCount' label='最大触发次数' min={1} fieldProps={{ precision: 0 }} rules={[{ required: true }]} />
+      <ProFormText
+        name='maxSlippagePercent'
+        label='最大滑点百分比'
+        tooltip={RULE_FIELD_TOOLTIPS.maxSlippagePercent}
+        fieldProps={{ suffix: '%' }}
+        rules={[{ required: true }]}
+      />
+      <ProFormDigit
+        name='cooldownMs'
+        label='冷却时间毫秒'
+        tooltip={RULE_FIELD_TOOLTIPS.cooldownMs}
+        min={1000}
+        fieldProps={{ precision: 0 }}
+        rules={[{ required: true }]}
+      />
+      <ProFormDigit
+        name='maxTriggerCount'
+        label='最大触发次数'
+        tooltip={RULE_FIELD_TOOLTIPS.maxTriggerCount}
+        min={1}
+        fieldProps={{ precision: 0 }}
+        rules={[{ required: true }]}
+      />
       <ProFormSelect
         name='simulationMode'
         label='下单模式'
+        tooltip={RULE_FIELD_TOOLTIPS.simulationMode}
         options={[
           { label: '模拟下单', value: true },
           { label: '真实下单，需后端总开关允许', value: false },
@@ -151,6 +268,7 @@ function RuleFormFields({ statusLabel }: { statusLabel: string }) {
       <ProFormSelect
         name='enabled'
         label={statusLabel}
+        tooltip={RULE_FIELD_TOOLTIPS.enabled}
         options={[
           { label: '启用', value: true },
           { label: '停用', value: false },
@@ -181,7 +299,7 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
   return (
     <DrawerForm<T>
       title={title}
-      width={520}
+      width={700}
       trigger={trigger}
       initialValues={initialValues}
       drawerProps={{
@@ -201,6 +319,7 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
 export function RulesPage() {
   const { message } = AntApp.useApp()
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
+  const [togglingRuleId, setTogglingRuleId] = useState('')
   const rules = useTradingStore(state => state.rules)
   const loading = useTradingStore(state => state.rulesLoading)
   const refreshRules = useTradingStore(state => state.refreshRules)
@@ -238,12 +357,12 @@ export function RulesPage() {
       {
         title: '下单计划',
         dataIndex: 'side',
-        render: (_, row) => `${row.side === 'buy' ? '买入' : '卖出'} / ${row.orderType === 'market' ? '市价' : '限价'}`,
+        render: (_, row) => `${row.orderType === 'market' ? '市价' : '限价'} / ${row.side === 'buy' ? '买入' : '卖出'}`,
       },
       {
-        title: '数量或金额',
+        title: '数量或交易金额',
         dataIndex: 'quoteAmount',
-        render: (_, row) => (row.quoteAmount ? `${row.quoteAmount} 计价币` : `${row.baseQuantity ?? '-'} 基础币`),
+        render: (_, row) => (row.quoteAmount ? `${row.quoteAmount} USDT` : `${row.baseQuantity ?? '-'} 基础币`),
       },
       {
         title: '已触发',
@@ -256,6 +375,11 @@ export function RulesPage() {
         dataIndex: 'runtimeStatus',
         width: 120,
         render: (_, row) => <RuleRuntimeStatusTag status={row.runtimeStatus} />,
+      },
+      {
+        title: '检测频率',
+        dataIndex: 'checkIntervalMs',
+        render: (_, row) => `${row.checkIntervalMs} ms`,
       },
       {
         title: '最近检测',
@@ -271,39 +395,43 @@ export function RulesPage() {
         render: (_, row) => <Tag color={row.simulationMode ? 'processing' : 'error'}>{row.simulationMode ? '模拟' : '真实'}</Tag>,
       },
       {
-        title: '状态',
+        title: '启用状态',
         dataIndex: 'enabled',
         width: 120,
-        render: (_, row) => <BooleanTag value={row.enabled} />,
+        render: (_, row) => (
+          <Switch
+            checked={row.enabled}
+            checkedChildren='启用'
+            unCheckedChildren='停用'
+            loading={togglingRuleId === row.id}
+            onChange={async checked => {
+              setTogglingRuleId(row.id)
+              try {
+                await tradingApi.toggleRule(row.id, checked)
+                message.success(checked ? '规则已启用' : '规则已停用')
+                await refreshRules()
+              } finally {
+                setTogglingRuleId('')
+              }
+            }}
+          />
+        ),
       },
       {
         title: '操作',
         valueType: 'option',
-        width: 240,
+        width: 180,
         render: (_, row) => (
           <Space>
             <RuleDrawerForm<UpdateRulePayload>
               title={`编辑规则 ${row.symbol}`}
-              trigger={
-                <Button type='link' size='small' icon={<EditOutlined />}>
-                  编辑
-                </Button>
-              }
+              trigger={<Button type='link'>编辑</Button>}
               initialValues={toRuleFormValues(row)}
               statusLabel='编辑后状态'
               onOpenChange={setRuleModalOpen}
               onSubmit={async values => {
                 await tradingApi.updateRule(row.id, values)
                 message.success('监控规则已更新')
-                await refreshRules()
-              }}
-            />
-            <Switch
-              checked={row.enabled}
-              size='small'
-              onChange={async checked => {
-                await tradingApi.toggleRule(row.id, checked)
-                message.success(checked ? '规则已启用' : '规则已停用')
                 await refreshRules()
               }}
             />
@@ -316,7 +444,7 @@ export function RulesPage() {
                 await refreshRules()
               }}
             >
-              <Button danger type='link' size='small'>
+              <Button danger type='link'>
                 删除
               </Button>
             </Popconfirm>
@@ -329,11 +457,11 @@ export function RulesPage() {
         ),
       },
     ],
-    [message, refreshRules],
+    [message, refreshRules, togglingRuleId],
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='配置价格触发条件、下单计划与运行开关'>
       <ProTable<MonitorRule>
         rowKey='id'
         search={false}

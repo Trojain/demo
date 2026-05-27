@@ -368,6 +368,8 @@ export interface InstrumentRule {
   lotSize: string;
   /** 最小下单数量 */
   minSize: string;
+  /** 最小成交额 */
+  minNotional?: string;
   /** 交易对状态 */
   state: string;
 }

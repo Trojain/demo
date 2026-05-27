@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Space, Tag, Typography } from 'antd'
+import { App as AntApp, Button, Popconfirm, Space, Tag, Typography } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { ReloadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { SignalStatus, TradingSignal } from '../types'
 
@@ -13,6 +13,7 @@ const statusMeta: Record<SignalStatus, { text: string; color: string }> = {
 }
 
 export function SignalsPage() {
+  const { message } = AntApp.useApp()
   const [signals, setSignals] = useState<TradingSignal[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -35,7 +36,6 @@ export function SignalsPage() {
       {
         title: '状态',
         dataIndex: 'status',
-        width: 100,
         filters: Object.entries(statusMeta).map(([value, meta]) => ({ text: meta.text, value })),
         onFilter: (value, row) => row.status === value,
         render: (_, row) => <Tag color={statusMeta[row.status].color}>{statusMeta[row.status].text}</Tag>,
@@ -43,46 +43,38 @@ export function SignalsPage() {
       {
         title: '交易所',
         dataIndex: 'exchange',
-        width: 96,
         render: (_, row) => <Tag>{row.exchange.toUpperCase()}</Tag>,
       },
       {
         title: '交易对',
         dataIndex: 'symbol',
-        width: 130,
       },
       {
         title: '方向',
         dataIndex: 'side',
-        width: 90,
         render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag>,
       },
       {
         title: '类型',
         dataIndex: 'orderType',
-        width: 90,
         render: (_, row) => (row.orderType === 'limit' ? '限价' : '市价'),
       },
       {
         title: '市场价',
         dataIndex: 'marketPrice',
-        width: 130,
       },
       {
         title: '目标价',
         dataIndex: 'targetPrice',
-        width: 130,
       },
       {
         title: '数量或金额',
         dataIndex: 'quoteAmount',
-        width: 150,
         render: (_, row) => (row.quoteAmount ? `${row.quoteAmount} USDT` : `${row.baseQuantity ?? '-'} 基础币`),
       },
       {
         title: '模式',
         dataIndex: 'simulationMode',
-        width: 90,
         render: (_, row) => <Tag color={row.simulationMode ? 'processing' : 'error'}>{row.simulationMode ? '模拟' : '真实'}</Tag>,
       },
       {
@@ -93,28 +85,46 @@ export function SignalsPage() {
       {
         title: '关联规则',
         dataIndex: 'ruleId',
-        width: 150,
         render: (_, row) => <Typography.Text copyable>{row.ruleId}</Typography.Text>,
       },
       {
         title: '创建时间',
         dataIndex: 'createdAt',
-        width: 180,
         valueType: 'dateTime',
       },
       {
         title: '转换时间',
         dataIndex: 'convertedAt',
-        width: 180,
         valueType: 'dateTime',
         render: (_, row) => row.convertedAt ?? '-',
       },
+      {
+        title: '操作',
+        valueType: 'option',
+        render: (_, row) => (
+          <Space>
+            <Popconfirm
+              title='删除交易信号'
+              description='将直接从数据库删除该交易信号记录，不影响已生成的触发事件'
+              onConfirm={async () => {
+                await tradingApi.deleteSignal(row.id)
+                message.success('交易信号已删除')
+                await refreshSignals()
+              }}
+            >
+              <Button danger type='link'>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      },
     ],
-    [],
+    [message],
   )
 
   return (
-    <PageContainer>
+    <PageContainer subTitle='展示规则命中后生成的交易意图和转换结果'>
       <ProTable<TradingSignal>
         rowKey='id'
         search={false}

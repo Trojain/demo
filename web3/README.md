@@ -53,7 +53,7 @@ cp .env.example .env
 ## 第一版能力
 
 - OKX 公共行情 WebSocket 订阅
-- Binance 行情 REST 查询预留
+- Binance 公共行情、K 线、交易规则和 WebSocket ticker 订阅
 - 监控规则配置
 - 目标价触发检测
 - 前端确认后模拟下单
@@ -63,3 +63,12 @@ cp .env.example .env
 ## 风险说明
 
 当前版本默认模拟下单，真实下单接口尚未开放。后续接入真实交易前，需要补充 API 签名、交易规则校验、余额校验、限流、私有订单推送和更完整的风控策略。
+
+## 路线说明
+
+后续版本先推进多交易所公共能力，再进入真实交易能力：
+
+- `v0.3.x`：按 Binance Spot 官方文档补齐公共行情、交易规则、K 线、WebSocket 和下单前预览能力。
+- `v0.4.x`：在交易规则、风控和预览稳定后，再接入真实交易前置能力。
+
+Binance 公共能力已按官方 Spot API 文档接入，真实下单仍未开放。官方文档：https://developers.binance.com/docs/binance-spot-api-docs

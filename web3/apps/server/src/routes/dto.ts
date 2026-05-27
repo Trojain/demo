@@ -59,6 +59,11 @@ export const updateRuleSchema = createRuleSchema
 
 export type CreateRuleInput = z.infer<typeof createRuleSchema>
 
+export const idParamSchema = z.object({
+  /** 数据库记录 ID */
+  id: z.string().min(1),
+})
+
 export const confirmOrderSchema = z.object({
   /** 待确认的触发事件 ID */
   triggerId: z.string().min(1),
@@ -70,6 +75,8 @@ export const previewOrderSchema = z.object({
 })
 
 export const marketCandlesQuerySchema = z.object({
+  /** 交易所编码 */
+  exchange: z.enum(['okx', 'binance']).default('okx'),
   /** K 线交易对，当前总览页支持固定 USDT 交易对 */
   symbol: z.string().default('BTC-USDT'),
   /** K 线周期，1m 会返回最近 24 小时 1440 个点 */

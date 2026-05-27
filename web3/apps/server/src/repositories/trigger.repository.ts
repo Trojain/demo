@@ -74,4 +74,9 @@ export class TriggerRepository {
     this.db.prepare('UPDATE trigger_events SET status = ?, confirmed_at = ? WHERE id = ?').run('ignored', new Date().toISOString(), id)
     return this.findById(id)
   }
+
+  delete(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM trigger_events WHERE id = ?').run(id)
+    return result.changes > 0
+  }
 }
