@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { App as AntApp, Button, Descriptions, Modal, Popconfirm, Space, Tag, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, App as AntApp, Button, Descriptions, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
 import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { CheckCircleOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons'
 import axios from 'axios'
@@ -7,8 +7,7 @@ import { Decimal } from 'decimal.js'
 import { tradingApi } from '../api/trading'
 import { TriggerStatusTag } from '../components/StatusTag'
 import { useTradingStore } from '../stores/tradingStore'
-import type { MonitorRule, TriggerEvent } from '../types'
-import styles from './page.module.scss'
+import type { OrderPreview, OrderPreviewCheckItem, TriggerEvent } from '../types'
 
 function formatDecimalText(value?: string) {
   if (!value) {
@@ -22,37 +21,45 @@ function formatDecimalText(value?: string) {
   }
 }
 
-function getOrderPreview(trigger: TriggerEvent, rule?: MonitorRule) {
-  const targetPrice = new Decimal(trigger.targetPrice)
-
-  if (rule?.baseQuantity) {
-    const quantity = new Decimal(rule.baseQuantity)
-    return {
-      quantityLabel: `${quantity.toFixed()} ${trigger.symbol.replace('-USDT', '')}`,
-      estimatedAmountLabel: `${targetPrice.mul(quantity).toFixed()} USDT`,
-    }
+function getQuantityLabel(preview?: OrderPreview) {
+  if (!preview) {
+    return '-'
   }
 
-  if (rule?.quoteAmount) {
-    return {
-      quantityLabel: `${new Decimal(rule.quoteAmount).toFixed()} USDT`,
-      estimatedAmountLabel: `${new Decimal(rule.quoteAmount).toFixed()} USDT`,
-    }
+  if (preview.baseQuantity) {
+    return `${formatDecimalText(preview.baseQuantity)} ${preview.symbol.replace('-USDT', '')}`
   }
 
-  return {
-    quantityLabel: '-',
-    estimatedAmountLabel: '-',
+  if (preview.quoteAmount) {
+    return `${formatDecimalText(preview.quoteAmount)} USDT`
   }
+
+  return '-'
+}
+
+function renderCheckItems(items: OrderPreviewCheckItem[]) {
+  return (
+    <Space direction='vertical' size={4}>
+      {items.map(item => (
+        <Typography.Text key={item.code} type={item.passed ? 'success' : 'danger'}>
+          {item.passed ? '通过' : '拒绝'}：{item.message}
+        </Typography.Text>
+      ))}
+    </Space>
+  )
 }
 
 export function TriggersPage() {
   const { message } = AntApp.useApp()
   const triggers = useTradingStore(state => state.triggers)
-  const rules = useTradingStore(state => state.rules)
   const loading = useTradingStore(state => state.triggersLoading)
   const refreshTriggers = useTradingStore(state => state.refreshTriggers)
   const refreshOrders = useTradingStore(state => state.refreshOrders)
+  const [selectedTrigger, setSelectedTrigger] = useState<TriggerEvent>()
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [orderPreview, setOrderPreview] = useState<OrderPreview>()
+  const [previewError, setPreviewError] = useState('')
 
   const getErrorMessage = (error: unknown) => {
     if (axios.isAxiosError<{ message?: string }>(error)) {
@@ -60,6 +67,62 @@ export function TriggersPage() {
     }
 
     return error instanceof Error ? error.message : '操作失败'
+  }
+
+  useEffect(() => {
+    if (!previewOpen || !selectedTrigger) {
+      return
+    }
+
+    let ignored = false
+    setPreviewLoading(true)
+    setPreviewError('')
+    setOrderPreview(undefined)
+
+    void tradingApi
+      .previewOrder(selectedTrigger.id)
+      .then(preview => {
+        if (!ignored) {
+          setOrderPreview(preview)
+        }
+      })
+      .catch(error => {
+        if (!ignored) {
+          setPreviewError(getErrorMessage(error))
+        }
+      })
+      .finally(() => {
+        if (!ignored) {
+          setPreviewLoading(false)
+        }
+      })
+
+    return () => {
+      ignored = true
+    }
+  }, [previewOpen, selectedTrigger])
+
+  const closePreview = () => {
+    setPreviewOpen(false)
+    setSelectedTrigger(undefined)
+    setOrderPreview(undefined)
+    setPreviewError('')
+  }
+
+  const confirmSelectedOrder = async () => {
+    if (!selectedTrigger) {
+      return
+    }
+
+    try {
+      await tradingApi.confirmOrder(selectedTrigger.id)
+      message.success('订单已提交')
+      closePreview()
+      await Promise.all([refreshTriggers(), refreshOrders()])
+    } catch (error) {
+      message.error(getErrorMessage(error))
+      throw error
+    }
   }
 
   const columns = useMemo<ProColumns<TriggerEvent>[]>(
@@ -103,46 +166,14 @@ export function TriggersPage() {
             return <Tag>已处理</Tag>
           }
 
-          const relatedRule = rules.find(rule => rule.id === row.ruleId)
-          const preview = getOrderPreview(row, relatedRule)
-
           return (
             <Space>
               <Button
                 type='primary'
                 icon={<CheckCircleOutlined />}
                 onClick={() => {
-                  Modal.confirm({
-                    title: '确认模拟下单',
-                    width: 560,
-                    content: (
-                      <Space direction='vertical' size={12} style={{ width: '100%' }}>
-                        <Typography.Text type='secondary'>以下为前端预估展示，最终下单计算以后端校验结果为准。</Typography.Text>
-                        <Descriptions size='small' column={1} bordered>
-                          <Descriptions.Item label='交易对'>{row.symbol}</Descriptions.Item>
-                          <Descriptions.Item label='目标价'>{`${formatDecimalText(row.targetPrice)} USDT`}</Descriptions.Item>
-                          <Descriptions.Item label='触发价'>{`${formatDecimalText(row.marketPrice)} USDT`}</Descriptions.Item>
-                          <Descriptions.Item label='数量'>{preview.quantityLabel}</Descriptions.Item>
-                          <Descriptions.Item label='预估金额'>{preview.estimatedAmountLabel}</Descriptions.Item>
-                          <Descriptions.Item label='下单方向'>{relatedRule ? (relatedRule.side === 'sell' ? '卖出' : '买入') : '-'}</Descriptions.Item>
-                          <Descriptions.Item label='订单类型'>{relatedRule ? (relatedRule.orderType === 'limit' ? '限价' : '市价') : '-'}</Descriptions.Item>
-                        </Descriptions>
-                        {!relatedRule ? <Typography.Text type='warning'>未在前端缓存中找到关联规则，请刷新规则数据后再确认。</Typography.Text> : null}
-                      </Space>
-                    ),
-                    okText: '确认下单',
-                    cancelText: '取消',
-                    onOk: async () => {
-                      try {
-                        await tradingApi.confirmOrder(row.id)
-                        message.success('订单已提交')
-                        await Promise.all([refreshTriggers(), refreshOrders()])
-                      } catch (error) {
-                        message.error(getErrorMessage(error))
-                        throw error
-                      }
-                    },
-                  })
+                  setSelectedTrigger(row)
+                  setPreviewOpen(true)
                 }}
               >
                 确认
@@ -167,7 +198,7 @@ export function TriggersPage() {
         },
       },
     ],
-    [message, refreshOrders, refreshTriggers, rules],
+    [],
   )
 
   return (
@@ -187,6 +218,52 @@ export function TriggersPage() {
           </Space>,
         ]}
       />
+      <Modal
+        title='确认下单'
+        open={previewOpen}
+        width={680}
+        okText='确认下单'
+        cancelText='取消'
+        onCancel={closePreview}
+        onOk={confirmSelectedOrder}
+        okButtonProps={{
+          disabled: !orderPreview || !orderPreview.tradingRulePassed || !orderPreview.riskPassed,
+        }}
+      >
+        <Spin spinning={previewLoading}>
+          <Space direction='vertical' size={12} style={{ width: '100%' }}>
+            <Typography.Text type='secondary'>以下为后端预览结果，确认后仍以后端最终下单校验为准。</Typography.Text>
+            {previewError ? <Alert type='error' message={previewError} showIcon /> : null}
+            {orderPreview ? (
+              <>
+                <Descriptions size='small' column={1} bordered>
+                  <Descriptions.Item label='交易对'>{orderPreview.symbol}</Descriptions.Item>
+                  <Descriptions.Item label='目标价'>{`${formatDecimalText(orderPreview.targetPrice)} USDT`}</Descriptions.Item>
+                  <Descriptions.Item label='触发价'>{`${formatDecimalText(orderPreview.triggerPrice)} USDT`}</Descriptions.Item>
+                  <Descriptions.Item label='执行参考价'>{`${formatDecimalText(orderPreview.executionPrice)} USDT`}</Descriptions.Item>
+                  <Descriptions.Item label='数量'>{getQuantityLabel(orderPreview)}</Descriptions.Item>
+                  <Descriptions.Item label='预估金额'>{`${formatDecimalText(orderPreview.estimatedQuoteAmount)} USDT`}</Descriptions.Item>
+                  <Descriptions.Item label='最大滑点'>{`${formatDecimalText(orderPreview.maxSlippagePercent)}%`}</Descriptions.Item>
+                  <Descriptions.Item label='下单方向'>{orderPreview.side === 'sell' ? '卖出' : '买入'}</Descriptions.Item>
+                  <Descriptions.Item label='订单类型'>{orderPreview.orderType === 'limit' ? '限价' : '市价'}</Descriptions.Item>
+                  <Descriptions.Item label='交易模式'>{orderPreview.simulationMode ? '模拟' : '真实'}</Descriptions.Item>
+                  <Descriptions.Item label='交易规则'>
+                    <Tag color={orderPreview.tradingRulePassed ? 'success' : 'error'}>{orderPreview.tradingRulePassed ? '通过' : '未通过'}</Tag>
+                    {renderCheckItems(orderPreview.tradingRuleItems)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label='风控预览'>
+                    <Tag color={orderPreview.riskPassed ? 'success' : 'error'}>{orderPreview.riskPassed ? '通过' : '未通过'}</Tag>
+                    {renderCheckItems(orderPreview.riskItems)}
+                  </Descriptions.Item>
+                </Descriptions>
+                {!orderPreview.tradingRulePassed || !orderPreview.riskPassed ? (
+                  <Alert type='warning' message='交易规则或风控未通过，暂不能确认下单。' showIcon />
+                ) : null}
+              </>
+            ) : null}
+          </Space>
+        </Spin>
+      </Modal>
     </PageContainer>
   )
 }

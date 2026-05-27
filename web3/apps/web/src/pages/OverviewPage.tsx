@@ -128,17 +128,16 @@ export function OverviewPage() {
         align: 'right',
         render: (_, row) => <Typography.Text className={styles.marketMetric}>{formatMoneyCompact(row.volumeCurrency24h)}</Typography.Text>,
       },
-      // {
-      //   title: '市值',
-      //   dataIndex: 'marketCap',
-      //   align: 'right',
-      //   render: (_, row) => <Typography.Text className={styles.marketMetric}>{row.marketCap ? formatMoneyCompact(row.marketCap) : '待接入'}</Typography.Text>,
-      // },
+      {
+        title: '市值',
+        dataIndex: 'marketCap',
+        align: 'right',
+        render: (_, row) => <Typography.Text className={styles.marketMetric}>{row.marketCap ? formatMoneyCompact(row.marketCap) : '待接入'}</Typography.Text>,
+      },
       {
         title: '操作',
         valueType: 'option',
         align: 'right',
-        width: 92,
         render: (_, row) => (
           <div>
             <Tooltip title='查看走势'>
@@ -293,7 +292,22 @@ export function OverviewPage() {
       </Row>
 
       <Row gutter={[16, 16]} className={styles.section}>
-        <Col xs={24} lg={24}>
+        <Col xs={24} lg={14}>
+          <ProCard
+            title={`实时价格曲线 ${selectedSymbol}`}
+            extra={<Select value={selectedSymbol} options={MARKET_SYMBOL_OPTIONS} onChange={handleSelectSymbol} style={{ width: 160 }} />}
+            bodyStyle={{ height: 436 }}
+          >
+            {candlesLoading ? (
+              <Skeleton active paragraph={{ rows: 8 }} />
+            ) : candleSeries.length > 0 ? (
+              <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 320 }} />
+            ) : (
+              <Empty description={candleError || '暂无 24 小时行情'} />
+            )}
+          </ProCard>
+        </Col>
+        <Col xs={24} lg={10}>
           <ProCard title='最新行情' bodyStyle={{ minHeight: 360, padding: 0 }}>
             {marketOverview.length === 0 ? (
               <Empty description='暂无行情缓存' />
@@ -308,21 +322,6 @@ export function OverviewPage() {
                 pagination={false}
                 toolBarRender={false}
               />
-            )}
-          </ProCard>
-        </Col>
-        <Col xs={24} lg={24}>
-          <ProCard
-            title={`实时价格曲线 ${selectedSymbol}`}
-            extra={<Select value={selectedSymbol} options={MARKET_SYMBOL_OPTIONS} onChange={handleSelectSymbol} style={{ width: 128 }} />}
-            bodyStyle={{ height: 360 }}
-          >
-            {candlesLoading ? (
-              <Skeleton active paragraph={{ rows: 8 }} />
-            ) : candleSeries.length > 0 ? (
-              <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 320 }} />
-            ) : (
-              <Empty description={candleError || '暂无 24 小时行情'} />
             )}
           </ProCard>
         </Col>

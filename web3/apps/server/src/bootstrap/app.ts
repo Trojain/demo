@@ -5,13 +5,21 @@ import { createDatabase } from '../database/database.js';
 import { ExchangeFactory } from '../exchange/exchange-factory.js';
 import { AuditLogRepository } from '../repositories/audit-log.repository.js';
 import { OrderRepository } from '../repositories/order.repository.js';
+import { RiskCheckRepository } from '../repositories/risk-check.repository.js';
+import { RiskConfigRepository } from '../repositories/risk-config.repository.js';
 import { RuleRepository } from '../repositories/rule.repository.js';
+import { SignalRepository } from '../repositories/signal.repository.js';
 import { TriggerRepository } from '../repositories/trigger.repository.js';
 import { registerApiRoutes } from '../routes/api.routes.js';
 import { AuditLogService } from '../services/audit-log.service.js';
+import { MarketCapService } from '../services/market-cap.service.js';
 import { MarketService } from '../services/market.service.js';
 import { NotificationService } from '../services/notification.service.js';
+import { OrderPreviewService } from '../services/order-preview.service.js';
 import { OrderService } from '../services/order.service.js';
+import { RiskConfigService } from '../services/risk-config.service.js';
+import { RiskService } from '../services/risk.service.js';
+import { SignalService } from '../services/signal.service.js';
 import { StrategyService } from '../services/strategy.service.js';
 import { TradingRuleService } from '../services/trading-rule.service.js';
 
@@ -50,23 +58,44 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const db = createDatabase(appConfig.databasePath);
   const exchangeFactory = new ExchangeFactory();
   const ruleRepository = new RuleRepository(db);
+  const riskCheckRepository = new RiskCheckRepository(db);
+  const riskConfigRepository = new RiskConfigRepository(db);
+  const signalRepository = new SignalRepository(db);
   const triggerRepository = new TriggerRepository(db);
   const orderRepository = new OrderRepository(db);
   const auditLogRepository = new AuditLogRepository(db);
   const notificationService = new NotificationService();
   const auditLogService = new AuditLogService(auditLogRepository);
-  const marketService = new MarketService(exchangeFactory);
+  const marketCapService = new MarketCapService();
+  const marketService = new MarketService(exchangeFactory, marketCapService);
   const tradingRuleService = new TradingRuleService(exchangeFactory);
+  const riskConfigService = new RiskConfigService(riskConfigRepository, {
+    maxQuoteAmount: appConfig.risk.maxQuoteAmount,
+    maxMarketAgeMs: appConfig.risk.maxMarketAgeMs,
+    dailyMaxTriggerCount: appConfig.risk.dailyMaxTriggerCount,
+    dailyMaxQuoteAmount: appConfig.risk.dailyMaxQuoteAmount,
+    tradingMode: appConfig.risk.tradingMode
+  });
+  riskConfigService.ensureDefault();
+  const riskService = new RiskService(riskCheckRepository, auditLogService, riskConfigService, {
+    enableRealTrading: appConfig.enableRealTrading,
+  });
+  const signalService = new SignalService(signalRepository, triggerRepository, auditLogService, riskService);
+  const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService);
   const orderService = new OrderService(exchangeFactory, ruleRepository, triggerRepository, orderRepository, auditLogService);
-  const strategyService = new StrategyService(ruleRepository, triggerRepository, marketService, notificationService, auditLogService);
+  const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService);
 
   await registerApiRoutes(app, {
     auditLogService,
     exchangeFactory,
     marketService,
+    orderPreviewService,
     orderService,
     orderRepository,
+    riskCheckRepository,
+    riskConfigService,
     ruleRepository,
+    signalService,
     tradingRuleService,
     triggerRepository
   });

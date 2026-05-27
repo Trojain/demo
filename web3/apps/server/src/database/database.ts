@@ -48,6 +48,54 @@ export function createDatabase(databasePath: string) {
       FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
     );
 
+    CREATE TABLE IF NOT EXISTS trading_signals (
+      id TEXT PRIMARY KEY,
+      rule_id TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      market_price TEXT NOT NULL,
+      market_event_time TEXT NOT NULL DEFAULT '',
+      target_price TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      side TEXT NOT NULL,
+      order_type TEXT NOT NULL,
+      base_quantity TEXT,
+      quote_amount TEXT,
+      limit_price TEXT,
+      simulation_mode INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      converted_at TEXT,
+      FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS risk_checks (
+      id TEXT PRIMARY KEY,
+      signal_id TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      quote_exposure TEXT NOT NULL,
+      market_price TEXT NOT NULL,
+      items_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (signal_id) REFERENCES trading_signals(id),
+      FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS risk_config (
+      id TEXT PRIMARY KEY,
+      max_quote_amount TEXT NOT NULL,
+      max_market_age_ms INTEGER NOT NULL,
+      daily_max_trigger_count INTEGER NOT NULL,
+      daily_max_quote_amount TEXT NOT NULL,
+      trading_mode TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS order_records (
       id TEXT PRIMARY KEY,
       trigger_id TEXT NOT NULL,
@@ -84,12 +132,17 @@ export function createDatabase(databasePath: string) {
 
     CREATE INDEX IF NOT EXISTS idx_monitor_rules_enabled ON monitor_rules(enabled);
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
+    CREATE INDEX IF NOT EXISTS idx_trading_signals_status ON trading_signals(status);
+    CREATE INDEX IF NOT EXISTS idx_trading_signals_rule_id ON trading_signals(rule_id);
+    CREATE INDEX IF NOT EXISTS idx_risk_checks_signal_id ON risk_checks(signal_id);
+    CREATE INDEX IF NOT EXISTS idx_risk_checks_status ON risk_checks(status);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
   `);
 
   migrateMonitorRules(db);
+  migrateTradingSignals(db);
 
   return db;
 }
@@ -105,5 +158,20 @@ function migrateMonitorRules(db: Database.Database) {
 
   if (!columnNames.has('last_error_message')) {
     db.prepare('ALTER TABLE monitor_rules ADD COLUMN last_error_message TEXT').run();
+  }
+}
+
+function migrateTradingSignals(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(trading_signals)').all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  // 兼容 v0.2.23 已创建的信号表，风控需要知道信号是否来自模拟规则。
+  if (!columnNames.has('simulation_mode')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN simulation_mode INTEGER NOT NULL DEFAULT 1').run();
+  }
+
+  if (!columnNames.has('market_event_time')) {
+    db.prepare("ALTER TABLE trading_signals ADD COLUMN market_event_time TEXT NOT NULL DEFAULT ''").run();
+    db.prepare("UPDATE trading_signals SET market_event_time = created_at WHERE market_event_time = ''").run();
   }
 }

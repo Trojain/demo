@@ -3,13 +3,27 @@ import type { FastifyInstance } from 'fastify'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
 import type { MarketService } from '../services/market.service.js'
+import type { OrderPreviewService } from '../services/order-preview.service.js'
 import type { OrderService } from '../services/order.service.js'
+import type { RiskConfigService } from '../services/risk-config.service.js'
+import type { SignalService } from '../services/signal.service.js'
 import { RuleValidationError, type TradingRuleService } from '../services/trading-rule.service.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
+import type { RiskCheckRepository } from '../repositories/risk-check.repository.js'
 import type { RuleRepository } from '../repositories/rule.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import { appConfig } from '../config/env.js'
-import { createRuleSchema, updateRuleSchema, toggleRuleSchema, confirmOrderSchema, marketCandlesQuerySchema } from './dto.js'
+import {
+  createRuleSchema,
+  updateRuleSchema,
+  toggleRuleSchema,
+  confirmOrderSchema,
+  marketCandlesQuerySchema,
+  listSignalsQuerySchema,
+  previewOrderSchema,
+  listRiskChecksQuerySchema,
+  updateRiskConfigSchema
+} from './dto.js'
 
 const allowedCandleSymbols = new Set(['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT'])
 
@@ -17,9 +31,13 @@ export interface ApiRouteDeps {
   auditLogService: AuditLogService
   exchangeFactory: ExchangeFactory
   marketService: MarketService
+  orderPreviewService: OrderPreviewService
   orderService: OrderService
   orderRepository: OrderRepository
+  riskCheckRepository: RiskCheckRepository
+  riskConfigService: RiskConfigService
   ruleRepository: RuleRepository
+  signalService: SignalService
   tradingRuleService: TradingRuleService
   triggerRepository: TriggerRepository
 }
@@ -68,6 +86,8 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     return deps.marketService.refreshOverviewSnapshots('okx')
   })
 
+  app.get('/api/market/health', async () => deps.marketService.getHealth('okx'))
+
   app.get('/api/market/candles', async (request, reply) => {
     const parsed = marketCandlesQuerySchema.safeParse(request.query)
     if (!parsed.success) {
@@ -85,6 +105,35 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   })
 
   app.get('/api/rules', async () => deps.ruleRepository.list())
+
+  app.get('/api/signals', async (request, reply) => {
+    const parsed = listSignalsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易信号查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.signalService.list(parsed.data.limit)
+  })
+
+  app.get('/api/risk-checks', async (request, reply) => {
+    const parsed = listRiskChecksQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '风控检查查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.riskCheckRepository.list(parsed.data.limit)
+  })
+
+  app.get('/api/risk-config', async () => deps.riskConfigService.getConfig())
+
+  app.put('/api/risk-config', async (request, reply) => {
+    const parsed = updateRiskConfigSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '风控配置参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.riskConfigService.update(parsed.data)
+  })
 
   app.post('/api/rules', async (request, reply) => {
     const parsed = createRuleSchema.safeParse(request.body)
@@ -227,6 +276,21 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   })
 
   app.get('/api/orders', async () => deps.orderRepository.list())
+
+  app.post('/api/orders/preview', async (request, reply) => {
+    const parsed = previewOrderSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '下单预览参数不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      return await deps.orderPreviewService.preview(parsed.data.triggerId)
+    } catch (error) {
+      return reply.status(400).send({
+        message: error instanceof Error ? error.message : '下单预览失败',
+      })
+    }
+  })
 
   app.post('/api/orders/confirm', async (request, reply) => {
     const parsed = confirmOrderSchema.safeParse(request.body)

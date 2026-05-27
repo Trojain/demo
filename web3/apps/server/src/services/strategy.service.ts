@@ -1,11 +1,10 @@
 import { Decimal } from 'decimal.js'
-import { nanoid } from 'nanoid'
 import type { MonitorRule } from '../types/domain.js'
 import type { RuleRepository } from '../repositories/rule.repository.js'
-import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import type { MarketService } from './market.service.js'
 import type { NotificationService } from './notification.service.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { SignalService } from './signal.service.js'
 
 export class StrategyService {
   private timer?: NodeJS.Timeout
@@ -13,10 +12,10 @@ export class StrategyService {
 
   constructor(
     private readonly ruleRepository: RuleRepository,
-    private readonly triggerRepository: TriggerRepository,
     private readonly marketService: MarketService,
     private readonly notificationService: NotificationService,
     private readonly auditLogService: AuditLogService,
+    private readonly signalService: SignalService,
   ) {}
 
   start() {
@@ -46,28 +45,20 @@ export class StrategyService {
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : '总览行情刷新失败'
-        // 总览行情刷新失败不阻断单条规则检测，规则详情中保留最近公共行情错误。
-        enabledRules.forEach(rule => {
-          this.ruleRepository.updateRuntimeState(rule.id, {
-            lastCheckedAt: scanStartedAt,
-            runtimeStatus: 'error',
-            lastErrorMessage: message,
-          })
-          this.auditLogService.record({
-            level: 'error',
-            action: 'strategy.error',
-            entityType: 'rule',
-            entityId: rule.id,
-            ruleId: rule.id,
-            message,
-            dedupeKey: `strategy.error:overview:${rule.id}:${message}`,
-            dedupeMs: 60_000,
-            payload: {
-              exchange: rule.exchange,
-              symbol: rule.symbol,
-              scope: 'overview',
-            },
-          })
+        // 总览行情属于看板刷新，失败时只写审计日志，规则状态由单条规则检测结果决定。
+        this.auditLogService.record({
+          level: 'error',
+          action: 'strategy.error',
+          entityType: 'market',
+          entityId: 'overview',
+          message,
+          dedupeKey: `strategy.error:overview:${message}`,
+          dedupeMs: 60_000,
+          payload: {
+            exchange: 'okx',
+            scope: 'overview',
+            ruleCount: enabledRules.length,
+          },
         })
       }
 
@@ -116,7 +107,7 @@ export class StrategyService {
         return
       }
 
-      const ticker = await this.marketService.refreshLatestPrice(rule.exchange, rule.symbol)
+      const ticker = await this.marketService.getLatestPrice(rule.exchange, rule.symbol)
       this.notificationService.broadcast('ticker.updated', ticker)
 
       if (rule.triggeredCount >= rule.maxTriggerCount) {
@@ -147,47 +138,28 @@ export class StrategyService {
         return
       }
 
-      const pendingEvent = this.triggerRepository.findPendingByRuleId(rule.id)
-      if (pendingEvent) {
-        this.ruleRepository.updateRuntimeState(rule.id, {
-          lastTriggeredAt: pendingEvent.createdAt,
-          runtimeStatus: 'running',
-          lastErrorMessage: null,
-        })
+      const signal = this.signalService.createSignal({
+        rule,
+        marketPrice: ticker.price,
+        marketEventTime: ticker.eventTime,
+        reason: `市场价 ${ticker.price} ${rule.operator === 'gte' ? '大于等于' : '小于等于'} 目标价 ${rule.targetPrice}`,
+        createdAt: new Date(now).toISOString(),
+      })
+
+      if (!signal) {
         return
       }
 
-      const event = this.triggerRepository.create({
-        id: nanoid(),
-        ruleId: rule.id,
-        exchange: rule.exchange,
-        symbol: rule.symbol,
-        marketPrice: ticker.price,
-        targetPrice: rule.targetPrice,
-        status: 'pending',
-        createdAt: new Date(now).toISOString(),
-      })
+      const event = this.signalService.convertToTrigger(signal, rule)
+      if (!event) {
+        return
+      }
 
       this.ruleRepository.updateRuntimeState(rule.id, {
         lastTriggeredAt: event.createdAt,
         triggeredCount: rule.triggeredCount + 1,
         runtimeStatus: rule.triggeredCount + 1 >= rule.maxTriggerCount ? 'limit_reached' : 'running',
         lastErrorMessage: null,
-      })
-      this.auditLogService.record({
-        action: 'trigger.created',
-        entityType: 'trigger',
-        entityId: event.id,
-        ruleId: rule.id,
-        triggerId: event.id,
-        message: `${rule.symbol} 已触发目标价`,
-        payload: {
-          exchange: rule.exchange,
-          symbol: rule.symbol,
-          operator: rule.operator,
-          marketPrice: ticker.price,
-          targetPrice: rule.targetPrice,
-        },
       })
       this.notificationService.broadcast('trigger.created', event)
     } catch (error) {

@@ -12,13 +12,13 @@ pnpm dev
 前端地址：
 
 ```txt
-http://localhost:5173
+http://localhost:3102
 ```
 
 后端地址：
 
 ```txt
-http://localhost:3001
+http://localhost:3101
 ```
 
 ## 配置
@@ -31,11 +31,16 @@ cp .env.example .env
 
 关键配置：
 
-- `PORT`：后端端口，默认 `3001`
-- `VITE_WS_BASE_URL`：前端行情推送地址，开发环境默认 `ws://localhost:3001/ws`
+- `PORT`：后端端口，默认 `3101`
+- `VITE_WS_BASE_URL`：前端行情推送地址，开发环境默认 `ws://localhost:3101/ws`
 - `DATABASE_PATH`：SQLite 数据文件路径
 - `ENABLE_REAL_TRADING`：真实下单总开关，第一版建议保持 `false`
 - `EXCHANGE_HTTP_PROXY`：交易所 HTTP 代理，例如 `http://127.0.0.1:7897`
+- `RISK_MAX_QUOTE_AMOUNT`：单笔最大计价金额，默认 `1000`
+- `RISK_MAX_MARKET_AGE_MS`：行情最大允许延迟，默认 `10000`
+- `RISK_DAILY_MAX_TRIGGER_COUNT`：每日最大通过风控次数，默认 `20`
+- `RISK_DAILY_MAX_QUOTE_AMOUNT`：每日最大通过风控计价金额，默认 `5000`
+- `RISK_TRADING_MODE`：风控交易模式，默认 `simulation_only`
 - `OKX_API_KEY`、`OKX_API_SECRET`、`OKX_API_PASSPHRASE`：OKX 真实下单预留配置
 - `BINANCE_API_KEY`、`BINANCE_API_SECRET`：Binance 真实下单预留配置
 

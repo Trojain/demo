@@ -3,9 +3,23 @@ export type TriggerOperator = 'gte' | 'lte';
 export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
 export type TriggerStatus = 'pending' | 'confirmed' | 'ignored';
+export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
+export type RiskCheckStatus = 'passed' | 'rejected';
+export type RiskTradingMode = 'simulation_only' | 'allow_real';
 export type RuleRuntimeStatus = 'idle' | 'running' | 'paused' | 'limit_reached' | 'error';
 export type AuditLogLevel = 'info' | 'warning' | 'error';
-export type AuditLogAction = 'trigger.created' | 'trigger.confirmed' | 'trigger.ignored' | 'order.submitted' | 'order.failed' | 'strategy.error';
+export type AuditLogAction =
+  | 'signal.created'
+  | 'signal.converted'
+  | 'signal.duplicated'
+  | 'risk.passed'
+  | 'risk.rejected'
+  | 'trigger.created'
+  | 'trigger.confirmed'
+  | 'trigger.ignored'
+  | 'order.submitted'
+  | 'order.failed'
+  | 'strategy.error';
 
 export interface MonitorRule {
   /** 规则主键 */
@@ -119,6 +133,167 @@ export interface TriggerEvent {
   /** 确认时间 */
   confirmedAt?: string;
 }
+
+export interface TradingSignal {
+  /** 交易信号主键 */
+  id: string;
+  /** 关联规则 ID */
+  ruleId: string;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 信号生成时市场价格 */
+  marketPrice: string;
+  /** 行情事件时间 */
+  marketEventTime: string;
+  /** 规则目标价格 */
+  targetPrice: string;
+  /** 触发方向 */
+  operator: TriggerOperator;
+  /** 下单方向 */
+  side: OrderSide;
+  /** 下单类型 */
+  orderType: OrderType;
+  /** 基础币数量 */
+  baseQuantity?: string;
+  /** 计价币金额 */
+  quoteAmount?: string;
+  /** 限价单价格 */
+  limitPrice?: string;
+  /** 是否模拟下单 */
+  simulationMode: boolean;
+  /** 信号状态 */
+  status: SignalStatus;
+  /** 信号生成原因 */
+  reason: string;
+  /** 创建时间 */
+  createdAt: string;
+  /** 转换为触发事件的时间 */
+  convertedAt?: string;
+}
+
+export interface OrderPreviewCheckItem {
+  /** 检查项编码 */
+  code: string;
+  /** 是否通过 */
+  passed: boolean;
+  /** 检查项说明 */
+  message: string;
+}
+
+export interface OrderPreview {
+  /** 触发事件 ID */
+  triggerId: string;
+  /** 关联规则 ID */
+  ruleId: string;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 下单方向 */
+  side: OrderSide;
+  /** 下单类型 */
+  orderType: OrderType;
+  /** 规则目标价格 */
+  targetPrice: string;
+  /** 触发价格 */
+  triggerPrice: string;
+  /** 执行参考价 */
+  executionPrice: string;
+  /** 基础币数量 */
+  baseQuantity?: string;
+  /** 计价币金额 */
+  quoteAmount?: string;
+  /** 预估成交金额 */
+  estimatedQuoteAmount: string;
+  /** 最大滑点百分比 */
+  maxSlippagePercent: string;
+  /** 是否模拟交易 */
+  simulationMode: boolean;
+  /** 交易规则是否通过 */
+  tradingRulePassed: boolean;
+  /** 交易规则检查明细 */
+  tradingRuleItems: OrderPreviewCheckItem[];
+  /** 风控是否通过 */
+  riskPassed: boolean;
+  /** 风控检查明细 */
+  riskItems: OrderPreviewCheckItem[];
+  /** 预览生成时间 */
+  previewedAt: string;
+}
+
+export interface MarketHealthTicker {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 最新价格 */
+  price: string;
+  /** 行情事件时间 */
+  eventTime: string;
+  /** 本地缓存年龄，单位毫秒 */
+  ageMs: number;
+}
+
+export interface MarketHealth {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** REST 是否处于退避中 */
+  restBackoffActive: boolean;
+  /** REST 退避结束时间 */
+  restBackoffUntil?: string;
+  /** 最近一次 REST 错误 */
+  lastRestError?: string;
+  /** 最近一次总览刷新时间 */
+  overviewRefreshedAt?: string;
+  /** 当前 WebSocket 订阅交易对 */
+  subscribedSymbols: string[];
+  /** 当前缓存行情 */
+  tickers: MarketHealthTicker[];
+}
+
+export interface RiskCheck {
+  /** 风控检查主键 */
+  id: string;
+  /** 关联交易信号 ID */
+  signalId: string;
+  /** 关联规则 ID */
+  ruleId: string;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 风控状态 */
+  status: RiskCheckStatus;
+  /** 风控摘要 */
+  reason: string;
+  /** 信号对应计价币风险敞口 */
+  quoteExposure: string;
+  /** 信号市场价 */
+  marketPrice: string;
+  /** 结构化检查明细 JSON 字符串 */
+  itemsJson: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+export interface RiskConfig {
+  /** 单笔最大计价金额 */
+  maxQuoteAmount: string;
+  /** 行情最大允许延迟，单位毫秒 */
+  maxMarketAgeMs: number;
+  /** 每日最大通过风控次数 */
+  dailyMaxTriggerCount: number;
+  /** 每日最大通过风控计价金额 */
+  dailyMaxQuoteAmount: string;
+  /** 交易模式 */
+  tradingMode: RiskTradingMode;
+  /** 更新时间 */
+  updatedAt: string;
+}
+
+export type UpdateRiskConfigPayload = Omit<RiskConfig, 'updatedAt'>;
 
 export interface OrderRecord {
   /** 订单记录主键 */

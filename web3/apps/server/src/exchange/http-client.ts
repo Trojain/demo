@@ -9,11 +9,18 @@ export async function fetchExchangeJson<T>(url: string): Promise<T> {
       dispatcher: proxyAgent,
     })
 
+    const payload = (await response.json()) as T & { code?: string; msg?: string }
+
     if (!response.ok) {
-      throw new Error(`HTTP 状态码 ${response.status}`)
+      throw new Error(`HTTP 状态码 ${response.status}${payload?.msg ? `，${payload.msg}` : ''}`)
     }
 
-    return (await response.json()) as T
+    // OKX 业务限频通常会通过 code 返回，例如 50011，请在这里保留交易所原始错误码。
+    if (payload?.code && payload.code !== '0') {
+      throw new Error(`交易所错误码 ${payload.code}${payload.msg ? `，${payload.msg}` : ''}`)
+    }
+
+    return payload
   } catch (error) {
     throw new Error(`交易所请求失败：${formatExchangeError(error)}`)
   }

@@ -5,11 +5,17 @@ import type {
   ExchangeCode,
   InstrumentRule,
   MarketCandle,
+  MarketHealth,
   MarketTickerSnapshot,
   MonitorRule,
+  OrderPreview,
   OrderRecord,
+  RiskConfig,
+  RiskCheck,
   TickerPrice,
+  TradingSignal,
   TriggerEvent,
+  UpdateRiskConfigPayload,
   UpdateRulePayload
 } from '../types';
 
@@ -37,8 +43,32 @@ export const tradingApi = {
     const { data } = await apiClient.get<TriggerEvent[]>('/triggers');
     return data;
   },
+  getSignals: async (limit = 100) => {
+    const { data } = await apiClient.get<TradingSignal[]>('/signals', {
+      params: { limit }
+    });
+    return data;
+  },
+  getRiskChecks: async (limit = 100) => {
+    const { data } = await apiClient.get<RiskCheck[]>('/risk-checks', {
+      params: { limit }
+    });
+    return data;
+  },
+  getRiskConfig: async () => {
+    const { data } = await apiClient.get<RiskConfig>('/risk-config');
+    return data;
+  },
+  updateRiskConfig: async (payload: UpdateRiskConfigPayload) => {
+    const { data } = await apiClient.put<RiskConfig>('/risk-config', payload);
+    return data;
+  },
   confirmOrder: async (triggerId: string) => {
     const { data } = await apiClient.post<OrderRecord>('/orders/confirm', { triggerId });
+    return data;
+  },
+  previewOrder: async (triggerId: string) => {
+    const { data } = await apiClient.post<OrderPreview>('/orders/preview', { triggerId });
     return data;
   },
   ignoreTrigger: async (triggerId: string) => {
@@ -67,6 +97,10 @@ export const tradingApi = {
   },
   getMarketOverview: async () => {
     const { data } = await apiClient.get<MarketTickerSnapshot[]>('/market/overview');
+    return data;
+  },
+  getMarketHealth: async () => {
+    const { data } = await apiClient.get<MarketHealth>('/market/health');
     return data;
   },
   getMarketCandles: async (symbol: string, bar = '1m') => {

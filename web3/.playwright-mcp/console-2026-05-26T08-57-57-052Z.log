@@ -128,3 +128,20 @@
 [ 7259396ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:864
 [ 7260364ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:20102
 [ 7260521ms] [WARNING] WebSocket connection to 'ws://localhost:3001/ws' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/src/api/realtime.ts:42
+[ 8636537ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 8640843ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 8646150ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 8652459ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 8659768ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[ 8667075ms] [ERROR] WebSocket connection to 'ws://localhost:3001/ws' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/api/realtime.ts:18
+[15913164ms] DataCloneError: Failed to execute 'measure' on 'Performance': Data cannot be cloned, out of memory.
+    at logComponentRender (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:3182:623)
+    at commitPassiveMountOnFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11026:131)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11010:13)
+    at commitPassiveMountOnFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11201:13)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11010:13)
+    at commitPassiveMountOnFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11033:13)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11010:13)
+    at commitPassiveMountOnFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11033:13)
+    at recursivelyTraversePassiveMountEffects (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11010:13)
+    at commitPassiveMountOnFiber (http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=78090971:11055:13)

@@ -33,22 +33,12 @@
 
 .marketTable {
   padding: 0 16px;
-  :global(.ant-pro-table-search),
-  :global(.ant-pro-table-list-toolbar) {
-    display: none;
-  }
 
   :global(.ant-table-thead > tr > th) {
     color: #98a1ad;
     font-size: 12px;
-    font-weight: 500;
     background: #ffffff;
     border-bottom: 1px solid #f1f3f6;
-  }
-
-  :global(.ant-table-tbody > tr > td) {
-    height: 64px;
-    border-bottom: 0;
   }
 
   :global(.ant-table-tbody > tr:hover > td) {

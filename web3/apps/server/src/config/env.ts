@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { config } from 'dotenv'
+import { Decimal } from 'decimal.js'
 import { z } from 'zod'
 
 config()
@@ -13,8 +14,16 @@ const booleanString = z.union([z.boolean(), z.string()]).transform(value => {
   return value.toLowerCase() === 'true'
 })
 
+const decimalString = z.string().refine(value => {
+  try {
+    return new Decimal(value).isFinite() && new Decimal(value).greaterThan(0)
+  } catch {
+    return false
+  }
+}, '必须是大于 0 的数字字符串')
+
 const envSchema = z.object({
-  PORT: z.coerce.number().default(3001),
+  PORT: z.coerce.number().default(3101),
   DATABASE_PATH: z.string().default('./data/web3-trading-tool.db'),
   DEFAULT_EXCHANGE: z.enum(['okx', 'binance']).default('okx'),
   ENABLE_REAL_TRADING: booleanString.default(false),
@@ -25,6 +34,11 @@ const envSchema = z.object({
   OKX_SIMULATED: booleanString.default(true),
   BINANCE_API_KEY: z.string().default(''),
   BINANCE_API_SECRET: z.string().default(''),
+  RISK_MAX_QUOTE_AMOUNT: decimalString.default('1000'),
+  RISK_MAX_MARKET_AGE_MS: z.coerce.number().int().min(1000).default(10_000),
+  RISK_DAILY_MAX_TRIGGER_COUNT: z.coerce.number().int().min(1).default(20),
+  RISK_DAILY_MAX_QUOTE_AMOUNT: decimalString.default('5000'),
+  RISK_TRADING_MODE: z.enum(['simulation_only', 'allow_real']).default('simulation_only'),
 })
 
 const parsedEnv = envSchema.parse(process.env)
@@ -55,5 +69,17 @@ export const appConfig = {
     apiKey: parsedEnv.BINANCE_API_KEY,
     /** Binance API Secret，后续接入真实下单时使用 */
     apiSecret: parsedEnv.BINANCE_API_SECRET,
+  },
+  risk: {
+    /** 单笔最大计价金额，例如 USDT 金额，超过后交易信号会被风控拒绝 */
+    maxQuoteAmount: parsedEnv.RISK_MAX_QUOTE_AMOUNT,
+    /** 行情最大允许延迟，单位毫秒，超过后交易信号会被风控拒绝 */
+    maxMarketAgeMs: parsedEnv.RISK_MAX_MARKET_AGE_MS,
+    /** 每日最大通过风控次数 */
+    dailyMaxTriggerCount: parsedEnv.RISK_DAILY_MAX_TRIGGER_COUNT,
+    /** 每日最大通过风控计价金额 */
+    dailyMaxQuoteAmount: parsedEnv.RISK_DAILY_MAX_QUOTE_AMOUNT,
+    /** 交易模式，simulation_only 表示仅允许模拟交易 */
+    tradingMode: parsedEnv.RISK_TRADING_MODE,
   },
 } as const

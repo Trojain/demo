@@ -1,4 +1,14 @@
 import { z } from 'zod'
+import { Decimal } from 'decimal.js'
+
+const positiveDecimalString = z.string().refine(value => {
+  try {
+    const decimal = new Decimal(value)
+    return decimal.isFinite() && decimal.greaterThan(0)
+  } catch {
+    return false
+  }
+}, '必须是大于 0 的数字字符串')
 
 export const createRuleSchema = z
   .object({
@@ -54,9 +64,37 @@ export const confirmOrderSchema = z.object({
   triggerId: z.string().min(1),
 })
 
+export const previewOrderSchema = z.object({
+  /** 待预览的触发事件 ID */
+  triggerId: z.string().min(1),
+})
+
 export const marketCandlesQuerySchema = z.object({
   /** K 线交易对，当前总览页支持固定 USDT 交易对 */
   symbol: z.string().default('BTC-USDT'),
   /** K 线周期，1m 会返回最近 24 小时 1440 个点 */
   bar: z.enum(['1m', '5m', '15m']).default('1m'),
+})
+
+export const listSignalsQuerySchema = z.object({
+  /** 返回交易信号数量，限制最大值避免一次性读取过多 SQLite 记录 */
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+
+export const listRiskChecksQuerySchema = z.object({
+  /** 返回风控检查数量，限制最大值避免一次性读取过多 SQLite 记录 */
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+
+export const updateRiskConfigSchema = z.object({
+  /** 单笔最大计价金额 */
+  maxQuoteAmount: positiveDecimalString,
+  /** 行情最大允许延迟，单位毫秒 */
+  maxMarketAgeMs: z.number().int().min(1000),
+  /** 每日最大通过风控次数 */
+  dailyMaxTriggerCount: z.number().int().min(1),
+  /** 每日最大通过风控计价金额 */
+  dailyMaxQuoteAmount: positiveDecimalString,
+  /** 交易模式 */
+  tradingMode: z.enum(['simulation_only', 'allow_real']),
 })

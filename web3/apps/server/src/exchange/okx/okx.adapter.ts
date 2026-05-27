@@ -130,6 +130,29 @@ export class OkxAdapter implements ExchangeAdapter {
     };
   }
 
+  async getTickerSnapshots(symbols: string[]): Promise<MarketTickerSnapshot[]> {
+    const expectedInstIds = new Set(symbols.map(toOkxInstId));
+    const payload = await fetchExchangeJson<OkxTickerResponse>('https://www.okx.com/api/v5/market/tickers?instType=SPOT');
+
+    return (payload.data ?? [])
+      .filter((ticker) => expectedInstIds.has(ticker.instId) && Boolean(ticker.last))
+      .map((ticker) => {
+        const open24h = ticker.open24h ?? ticker.last;
+        const changePercent24h = new Decimal(ticker.last).minus(open24h).div(open24h).mul(100).toFixed(2);
+
+        return {
+          exchange: this.code,
+          symbol: toDisplaySymbol(ticker.instId),
+          price: ticker.last,
+          eventTime: new Date(Number(ticker.ts)).toISOString(),
+          open24h,
+          changePercent24h,
+          volume24h: ticker.vol24h ?? '0',
+          volumeCurrency24h: ticker.volCcy24h ?? '0'
+        };
+      });
+  }
+
   async getCandles(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]> {
     const instId = toOkxInstId(symbol);
     const params = new URLSearchParams({

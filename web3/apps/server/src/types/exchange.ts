@@ -99,6 +99,8 @@ export interface ExchangeAdapter {
   getLatestPrice(symbol: string): Promise<TickerPrice>;
   /** 查询完整行情快照，用于总览行情列表 */
   getTickerSnapshot?(symbol: string): Promise<MarketTickerSnapshot>;
+  /** 批量查询完整行情快照，用于总览行情列表降低 REST 请求数量 */
+  getTickerSnapshots?(symbols: string[]): Promise<MarketTickerSnapshot[]>;
   /** 查询 K 线，用于价格走势，after 用于向更早时间分页 */
   getCandles?(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]>;
   /** 查询交易规则，用于下单前校验 */

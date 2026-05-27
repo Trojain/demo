@@ -20,7 +20,7 @@ function getDefaultWsUrl() {
 
   // 开发环境直连后端，避开 Vite WebSocket 代理偶发 ECONNRESET。
   if (import.meta.env.DEV) {
-    return 'ws://localhost:3001/ws';
+    return 'ws://localhost:3101/ws';
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';

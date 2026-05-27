@@ -1,9 +1,14 @@
-import type { ExchangeCode, MonitorRule } from '../types/domain.js'
+import type { ExchangeCode, MarketHealth, MonitorRule } from '../types/domain.js'
 import type { MarketCandle, MarketTickerSnapshot, TickerPrice } from '../types/exchange.js'
 import { ExchangeFactory } from '../exchange/exchange-factory.js'
+import type { MarketCapService } from './market-cap.service.js'
 
 export const OVERVIEW_SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT'] as const
 
+const OVERVIEW_REFRESH_INTERVAL_MS = 5_000
+const TICKER_REST_MIN_INTERVAL_MS = 3_000
+const TICKER_STALE_MS = 10_000
+const REST_BACKOFF_MS = 30_000
 const CANDLE_CACHE_TTL_MS = 60_000
 const EXCHANGE_CANDLE_PAGE_LIMIT = 300
 
@@ -25,11 +30,47 @@ export class MarketService {
   private readonly overviewSnapshots = new Map<string, MarketTickerSnapshot>()
   private readonly candleCache = new Map<string, CandleCacheItem>()
   private readonly subscriptionSignatures = new Map<ExchangeCode, string>()
+  private readonly overviewRefreshedAt = new Map<ExchangeCode, number>()
+  private readonly latestTickerRestAt = new Map<string, number>()
+  private readonly restBackoffUntil = new Map<ExchangeCode, number>()
+  private readonly lastRestError = new Map<ExchangeCode, string>()
 
-  constructor(private readonly exchangeFactory: ExchangeFactory) {}
+  constructor(
+    private readonly exchangeFactory: ExchangeFactory,
+    private readonly marketCapService?: MarketCapService,
+  ) {}
 
   private cacheKey(exchange: ExchangeCode, symbol: string) {
     return `${exchange}:${symbol.toUpperCase()}`
+  }
+
+  private isTickerFresh(ticker: TickerPrice, now = Date.now()) {
+    const eventTime = new Date(ticker.eventTime).getTime()
+    return Number.isFinite(eventTime) && now - eventTime <= TICKER_STALE_MS
+  }
+
+  private getBackoffMessage(exchange: ExchangeCode, now = Date.now()) {
+    const backoffUntil = this.restBackoffUntil.get(exchange) ?? 0
+    if (now < backoffUntil) {
+      const seconds = Math.ceil((backoffUntil - now) / 1000)
+      return `交易所 REST 限流退避中，约 ${seconds} 秒后恢复`
+    }
+
+    return undefined
+  }
+
+  private enterBackoffIfRateLimited(exchange: ExchangeCode, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    this.lastRestError.set(exchange, message)
+    if (message.includes('HTTP 状态码 429') || message.includes('交易所错误码 50011')) {
+      this.restBackoffUntil.set(exchange, Date.now() + REST_BACKOFF_MS)
+    }
+  }
+
+  private listOverviewSnapshotsBySymbols(exchange: ExchangeCode, symbols: readonly string[] = OVERVIEW_SYMBOLS) {
+    return symbols
+      .map(symbol => this.overviewSnapshots.get(this.cacheKey(exchange, symbol)))
+      .filter((snapshot): snapshot is MarketTickerSnapshot => Boolean(snapshot))
   }
 
   refreshSubscriptions(rules: MonitorRule[], onTicker: (ticker: TickerPrice) => void) {
@@ -63,7 +104,7 @@ export class MarketService {
 
   async getLatestPrice(exchange: ExchangeCode, symbol: string) {
     const cached = this.latestTicker.get(this.cacheKey(exchange, symbol))
-    if (cached) {
+    if (cached && this.isTickerFresh(cached)) {
       return cached
     }
 
@@ -71,31 +112,89 @@ export class MarketService {
   }
 
   async refreshLatestPrice(exchange: ExchangeCode, symbol: string) {
-    const ticker = await this.exchangeFactory.getAdapter(exchange).getLatestPrice(symbol)
-    this.latestTicker.set(this.cacheKey(exchange, symbol), ticker)
-    return ticker
+    const key = this.cacheKey(exchange, symbol)
+    const now = Date.now()
+    const cached = this.latestTicker.get(key)
+    const backoffMessage = this.getBackoffMessage(exchange, now)
+    if (backoffMessage) {
+      throw new Error(backoffMessage)
+    }
+
+    const lastRestAt = this.latestTickerRestAt.get(key) ?? 0
+    if (cached && now - lastRestAt < TICKER_REST_MIN_INTERVAL_MS) {
+      return cached
+    }
+
+    try {
+      this.latestTickerRestAt.set(key, now)
+      const ticker = await this.exchangeFactory.getAdapter(exchange).getLatestPrice(symbol)
+      this.latestTicker.set(key, ticker)
+      this.lastRestError.delete(exchange)
+      return ticker
+    } catch (error) {
+      this.enterBackoffIfRateLimited(exchange, error)
+      throw error
+    }
   }
 
   async refreshOverviewSnapshots(exchange: ExchangeCode = 'okx') {
-    const adapter = this.exchangeFactory.getAdapter(exchange)
-    const snapshots = await Promise.all(
-      OVERVIEW_SYMBOLS.map(async symbol => {
-        const snapshot = adapter.getTickerSnapshot
-          ? await adapter.getTickerSnapshot(symbol)
-          : {
-              ...(await adapter.getLatestPrice(symbol)),
-              open24h: '0',
-              changePercent24h: '0',
-              volume24h: '0',
-              volumeCurrency24h: '0',
-            }
-        this.overviewSnapshots.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshot)
-        this.latestTicker.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshot)
-        return snapshot
-      }),
-    )
+    const now = Date.now()
+    const cached = this.listOverviewSnapshotsBySymbols(exchange)
+    const lastRefreshAt = this.overviewRefreshedAt.get(exchange) ?? 0
+    if (cached.length === OVERVIEW_SYMBOLS.length && now - lastRefreshAt < OVERVIEW_REFRESH_INTERVAL_MS) {
+      return cached
+    }
 
-    return snapshots
+    const backoffMessage = this.getBackoffMessage(exchange, now)
+    if (backoffMessage && cached.length > 0) {
+      return cached
+    }
+    if (backoffMessage) {
+      throw new Error(backoffMessage)
+    }
+
+    const adapter = this.exchangeFactory.getAdapter(exchange)
+    try {
+      const snapshots = adapter.getTickerSnapshots
+        ? await adapter.getTickerSnapshots([...OVERVIEW_SYMBOLS])
+        : await Promise.all(
+            OVERVIEW_SYMBOLS.map(async symbol => {
+              const snapshot = adapter.getTickerSnapshot
+                ? await adapter.getTickerSnapshot(symbol)
+                : {
+                    ...(await adapter.getLatestPrice(symbol)),
+                    open24h: '0',
+                    changePercent24h: '0',
+                    volume24h: '0',
+                    volumeCurrency24h: '0',
+                  }
+              return snapshot
+            }),
+          )
+
+      let marketCaps = new Map<string, string>()
+      try {
+        marketCaps = this.marketCapService ? await this.marketCapService.getMarketCaps(OVERVIEW_SYMBOLS) : marketCaps
+      } catch (error) {
+        this.lastRestError.set(exchange, error instanceof Error ? error.message : '市值数据刷新失败')
+      }
+
+      snapshots.forEach(snapshot => {
+        const snapshotWithMarketCap = {
+          ...snapshot,
+          marketCap: marketCaps.get(snapshot.symbol) ?? snapshot.marketCap,
+        }
+        this.overviewSnapshots.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshotWithMarketCap)
+        this.latestTicker.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshotWithMarketCap)
+      })
+      this.overviewRefreshedAt.set(exchange, now)
+      this.lastRestError.delete(exchange)
+
+      return this.listOverviewSnapshotsBySymbols(exchange)
+    } catch (error) {
+      this.enterBackoffIfRateLimited(exchange, error)
+      throw error
+    }
   }
 
   listOverviewSnapshots() {
@@ -104,6 +203,34 @@ export class MarketService {
 
   listLatestTickers() {
     return [...this.latestTicker.values()]
+  }
+
+  getHealth(exchange: ExchangeCode = 'okx'): MarketHealth {
+    const now = Date.now()
+    const backoffUntil = this.restBackoffUntil.get(exchange) ?? 0
+    const overviewRefreshedAt = this.overviewRefreshedAt.get(exchange)
+    const subscribedSymbols = (this.subscriptionSignatures.get(exchange) ?? '').split('|').filter(Boolean)
+
+    return {
+      exchange,
+      restBackoffActive: now < backoffUntil,
+      restBackoffUntil: backoffUntil > 0 ? new Date(backoffUntil).toISOString() : undefined,
+      lastRestError: this.lastRestError.get(exchange),
+      overviewRefreshedAt: overviewRefreshedAt ? new Date(overviewRefreshedAt).toISOString() : undefined,
+      subscribedSymbols,
+      tickers: [...this.latestTicker.values()]
+        .filter(ticker => ticker.exchange === exchange)
+        .map(ticker => {
+          const eventTime = new Date(ticker.eventTime).getTime()
+          return {
+            exchange: ticker.exchange,
+            symbol: ticker.symbol,
+            price: ticker.price,
+            eventTime: ticker.eventTime,
+            ageMs: Number.isFinite(eventTime) ? Math.max(now - eventTime, 0) : 0,
+          }
+        }),
+    }
   }
 
   async getRecentCandles(exchange: ExchangeCode, symbol: string, bar: string) {
