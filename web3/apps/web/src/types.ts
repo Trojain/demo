@@ -295,6 +295,19 @@ export interface RiskConfig {
 
 export type UpdateRiskConfigPayload = Omit<RiskConfig, 'updatedAt'>;
 
+export interface DashboardSummary {
+  /** 已启用监控规则数量 */
+  enabledRuleCount: number;
+  /** 监控规则总数 */
+  ruleCount: number;
+  /** 待人工确认的触发事件数量 */
+  pendingTriggerCount: number;
+  /** 订单记录总数 */
+  orderCount: number;
+  /** 当前行情缓存数量 */
+  tickerCount: number;
+}
+
 export interface OrderRecord {
   /** 订单记录主键 */
   id: string;

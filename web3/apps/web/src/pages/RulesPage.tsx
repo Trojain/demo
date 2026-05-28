@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { App as AntApp, Button, Popconfirm, Space, Switch, Tag, Tooltip, Typography } from 'antd'
-import { DrawerForm, PageContainer, ProFormDependency, ProFormDigit, ProFormSelect, ProFormText, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useMemo, useRef, useState, type ReactElement } from 'react'
+import { App as AntApp, Button, Popconfirm, Switch, Tag, Tooltip, Typography } from 'antd'
+import { DrawerForm, PageContainer, ProFormDependency, ProFormDigit, ProFormSelect, ProFormText, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import { RuleRuntimeStatusTag } from '../components/StatusTag'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getMarketSymbolOptions } from '../constants/market'
-import { useTradingStore } from '../stores/tradingStore'
 import type { CreateRulePayload, ExchangeCode, MonitorRule, OrderSide, OrderType, TriggerOperator, UpdateRulePayload } from '../types'
-import styles from './page.module.scss'
+import { toTableRequestResult } from '../utils/proTable'
 
 const defaultRule: Partial<CreateRulePayload> = {
   exchange: 'okx',
@@ -284,7 +283,6 @@ interface RuleDrawerFormProps<T extends CreateRulePayload | UpdateRulePayload> {
   trigger: ReactElement
   initialValues: Partial<T>
   statusLabel: string
-  onOpenChange: (open: boolean) => void
   onSubmit: (values: T) => Promise<void>
 }
 
@@ -293,7 +291,6 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
   trigger,
   initialValues,
   statusLabel,
-  onOpenChange,
   onSubmit,
 }: RuleDrawerFormProps<T>) {
   return (
@@ -304,7 +301,6 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
       initialValues={initialValues}
       drawerProps={{
         destroyOnHidden: true,
-        afterOpenChange: onOpenChange,
       }}
       onFinish={async values => {
         await onSubmit(normalizeRuleValues(values))
@@ -318,23 +314,8 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
 
 export function RulesPage() {
   const { message } = AntApp.useApp()
-  const [ruleModalOpen, setRuleModalOpen] = useState(false)
+  const actionRef = useRef<ActionType | undefined>(undefined)
   const [togglingRuleId, setTogglingRuleId] = useState('')
-  const rules = useTradingStore(state => state.rules)
-  const loading = useTradingStore(state => state.rulesLoading)
-  const refreshRules = useTradingStore(state => state.refreshRules)
-
-  useEffect(() => {
-    if (ruleModalOpen) {
-      return
-    }
-
-    const timer = window.setInterval(() => {
-      void refreshRules()
-    }, 5000)
-
-    return () => window.clearInterval(timer)
-  }, [refreshRules, ruleModalOpen])
 
   const columns = useMemo<ProColumns<MonitorRule>[]>(
     () => [
@@ -409,7 +390,7 @@ export function RulesPage() {
               try {
                 await tradingApi.toggleRule(row.id, checked)
                 message.success(checked ? '规则已启用' : '规则已停用')
-                await refreshRules()
+                actionRef.current?.reload()
               } finally {
                 setTogglingRuleId('')
               }
@@ -419,58 +400,60 @@ export function RulesPage() {
       },
       {
         title: '操作',
+        dataIndex: 'operate',
         valueType: 'option',
-        width: 180,
-        render: (_, row) => (
-          <Space>
-            <RuleDrawerForm<UpdateRulePayload>
-              title={`编辑规则 ${row.symbol}`}
-              trigger={<Button type='link'>编辑</Button>}
-              initialValues={toRuleFormValues(row)}
-              statusLabel='编辑后状态'
-              onOpenChange={setRuleModalOpen}
-              onSubmit={async values => {
-                await tradingApi.updateRule(row.id, values)
-                message.success('监控规则已更新')
-                await refreshRules()
-              }}
-            />
-            <Popconfirm
-              title='删除监控规则'
-              description='删除后不会影响已经生成的触发和订单记录'
-              onConfirm={async () => {
-                await tradingApi.deleteRule(row.id)
-                message.success('规则已删除')
-                await refreshRules()
-              }}
-            >
-              <Button danger type='link'>
-                删除
-              </Button>
-            </Popconfirm>
-            {row.lastErrorMessage ? (
-              <Tooltip title={row.lastErrorMessage}>
-                <Typography.Text type='danger'>错误</Typography.Text>
-              </Tooltip>
-            ) : null}
-          </Space>
-        ),
+        fixed: 'right',
+        width: 'auto',
+        render: (_, row) => [
+          <RuleDrawerForm<UpdateRulePayload>
+            key='edit'
+            title={`编辑规则 ${row.symbol}`}
+            trigger={<Button type='link'>编辑</Button>}
+            initialValues={toRuleFormValues(row)}
+            statusLabel='编辑后状态'
+            onSubmit={async values => {
+              await tradingApi.updateRule(row.id, values)
+              message.success('监控规则已更新')
+              actionRef.current?.reload()
+            }}
+          />,
+          <Popconfirm
+            key='delete'
+            title='删除监控规则'
+            description='删除后不会影响已经生成的触发和订单记录'
+            onConfirm={async () => {
+              await tradingApi.deleteRule(row.id)
+              message.success('规则已删除')
+              actionRef.current?.reload()
+            }}
+          >
+            <Button danger type='link'>
+              删除
+            </Button>
+          </Popconfirm>,
+          row.lastErrorMessage ? (
+            <Tooltip title={row.lastErrorMessage}>
+              <Typography.Text type='danger'>错误</Typography.Text>
+            </Tooltip>
+          ) : null,
+        ],
       },
     ],
-    [message, refreshRules, togglingRuleId],
+    [message, togglingRuleId],
   )
 
   return (
     <PageContainer subTitle='配置价格触发条件、下单计划与运行开关'>
       <ProTable<MonitorRule>
+        actionRef={actionRef}
         rowKey='id'
         search={false}
-        loading={loading}
         columns={columns}
-        dataSource={rules}
+        request={async () => toTableRequestResult(await tradingApi.getRules())}
+        onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 8 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshRules()}>
+          <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
           <RuleDrawerForm<CreateRulePayload>
@@ -483,11 +466,10 @@ export function RulesPage() {
             }
             initialValues={defaultRule}
             statusLabel='创建后状态'
-            onOpenChange={setRuleModalOpen}
             onSubmit={async values => {
               await tradingApi.createRule(values)
               message.success('监控规则已创建')
-              await refreshRules()
+              actionRef.current?.reload()
             }}
           />,
         ]}

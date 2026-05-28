@@ -1,16 +1,14 @@
-import { useMemo } from 'react'
-import { App as AntApp, Button, Popconfirm, Space, Tag } from 'antd'
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useMemo, useRef } from 'react'
+import { App as AntApp, Button, Popconfirm, Tag } from 'antd'
+import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
-import { useTradingStore } from '../stores/tradingStore'
 import type { OrderRecord } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 
 export function OrdersPage() {
   const { message } = AntApp.useApp()
-  const orders = useTradingStore(state => state.orders)
-  const loading = useTradingStore(state => state.ordersLoading)
-  const refreshOrders = useTradingStore(state => state.refreshOrders)
+  const actionRef = useRef<ActionType | undefined>(undefined)
 
   const columns = useMemo<ProColumns<OrderRecord>[]>(
     () => [
@@ -66,41 +64,43 @@ export function OrdersPage() {
       },
       {
         title: '操作',
+        dataIndex: 'operate',
         valueType: 'option',
-        width: 100,
-        render: (_, row) => (
-          <Space>
-            <Popconfirm
-              title='删除订单记录'
-              description='将直接从数据库删除该订单记录，不会撤销交易所订单'
-              onConfirm={async () => {
-                await tradingApi.deleteOrder(row.id)
-                message.success('订单记录已删除')
-                await refreshOrders()
-              }}
-            >
-              <Button danger type='link'>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
+        fixed: 'right',
+        width: 'auto',
+        render: (_, row) => [
+          <Popconfirm
+            key='delete'
+            title='删除订单记录'
+            description='将直接从数据库删除该订单记录，不会撤销交易所订单'
+            onConfirm={async () => {
+              await tradingApi.deleteOrder(row.id)
+              message.success('订单记录已删除')
+              actionRef.current?.reload()
+            }}
+          >
+            <Button danger type='link'>
+              删除
+            </Button>
+          </Popconfirm>,
+        ],
       },
     ],
-    [message, refreshOrders],
+    [message],
   )
 
   return (
     <PageContainer subTitle='查看确认后生成的模拟或真实订单记录'>
       <ProTable<OrderRecord>
+        actionRef={actionRef}
         rowKey='id'
         search={false}
-        loading={loading}
         columns={columns}
-        dataSource={orders}
+        request={async () => toTableRequestResult(await tradingApi.getOrders())}
+        onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 10 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshOrders()}>
+          <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
         ]}

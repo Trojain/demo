@@ -210,6 +210,10 @@ export class MarketService {
     return [...this.latestTicker.values()]
   }
 
+  countLatestTickers() {
+    return this.latestTicker.size
+  }
+
   getHealth(exchange: ExchangeCode = 'okx'): MarketHealth {
     const now = Date.now()
     const backoffUntil = this.restBackoffUntil.get(exchange) ?? 0

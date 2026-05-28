@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Space, Statistic, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
 import { LineChartOutlined } from '@ant-design/icons'
-import { PageContainer, ProCard, ProTable, type ProColumns } from '@ant-design/pro-components'
+import { PageContainer, ProCard, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components'
 import { tradingApi } from '../api/trading'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSymbol, getMarketSymbolOptions } from '../constants/market'
+import { useBootstrapTrading } from '../hooks/useBootstrapTrading'
 import { useTradingStore } from '../stores/tradingStore'
 import type { ExchangeCode, MarketCandle, MarketTickerSnapshot } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 import styles from './page.module.scss'
 
 function formatMoneyCompact(value?: string) {
@@ -52,19 +54,12 @@ function formatUsd(value: number) {
 
 export function OverviewPage() {
   const { message } = AntApp.useApp()
+  useBootstrapTrading()
   const [selectedExchange, setSelectedExchange] = useState<ExchangeCode>('okx')
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
-  const [exchangeOverview, setExchangeOverview] = useState<MarketTickerSnapshot[]>([])
-  const [overviewLoading, setOverviewLoading] = useState(false)
-  const enabledRuleCount = useTradingStore(state => state.rules.filter(rule => rule.enabled).length)
-  const ruleCount = useTradingStore(state => state.rules.length)
-  const pendingTriggerCount = useTradingStore(state => state.triggers.filter(item => item.status === 'pending').length)
-  const orderCount = useTradingStore(state => state.orders.length)
-  const tickerCount = useTradingStore(state => state.tickers.length)
-  const marketOverview = useTradingStore(state => state.marketOverview)
-  const displayedOverview = selectedExchange === 'okx' && exchangeOverview.length === 0 ? marketOverview : exchangeOverview
+  const dashboardSummary = useTradingStore(state => state.dashboardSummary)
   const [candleError, setCandleError] = useState('')
   const candleSeries = useMemo(
     () =>
@@ -200,30 +195,6 @@ export function OverviewPage() {
     }
   }, [message, selectedExchange, selectedSymbol])
 
-  useEffect(() => {
-    let ignore = false
-
-    const loadOverview = async () => {
-      setOverviewLoading(true)
-      try {
-        const snapshots = await tradingApi.getMarketOverview(selectedExchange)
-        if (!ignore) {
-          setExchangeOverview(snapshots)
-        }
-      } finally {
-        if (!ignore) {
-          setOverviewLoading(false)
-        }
-      }
-    }
-
-    void loadOverview()
-
-    return () => {
-      ignore = true
-    }
-  }, [selectedExchange])
-
   const option = useMemo(
     () => ({
       animation: false,
@@ -306,24 +277,16 @@ export function OverviewPage() {
     <PageContainer subTitle='查看行情、规则、触发和订单的整体运行概况'>
       <Row gutter={[16, 16]}>
         <Col xs={24} md={6}>
-          <ProCard>
-            <Statistic title='启用规则' value={enabledRuleCount} suffix={`/ ${ruleCount}`} />
-          </ProCard>
+          <StatisticCard statistic={{ title: '启用规则', value: dashboardSummary.enabledRuleCount, suffix: `/ ${dashboardSummary.ruleCount}` }} />
         </Col>
         <Col xs={24} md={6}>
-          <ProCard>
-            <Statistic title='待确认触发' value={pendingTriggerCount} />
-          </ProCard>
+          <StatisticCard statistic={{ title: '待确认触发', value: dashboardSummary.pendingTriggerCount }} />
         </Col>
         <Col xs={24} md={6}>
-          <ProCard>
-            <Statistic title='订单记录' value={orderCount} />
-          </ProCard>
+          <StatisticCard statistic={{ title: '订单记录', value: dashboardSummary.orderCount }} />
         </Col>
         <Col xs={24} md={6}>
-          <ProCard>
-            <Statistic title='行情缓存' value={tickerCount} />
-          </ProCard>
+          <StatisticCard statistic={{ title: '行情缓存', value: dashboardSummary.tickerCount }} />
         </Col>
       </Row>
 
@@ -349,21 +312,20 @@ export function OverviewPage() {
         </Col>
         <Col xs={24} lg={10}>
           <ProCard title='最新行情' bodyStyle={{ padding: 0 }}>
-            {displayedOverview.length === 0 ? (
-              <Empty description='暂无行情缓存' />
-            ) : (
-              <ProTable<MarketTickerSnapshot>
-                rowKey={row => `${row.exchange}-${row.symbol}`}
-                className={styles.marketTable}
-                columns={marketColumns}
-                loading={overviewLoading}
-                dataSource={displayedOverview}
-                search={false}
-                options={false}
-                pagination={false}
-                toolBarRender={false}
-              />
-            )}
+            <ProTable<MarketTickerSnapshot>
+              rowKey={row => `${row.exchange}-${row.symbol}`}
+              className={styles.marketTable}
+              columns={marketColumns}
+              params={{ exchange: selectedExchange }}
+              request={async params => {
+                const exchange = (params.exchange as ExchangeCode) ?? selectedExchange
+                return toTableRequestResult(await tradingApi.getMarketOverview(exchange))
+              }}
+              search={false}
+              options={false}
+              pagination={false}
+              toolBarRender={false}
+            />
           </ProCard>
         </Col>
       </Row>

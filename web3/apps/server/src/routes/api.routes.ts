@@ -89,6 +89,14 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     return deleted ? reply.status(204).send() : reply.status(404).send({ message: '审计日志不存在' })
   })
 
+  app.get('/api/dashboard/summary', async () => ({
+    enabledRuleCount: deps.ruleRepository.countEnabled(),
+    ruleCount: deps.ruleRepository.countAll(),
+    pendingTriggerCount: deps.triggerRepository.countPending(),
+    orderCount: deps.orderRepository.countAll(),
+    tickerCount: deps.marketService.countLatestTickers(),
+  }))
+
   app.get('/api/tickers', async () => deps.marketService.listLatestTickers())
 
   app.get('/api/market/overview', async request => {

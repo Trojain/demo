@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Descriptions, Select, Space, Tag } from 'antd'
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
+import { useMemo, useRef, useState } from 'react'
+import { Alert, Button, Select, Space, Tag } from 'antd'
+import { PageContainer, ProDescriptions, ProTable, type ActionType, type ProColumns, type ProDescriptionsItemProps } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import { MARKET_EXCHANGE_OPTIONS } from '../constants/market'
 import type { ExchangeCode, MarketHealth, MarketHealthTicker } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 
 function formatAge(ageMs: number) {
   if (ageMs < 1000) {
@@ -15,23 +16,10 @@ function formatAge(ageMs: number) {
 }
 
 export function MarketHealthPage() {
+  const actionRef = useRef<ActionType | undefined>(undefined)
   const [health, setHealth] = useState<MarketHealth>()
   const [exchange, setExchange] = useState<ExchangeCode>('okx')
-  const [loading, setLoading] = useState(false)
-
-  const refreshHealth = async () => {
-    setLoading(true)
-    try {
-      const nextHealth = await tradingApi.getMarketHealth(exchange)
-      setHealth(nextHealth)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshHealth()
-  }, [exchange])
+  const healthDataSource = health ?? ({ exchange, restBackoffActive: false, subscribedSymbols: [], tickers: [] } as MarketHealth)
 
   const columns = useMemo<ProColumns<MarketHealthTicker>[]>(
     () => [
@@ -57,29 +45,60 @@ export function MarketHealthPage() {
     [],
   )
 
+  const healthColumns = useMemo<ProDescriptionsItemProps<MarketHealth>[]>(
+    () => [
+      {
+        title: '交易所',
+        dataIndex: 'exchange',
+        render: (_, row) => row.exchange.toUpperCase(),
+      },
+      {
+        title: 'REST 状态',
+        dataIndex: 'restBackoffActive',
+        render: (_, row) => <Tag color={row.restBackoffActive ? 'warning' : 'success'}>{row.restBackoffActive ? '退避中' : '正常'}</Tag>,
+      },
+      {
+        title: '退避结束',
+        dataIndex: 'restBackoffUntil',
+        render: (_, row) => row.restBackoffUntil ?? '-',
+      },
+      {
+        title: '总览刷新',
+        dataIndex: 'overviewRefreshedAt',
+        render: (_, row) => row.overviewRefreshedAt ?? '-',
+      },
+      {
+        title: '订阅交易对',
+        dataIndex: 'subscribedSymbols',
+        span: 2,
+        render: (_, row) => (
+          <Space size={4} wrap>
+            {row.subscribedSymbols.length ? row.subscribedSymbols.map(symbol => <Tag key={symbol}>{symbol}</Tag>) : <Tag>暂无订阅</Tag>}
+          </Space>
+        ),
+      },
+    ],
+    [],
+  )
+
   return (
     <PageContainer subTitle='查看交易所行情缓存、订阅和 REST 退避状态'>
       <Space direction='vertical' size={16} style={{ width: '100%' }}>
         {health?.lastRestError ? <Alert type='warning' message='最近 REST 错误' description={health.lastRestError} showIcon /> : null}
-        <Descriptions bordered size='small' column={2}>
-          <Descriptions.Item label='交易所'>{health?.exchange.toUpperCase() ?? '-'}</Descriptions.Item>
-          <Descriptions.Item label='REST 状态'>
-            <Tag color={health?.restBackoffActive ? 'warning' : 'success'}>{health?.restBackoffActive ? '退避中' : '正常'}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label='退避结束'>{health?.restBackoffUntil ?? '-'}</Descriptions.Item>
-          <Descriptions.Item label='总览刷新'>{health?.overviewRefreshedAt ?? '-'}</Descriptions.Item>
-          <Descriptions.Item label='订阅交易对' span={2}>
-            <Space size={4} wrap>
-              {health?.subscribedSymbols.length ? health.subscribedSymbols.map(symbol => <Tag key={symbol}>{symbol}</Tag>) : <Tag>暂无订阅</Tag>}
-            </Space>
-          </Descriptions.Item>
-        </Descriptions>
+        <ProDescriptions<MarketHealth> bordered size='small' column={2} dataSource={healthDataSource} columns={healthColumns} />
         <ProTable<MarketHealthTicker>
+          actionRef={actionRef}
           rowKey={row => `${row.exchange}-${row.symbol}`}
           search={false}
-          loading={loading}
           columns={columns}
-          dataSource={health?.tickers ?? []}
+          params={{ exchange }}
+          request={async params => {
+            const currentExchange = (params.exchange as ExchangeCode) ?? exchange
+            const nextHealth = await tradingApi.getMarketHealth(currentExchange)
+            setHealth(nextHealth)
+            return toTableRequestResult(nextHealth.tickers)
+          }}
+          onReset={() => actionRef.current?.reload()}
           pagination={{ pageSize: 10 }}
           toolBarRender={() => [
             <Select
@@ -89,7 +108,7 @@ export function MarketHealthPage() {
               onChange={setExchange}
               style={{ width: 140 }}
             />,
-            <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshHealth()}>
+            <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
               刷新
             </Button>,
           ]}

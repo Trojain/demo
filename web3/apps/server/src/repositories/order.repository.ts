@@ -49,6 +49,11 @@ export class OrderRepository {
       .map(row => mapOrder(row as OrderRow))
   }
 
+  countAll(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM order_records').get() as { count: number }
+    return row.count
+  }
+
   create(order: OrderRecord): OrderRecord {
     this.db
       .prepare(

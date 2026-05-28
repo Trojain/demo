@@ -2,6 +2,7 @@ import { apiClient } from './client';
 import type {
   AuditLog,
   CreateRulePayload,
+  DashboardSummary,
   ExchangeCode,
   InstrumentRule,
   MarketCandle,
@@ -20,6 +21,10 @@ import type {
 } from '../types';
 
 export const tradingApi = {
+  getDashboardSummary: async () => {
+    const { data } = await apiClient.get<DashboardSummary>('/dashboard/summary');
+    return data;
+  },
   getRules: async () => {
     const { data } = await apiClient.get<MonitorRule[]>('/rules');
     return data;

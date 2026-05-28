@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { App as AntApp, Button, Form, Input, InputNumber, Select, Space, Tag } from 'antd'
-import { PageContainer, ProCard } from '@ant-design/pro-components'
+import { useRef, useState } from 'react'
+import { App as AntApp, Button, Space, Tag } from 'antd'
+import { PageContainer, ProCard, ProForm, ProFormDigit, ProFormSelect, ProFormText, type ProFormInstance } from '@ant-design/pro-components'
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { tradingApi } from '../api/trading'
@@ -8,8 +8,8 @@ import type { UpdateRiskConfigPayload } from '../types'
 
 export function RiskConfigPage() {
   const { message } = AntApp.useApp()
-  const [form] = Form.useForm<UpdateRiskConfigPayload>()
-  const [loading, setLoading] = useState(false)
+  const formRef = useRef<ProFormInstance<UpdateRiskConfigPayload> | undefined>(undefined)
+  const [reloadKey, setReloadKey] = useState(0)
   const [saving, setSaving] = useState(false)
   const [updatedAt, setUpdatedAt] = useState('')
 
@@ -21,33 +21,32 @@ export function RiskConfigPage() {
     return error instanceof Error ? error.message : '操作失败'
   }
 
-  const refreshConfig = async () => {
-    setLoading(true)
-    try {
-      const config = await tradingApi.getRiskConfig()
-      form.setFieldsValue(config)
-      setUpdatedAt(config.updatedAt)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshConfig()
-  }, [])
-
-  const handleSave = async (values: UpdateRiskConfigPayload) => {
+  const handleFormFinish = async (values: UpdateRiskConfigPayload) => {
     setSaving(true)
     try {
       const config = await tradingApi.updateRiskConfig(values)
-      form.setFieldsValue(config)
       setUpdatedAt(config.updatedAt)
       message.success('风控配置已保存')
+      setReloadKey(value => value + 1)
+      return true
     } catch (error) {
       message.error(getErrorMessage(error))
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSubmit = () => {
+    formRef.current?.submit?.()
+  }
+
+  const handleCancel = () => {
+    formRef.current?.resetFields()
+  }
+
+  const handleReload = () => {
+    setReloadKey(value => value + 1)
   }
 
   return (
@@ -57,64 +56,81 @@ export function RiskConfigPage() {
         extra={
           <Space>
             {updatedAt ? <Tag>更新于 {updatedAt}</Tag> : null}
-            <Button icon={<ReloadOutlined />} onClick={() => void refreshConfig()}>
+            <Button icon={<ReloadOutlined />} onClick={handleReload}>
               刷新
             </Button>
           </Space>
         }
       >
-        <Form<UpdateRiskConfigPayload>
-          form={form}
+        <ProForm<UpdateRiskConfigPayload>
+          formRef={formRef}
           layout='vertical'
-          disabled={loading}
-          onFinish={handleSave}
+          onFinish={handleFormFinish}
+          initialValues={{}}
+          params={{ reloadKey }}
+          request={async () => {
+            const config = await tradingApi.getRiskConfig()
+            setUpdatedAt(config.updatedAt)
+
+            return {
+              maxQuoteAmount: config.maxQuoteAmount,
+              maxMarketAgeMs: config.maxMarketAgeMs,
+              dailyMaxTriggerCount: config.dailyMaxTriggerCount,
+              dailyMaxQuoteAmount: config.dailyMaxQuoteAmount,
+              tradingMode: config.tradingMode,
+            }
+          }}
           style={{ maxWidth: 720 }}
+          submitter={{
+            render: () => (
+              <div className='form-footer'>
+                <Space>
+                  <Button onClick={handleCancel}>取消</Button>
+                  <Button type='primary' icon={<SaveOutlined />} loading={saving} onClick={handleSubmit}>
+                    保存配置
+                  </Button>
+                </Space>
+              </div>
+            ),
+          }}
         >
-          <Form.Item
+          <ProFormText
             name='maxQuoteAmount'
             label='单笔最大计价金额'
             rules={[{ required: true, message: '请输入单笔最大计价金额' }]}
             tooltip='单位按交易对计价币理解，当前 USDT 交易对可视为 USDT。'
-          >
-            <Input suffix='USDT' />
-          </Form.Item>
-          <Form.Item
+            fieldProps={{ suffix: 'USDT' }}
+          />
+          <ProFormDigit
             name='dailyMaxTriggerCount'
             label='每日最大通过风控次数'
             rules={[{ required: true, message: '请输入每日最大通过风控次数' }]}
-          >
-            <InputNumber min={1} precision={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
+            min={1}
+            fieldProps={{ precision: 0 }}
+          />
+          <ProFormText
             name='dailyMaxQuoteAmount'
             label='每日最大通过风控计价金额'
             rules={[{ required: true, message: '请输入每日最大通过风控计价金额' }]}
-          >
-            <Input suffix='USDT' />
-          </Form.Item>
-          <Form.Item
+            fieldProps={{ suffix: 'USDT' }}
+          />
+          <ProFormDigit
             name='maxMarketAgeMs'
             label='行情最大允许延迟'
             rules={[{ required: true, message: '请输入行情最大允许延迟' }]}
-          >
-            <InputNumber min={1000} precision={0} addonAfter='ms' style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item
+            min={1000}
+            fieldProps={{ precision: 0, addonAfter: 'ms' }}
+          />
+          <ProFormSelect
             name='tradingMode'
             label='交易模式'
             rules={[{ required: true, message: '请选择交易模式' }]}
-          >
-            <Select
-              options={[
-                { label: '仅允许模拟交易', value: 'simulation_only' },
-                { label: '允许真实交易', value: 'allow_real' },
-              ]}
-            />
-          </Form.Item>
-          <Button type='primary' htmlType='submit' icon={<SaveOutlined />} loading={saving}>
-            保存配置
-          </Button>
-        </Form>
+            options={[
+              { label: '仅允许模拟交易', value: 'simulation_only' },
+              { label: '允许真实交易', value: 'allow_real' },
+            ]}
+          />
+        </ProForm>
       </ProCard>
     </PageContainer>
   )

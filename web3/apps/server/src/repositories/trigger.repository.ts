@@ -37,6 +37,11 @@ export class TriggerRepository {
       .map(row => mapTrigger(row as TriggerRow))
   }
 
+  countPending(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM trigger_events WHERE status = 'pending'").get() as { count: number }
+    return row.count
+  }
+
   findById(id: string): TriggerEvent | undefined {
     const row = this.db.prepare('SELECT * FROM trigger_events WHERE id = ?').get(id) as TriggerRow | undefined
     return row ? mapTrigger(row) : undefined

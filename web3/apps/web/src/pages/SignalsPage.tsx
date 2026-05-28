@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { App as AntApp, Button, Popconfirm, Space, Tag, Typography } from 'antd'
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useMemo, useRef } from 'react'
+import { App as AntApp, Button, Popconfirm, Tag, Typography } from 'antd'
+import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { SignalStatus, TradingSignal } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 
 const statusMeta: Record<SignalStatus, { text: string; color: string }> = {
   pending: { text: '待处理', color: 'processing' },
@@ -14,22 +15,7 @@ const statusMeta: Record<SignalStatus, { text: string; color: string }> = {
 
 export function SignalsPage() {
   const { message } = AntApp.useApp()
-  const [signals, setSignals] = useState<TradingSignal[]>([])
-  const [loading, setLoading] = useState(false)
-
-  const refreshSignals = async () => {
-    setLoading(true)
-    try {
-      const nextSignals = await tradingApi.getSignals(200)
-      setSignals(nextSignals)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshSignals()
-  }, [])
+  const actionRef = useRef<ActionType | undefined>(undefined)
 
   const columns = useMemo<ProColumns<TradingSignal>[]>(
     () => [
@@ -100,24 +86,26 @@ export function SignalsPage() {
       },
       {
         title: '操作',
+        dataIndex: 'operate',
         valueType: 'option',
-        render: (_, row) => (
-          <Space>
-            <Popconfirm
-              title='删除交易信号'
-              description='将直接从数据库删除该交易信号记录，不影响已生成的触发事件'
-              onConfirm={async () => {
-                await tradingApi.deleteSignal(row.id)
-                message.success('交易信号已删除')
-                await refreshSignals()
-              }}
-            >
-              <Button danger type='link'>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
+        fixed: 'right',
+        width: 'auto',
+        render: (_, row) => [
+          <Popconfirm
+            key='delete'
+            title='删除交易信号'
+            description='将直接从数据库删除该交易信号记录，不影响已生成的触发事件'
+            onConfirm={async () => {
+              await tradingApi.deleteSignal(row.id)
+              message.success('交易信号已删除')
+              actionRef.current?.reload()
+            }}
+          >
+            <Button danger type='link'>
+              删除
+            </Button>
+          </Popconfirm>,
+        ],
       },
     ],
     [message],
@@ -126,14 +114,15 @@ export function SignalsPage() {
   return (
     <PageContainer subTitle='展示规则命中后生成的交易意图和转换结果'>
       <ProTable<TradingSignal>
+        actionRef={actionRef}
         rowKey='id'
         search={false}
-        loading={loading}
         columns={columns}
-        dataSource={signals}
+        request={async () => toTableRequestResult(await tradingApi.getSignals(200))}
+        onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 12 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshSignals()}>
+          <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
         ]}

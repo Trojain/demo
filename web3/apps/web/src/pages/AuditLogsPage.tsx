@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { App as AntApp, Button, Popconfirm, Space, Tag, Tooltip, Typography } from 'antd'
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { AuditLog, AuditLogAction, AuditLogLevel } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 
 const levelMeta: Record<AuditLogLevel, { text: string; color: string }> = {
   info: { text: '信息', color: 'processing' },
@@ -39,22 +40,7 @@ function renderPayload(payloadJson?: string) {
 
 export function AuditLogsPage() {
   const { message } = AntApp.useApp()
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
-  const [loading, setLoading] = useState(false)
-
-  const refreshAuditLogs = async () => {
-    setLoading(true)
-    try {
-      const logs = await tradingApi.getAuditLogs(200)
-      setAuditLogs(logs)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshAuditLogs()
-  }, [])
+  const actionRef = useRef<ActionType | undefined>(undefined)
 
   const columns = useMemo<ProColumns<AuditLog>[]>(
     () => [
@@ -110,25 +96,26 @@ export function AuditLogsPage() {
       },
       {
         title: '操作',
+        dataIndex: 'operate',
         valueType: 'option',
-        width: 100,
-        render: (_, row) => (
-          <Space>
-            <Popconfirm
-              title='删除审计日志'
-              description='将直接从数据库删除该审计日志记录'
-              onConfirm={async () => {
-                await tradingApi.deleteAuditLog(row.id)
-                message.success('审计日志已删除')
-                await refreshAuditLogs()
-              }}
-            >
-              <Button danger type='link'>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
+        fixed: 'right',
+        width: 'auto',
+        render: (_, row) => [
+          <Popconfirm
+            key='delete'
+            title='删除审计日志'
+            description='将直接从数据库删除该审计日志记录'
+            onConfirm={async () => {
+              await tradingApi.deleteAuditLog(row.id)
+              message.success('审计日志已删除')
+              actionRef.current?.reload()
+            }}
+          >
+            <Button danger type='link'>
+              删除
+            </Button>
+          </Popconfirm>,
+        ],
       },
     ],
     [message],
@@ -137,14 +124,15 @@ export function AuditLogsPage() {
   return (
     <PageContainer subTitle='追踪信号、风控、触发、下单和异常的全流程日志'>
       <ProTable<AuditLog>
+        actionRef={actionRef}
         rowKey='id'
         search={false}
-        loading={loading}
         columns={columns}
-        dataSource={auditLogs}
+        request={async () => toTableRequestResult(await tradingApi.getAuditLogs(200))}
+        onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 12 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshAuditLogs()}>
+          <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
         ]}

@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import type { MarketTickerSnapshot, MonitorRule, OrderRecord, TickerPrice, TriggerEvent } from '../types';
+import type { DashboardSummary, MarketTickerSnapshot, MonitorRule, OrderRecord, TickerPrice, TriggerEvent } from '../types';
 import { tradingApi } from '../api/trading';
 
 interface TradingState {
+  /** 监控总览轻量统计 */
+  dashboardSummary: DashboardSummary;
   /** 监控规则列表 */
   rules: MonitorRule[];
   /** 触发事件列表 */
@@ -23,7 +25,7 @@ interface TradingState {
   triggersLoading: boolean;
   /** 订单记录加载状态 */
   ordersLoading: boolean;
-  refreshAll: () => Promise<void>;
+  refreshSummary: () => Promise<void>;
   refreshRules: () => Promise<void>;
   refreshTriggers: () => Promise<void>;
   refreshOrders: () => Promise<void>;
@@ -40,6 +42,13 @@ function toPricePoint(ticker: TickerPrice) {
 }
 
 export const useTradingStore = create<TradingState>((set, get) => ({
+  dashboardSummary: {
+    enabledRuleCount: 0,
+    ruleCount: 0,
+    pendingTriggerCount: 0,
+    orderCount: 0,
+    tickerCount: 0
+  },
   rules: [],
   triggers: [],
   orders: [],
@@ -50,20 +59,11 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   rulesLoading: false,
   triggersLoading: false,
   ordersLoading: false,
-  refreshAll: async () => {
+  refreshSummary: async () => {
     set({ loading: true });
     try {
-      const [rules, triggers, orders, tickers, marketOverview] = await Promise.all([
-        tradingApi.getRules(),
-        tradingApi.getTriggers(),
-        tradingApi.getOrders(),
-        tradingApi.getTickers(),
-        tradingApi.getMarketOverview()
-      ]);
-      const currentSeries = get().priceSeries;
-      const tickerSource = tickers.length > 0 ? tickers : marketOverview;
-      const nextSeries = currentSeries.length > 0 ? currentSeries : tickerSource.map(toPricePoint);
-      set({ rules, triggers, orders, tickers, marketOverview, priceSeries: nextSeries.slice(-80) });
+      const dashboardSummary = await tradingApi.getDashboardSummary();
+      set({ dashboardSummary });
     } finally {
       set({ loading: false });
     }
@@ -101,9 +101,24 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       `${item.exchange}:${item.symbol}` === `${ticker.exchange}:${ticker.symbol}` ? { ...item, ...ticker } : item
     );
     const nextSeries = [...get().priceSeries, toPricePoint(ticker)].slice(-80);
-    set({ tickers: nextTickers, marketOverview: nextOverview, priceSeries: nextSeries });
+    set({
+      tickers: nextTickers,
+      marketOverview: nextOverview,
+      priceSeries: nextSeries,
+      dashboardSummary: {
+        ...get().dashboardSummary,
+        tickerCount: nextTickers.length
+      }
+    });
   },
   prependTrigger: (trigger) => {
-    set({ triggers: [trigger, ...get().triggers] });
+    const currentSummary = get().dashboardSummary;
+    set({
+      triggers: [trigger, ...get().triggers],
+      dashboardSummary: {
+        ...currentSummary,
+        pendingTriggerCount: trigger.status === 'pending' ? currentSummary.pendingTriggerCount + 1 : currentSummary.pendingTriggerCount
+      }
+    });
   }
 }));

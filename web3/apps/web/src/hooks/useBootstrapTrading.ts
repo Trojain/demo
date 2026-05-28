@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { useTradingStore } from '../stores/tradingStore';
 
 export function useBootstrapTrading() {
-  const refreshAll = useTradingStore((state) => state.refreshAll);
+  const refreshSummary = useTradingStore((state) => state.refreshSummary);
 
   useEffect(() => {
-    void refreshAll();
-  }, [refreshAll]);
+    void refreshSummary();
+  }, [refreshSummary]);
 }

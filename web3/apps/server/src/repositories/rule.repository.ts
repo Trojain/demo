@@ -72,6 +72,16 @@ export class RuleRepository {
       .map(row => mapRule(row as RuleRow))
   }
 
+  countAll(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM monitor_rules').get() as { count: number }
+    return row.count
+  }
+
+  countEnabled(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM monitor_rules WHERE enabled = 1').get() as { count: number }
+    return row.count
+  }
+
   findById(id: string): MonitorRule | undefined {
     const row = this.db.prepare('SELECT * FROM monitor_rules WHERE id = ?').get(id) as RuleRow | undefined
     return row ? mapRule(row) : undefined

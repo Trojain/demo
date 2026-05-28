@@ -984,3 +984,138 @@
 ### 已确认决策
 
 - 项目定位表述为本地量化交易执行体，交易所限价委托只是后续真实下单阶段可提交的一种订单类型。
+
+## v0.3.19  2026-05-28
+
+### 已完成
+
+- 启动加载增加一次性保护，降低 React 开发模式下的重复初始化请求。
+- 审计日志、风控配置和行情健康页面增加初始化请求保护。
+- 保留必要的页面刷新入口，避免进入页面时重复拉取同一组数据。
+
+### 已确认决策
+
+- 前端页面性能优化优先通过请求收敛和职责拆分处理，非必要不主动打开浏览器调试。
+
+## v0.3.20  2026-05-28
+
+### 已完成
+
+- 所有列表页统一向 `admin-client` 项目的 ProTable 用法靠齐。
+- 监控规则、触发确认、订单记录、交易信号、风控检查、审计日志和行情健康改为 `request + manualRequest + actionRef` 模式。
+- 监控总览中的最新行情表改为 ProTable `request` 拉取，移除页面级 `dataSource` 绑定。
+- 列表页操作列统一使用 `dataIndex='operate'`、`valueType='option'`、`fixed='right'` 和数组式 `render`。
+- 删除、确认、忽略、启停和新增编辑成功后统一调用 `actionRef.current?.reload()` 刷新当前表格。
+- 新增 `apps/web/src/utils/proTable.ts`，统一封装本地数组转 ProTable 请求结果。
+
+### 已确认决策
+
+- 风控配置页属于配置表单页，本次不改成 ProTable 请求模式。
+- 本轮验证只执行 TypeScript 和 lint 检测，不主动打开浏览器调试。
+
+## v0.3.21  2026-05-28
+
+### 已完成
+
+- 移除列表页 `initializedRef` 首屏请求保护逻辑。
+- 移除行情健康和监控总览中按交易所记录最近请求的去重逻辑。
+- 保留 `manualRequest` 与 `useEffect reload`，页面初始化和交易所切换时直接触发 ProTable 刷新。
+
+### 已确认决策
+
+- 开发环境 React StrictMode 可能导致首屏请求执行两次，该表现接受为开发模式正常行为。
+- 代码优先保持简洁，生产环境按正常挂载流程请求。
+
+## v0.3.22  2026-05-28
+
+### 已完成
+
+- 从 `App.tsx` 移除全局 `useBootstrapTrading()`。
+- 将启动数据加载移动到 `OverviewPage`，只在监控总览页加载规则、触发、订单、ticker 和行情总览数据。
+- 列表页刷新时不再由应用入口额外触发非当前页面接口。
+
+### 已确认决策
+
+- 应用入口只保留 WebSocket 实时连接。
+- 统计卡片所需的全量概览数据由监控总览页负责加载。
+
+## v0.3.23  2026-05-28
+
+### 已完成
+
+- 列表页移除 `manualRequest` 和首屏 `useEffect reload`。
+- 监控规则、触发确认、订单记录、交易信号、风控检查和审计日志恢复为 ProTable 自动首发请求。
+- 行情健康和监控总览的行情表改用 ProTable `params` 跟随交易所变化自动请求。
+- 保留操作成功后的 `actionRef.current?.reload()`，用于删除、确认、忽略、启停、新增和编辑后的当前表格刷新。
+
+### 已确认决策
+
+- 没有搜索表单的基础列表页使用 ProTable 默认首发请求。
+- `manualRequest` 后续只用于需要等待查询条件或外部表单主动提交的复杂列表。
+
+## v0.3.24  2026-05-28
+
+### 已完成
+
+- 新增后端轻量总览接口 `GET /api/dashboard/summary`。
+- 总览统计改为返回已启用规则数、规则总数、待确认触发数、订单总数和行情缓存数。
+- 规则、触发和订单仓储增加专用 count 方法，避免总览页读取全量列表。
+- 前端 `tradingStore` 增加 `dashboardSummary`，`useBootstrapTrading` 改为只请求轻量总览统计。
+- `/overview` 统计卡片改为读取 `dashboardSummary`，不再为了统计请求 `rules`、`triggers`、`orders` 和 `tickers` 全量数据。
+
+### 已确认决策
+
+- `/overview` 首屏保留三类必要请求：轻量统计、最新行情表和 K 线曲线。
+- 列表页数据继续由各自页面的 ProTable 请求负责，监控总览不再预加载所有列表。
+
+## v0.3.25  2026-05-28
+
+### 已完成
+
+- 风控配置页从 Ant Design `Form` 和 `Form.Item` 迁移到 Pro Components `ProForm`。
+- 字段组件改为 `ProFormText`、`ProFormDigit` 和 `ProFormSelect`。
+- 后端初始化配置保存到 `initialValues`，刷新和保存后同步更新表单初始值。
+- 自定义 `submitter.render`，保留取消和保存按钮。
+- 金额字段继续使用文本输入，避免金额被普通 number 处理。
+
+### 已确认决策
+
+- 后续新增或改造表单页面优先使用 ProForm 体系，不再使用 JSX 形式的 `<Form>` 和 `<Form.Item>`。
+
+## v0.3.26  2026-05-28
+
+### 已确认决策
+
+- 后续所有组件开发优先使用 Pro Components 体系。
+- 表单、列表、描述详情、抽屉表单、弹窗表单和步骤表单优先使用 `ProForm`、`ProTable`、`ProDescriptions`、`DrawerForm`、`ModalForm` 和 `StepsForm`。
+- 只有 Pro Components 不适合当前场景，或项目已有成熟封装要求时，才考虑 Ant Design 原生组件，并提前说明原因。
+
+## v0.3.27  2026-05-28
+
+### 已完成
+
+- 风控配置页初始化数据改为使用 `ProForm request`。
+- 移除页面级 `useEffect` 初始化请求、`initialValues` state 和 `form.setFieldsValue` 初始化逻辑。
+- 刷新按钮通过 `params.reloadKey` 触发 `ProForm request` 重新请求。
+- 保存成功后更新保存时间并触发一次重新请求，让重置行为回到后端最新配置。
+
+### 已确认决策
+
+- 配置类表单优先使用 `ProForm request` 承担初始化数据加载。
+- 静态默认值继续使用 `initialValues`，接口返回详情数据优先使用 `request`。
+
+## v0.3.28  2026-05-28
+
+### 已完成
+
+- 扫描前端页面的 Pro Components 使用情况。
+- 触发确认页下单预览详情从 Ant Design `Descriptions` 迁移为 `ProDescriptions`。
+- 行情健康页健康摘要从 Ant Design `Descriptions` 迁移为 `ProDescriptions`。
+- 监控总览统计卡片从 Ant Design `Statistic` 迁移为 Pro Components `StatisticCard`。
+- 确认当前页面中没有原生 `<Form>`、`<Form.Item>`、`<Table>`、`<Descriptions>` 和列表 `dataSource` 绑定。
+
+### 已确认决策
+
+- ECharts K 线曲线保留页面级状态，因为图表交互、loading 和错误态需要明确控制。
+- 触发确认的预览弹窗保留必要状态，用于控制确认按钮可用性和错误展示。
+- 行情健康摘要复用表格请求结果，避免为摘要和表格重复请求同一接口。

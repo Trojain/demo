@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { App as AntApp, Button, Popconfirm, Space, Tag, Tooltip, Typography } from 'antd'
-import { PageContainer, ProTable, type ProColumns } from '@ant-design/pro-components'
-import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { RiskCheck, RiskCheckStatus } from '../types'
+import { toTableRequestResult } from '../utils/proTable'
 
 const statusMeta: Record<RiskCheckStatus, { text: string; color: string }> = {
   passed: { text: '通过', color: 'success' },
@@ -20,22 +21,7 @@ function renderItems(itemsJson: string) {
 
 export function RiskChecksPage() {
   const { message } = AntApp.useApp()
-  const [riskChecks, setRiskChecks] = useState<RiskCheck[]>([])
-  const [loading, setLoading] = useState(false)
-
-  const refreshRiskChecks = async () => {
-    setLoading(true)
-    try {
-      const checks = await tradingApi.getRiskChecks(200)
-      setRiskChecks(checks)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshRiskChecks()
-  }, [])
+  const actionRef = useRef<ActionType | undefined>(undefined)
 
   const columns = useMemo<ProColumns<RiskCheck>[]>(
     () => [
@@ -103,25 +89,26 @@ export function RiskChecksPage() {
       },
       {
         title: '操作',
+        dataIndex: 'operate',
         valueType: 'option',
-        width: 100,
-        render: (_, row) => (
-          <Space>
-            <Popconfirm
-              title='删除风控检查'
-              description='将直接从数据库删除该风控检查记录，不影响关联信号'
-              onConfirm={async () => {
-                await tradingApi.deleteRiskCheck(row.id)
-                message.success('风控检查已删除')
-                await refreshRiskChecks()
-              }}
-            >
-              <Button danger type='link'>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
-        ),
+        fixed: 'right',
+        width: 'auto',
+        render: (_, row) => [
+          <Popconfirm
+            key='delete'
+            title='删除风控检查'
+            description='将直接从数据库删除该风控检查记录，不影响关联信号'
+            onConfirm={async () => {
+              await tradingApi.deleteRiskCheck(row.id)
+              message.success('风控检查已删除')
+              actionRef.current?.reload()
+            }}
+          >
+            <Button danger type='link'>
+              删除
+            </Button>
+          </Popconfirm>,
+        ],
       },
     ],
     [message],
@@ -130,14 +117,15 @@ export function RiskChecksPage() {
   return (
     <PageContainer subTitle='展示信号进入触发确认前的风控结论和明细'>
       <ProTable<RiskCheck>
+        actionRef={actionRef}
         rowKey='id'
         search={false}
-        loading={loading}
         columns={columns}
-        dataSource={riskChecks}
+        request={async () => toTableRequestResult(await tradingApi.getRiskChecks(200))}
+        onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 12 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void refreshRiskChecks()}>
+          <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
         ]}
