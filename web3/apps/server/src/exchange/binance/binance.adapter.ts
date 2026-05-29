@@ -1,9 +1,12 @@
 import { nanoid } from 'nanoid'
 import WebSocket from 'ws'
 import { Decimal } from 'decimal.js'
-import type { ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js'
+import { createHmac } from 'node:crypto'
+import type { AccountBalance, ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js'
 import { fetchExchangeJson } from '../http-client.js'
 import { toBinanceSymbol, toDisplaySymbol } from '../symbol.js'
+import { appConfig } from '../../config/env.js'
+import { createExchangeWebSocket } from '../ws-client.js'
 
 type BinanceTickerResponse = {
   symbol: string
@@ -64,12 +67,37 @@ type BinanceTickerStreamMessage = {
   E?: number
 }
 
+type BinanceKlineStreamMessage = {
+  k?: {
+    t?: number
+    s?: string
+    o?: string
+    h?: string
+    l?: string
+    c?: string
+    v?: string
+    q?: string
+  }
+}
+
+type BinanceAccountResponse = {
+  balances?: Array<{
+    asset: string
+    free: string
+    locked: string
+  }>
+}
+
 export class BinanceAdapter implements ExchangeAdapter {
   readonly code = 'binance' as const
   private ws?: WebSocket
+  private candleWs?: WebSocket
   private reconnectTimer?: NodeJS.Timeout
+  private candleReconnectTimer?: NodeJS.Timeout
   private currentTickerSignature = ''
+  private currentCandleSignature = ''
   private tickerHandler?: (ticker: TickerPrice) => void
+  private candleHandler?: (candle: MarketCandle) => void
 
   connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void) {
     const uniqueSymbols = [...new Set(symbols.map(toBinanceSymbol))].sort()
@@ -87,7 +115,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.currentTickerSignature = signature
     this.ws?.close()
     const streams = uniqueSymbols.map(symbol => `${symbol.toLowerCase()}@ticker`).join('/')
-    this.ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`)
+    this.ws = createExchangeWebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`)
 
     this.ws.on('message', raw => {
       const payload = JSON.parse(raw.toString()) as BinanceTickerStreamMessage
@@ -117,6 +145,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
 
     this.ws.on('error', () => {
+      console.warn('Binance ticker WebSocket 异常，准备重连')
       this.ws?.close()
     })
   }
@@ -168,6 +197,67 @@ export class BinanceAdapter implements ExchangeAdapter {
     }))
   }
 
+  connectCandleStream(symbol: string, bar: string, onCandle: (candle: MarketCandle) => void) {
+    const binanceSymbol = toBinanceSymbol(symbol)
+    const signature = `${binanceSymbol}:${bar}`
+    this.candleHandler = onCandle
+    const candleSocketActive = this.candleWs?.readyState === WebSocket.CONNECTING || this.candleWs?.readyState === WebSocket.OPEN
+    if (this.currentCandleSignature === signature && candleSocketActive) {
+      return () => undefined
+    }
+
+    this.currentCandleSignature = signature
+    clearTimeout(this.candleReconnectTimer)
+    this.candleWs?.close()
+    this.candleWs = createExchangeWebSocket(`wss://stream.binance.com:9443/ws/${binanceSymbol.toLowerCase()}@kline_${bar}`)
+
+    this.candleWs.on('message', raw => {
+      const payload = JSON.parse(raw.toString()) as BinanceKlineStreamMessage
+      const item = payload.k
+      if (!item?.t || !item.o || !item.h || !item.l || !item.c) {
+        return
+      }
+
+      this.candleHandler?.({
+        symbol: toDisplaySymbol(item.s ?? binanceSymbol),
+        time: new Date(item.t).toISOString(),
+        open: item.o,
+        high: item.h,
+        low: item.l,
+        close: item.c,
+        volume: item.v ?? '0',
+        volumeCurrency: item.q ?? '0',
+      })
+    })
+
+    this.candleWs.on('close', () => {
+      const reconnectSignature = this.currentCandleSignature
+      const reconnectHandler = this.candleHandler
+      if (reconnectSignature === signature && reconnectHandler) {
+        this.candleReconnectTimer = setTimeout(() => {
+          this.currentCandleSignature = ''
+          this.connectCandleStream(symbol, bar, reconnectHandler)
+        }, 3000)
+      }
+    })
+
+    this.candleWs.on('error', () => {
+      console.warn('Binance K 线 WebSocket 异常，准备重连')
+      this.candleWs?.close()
+    })
+
+    return () => {
+      if (this.currentCandleSignature !== signature) {
+        return
+      }
+
+      this.currentCandleSignature = ''
+      clearTimeout(this.candleReconnectTimer)
+      this.candleWs?.close()
+      this.candleWs = undefined
+    }
+  }
+
   async getInstrumentRules(): Promise<InstrumentRule[]> {
     const payload = await fetchExchangeJson<BinanceExchangeInfoResponse>('https://api.binance.com/api/v3/exchangeInfo')
 
@@ -206,6 +296,35 @@ export class BinanceAdapter implements ExchangeAdapter {
       volume24h: payload.volume,
       volumeCurrency24h: payload.quoteVolume,
     }
+  }
+
+  async getAccountBalances(currencies?: string[]): Promise<AccountBalance[]> {
+    if (!appConfig.binance.apiKey || !appConfig.binance.apiSecret) {
+      throw new Error('Binance API Key 或 Secret 未配置，无法查询真实账户余额')
+    }
+
+    const params = new URLSearchParams({
+      recvWindow: '5000',
+      timestamp: String(Date.now()),
+    })
+    const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
+    params.set('signature', signature)
+    const payload = await fetchExchangeJson<BinanceAccountResponse>(`https://api.binance.com/api/v3/account?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'X-MBX-APIKEY': appConfig.binance.apiKey,
+      },
+    })
+    const currencySet = currencies?.length ? new Set(currencies.map(currency => currency.toUpperCase())) : undefined
+
+    return (payload.balances ?? [])
+      .filter(item => !currencySet || currencySet.has(item.asset))
+      .map(item => ({
+        currency: item.asset,
+        available: item.free,
+        locked: item.locked,
+        total: new Decimal(item.free).plus(item.locked).toFixed(),
+      }))
   }
 
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {

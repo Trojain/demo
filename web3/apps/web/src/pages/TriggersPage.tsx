@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, App as AntApp, Button, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, App as AntApp, Button, Drawer, Empty, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
 import { PageContainer, ProDescriptions, ProTable, type ActionType, type ProColumns, type ProDescriptionsItemProps } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { Decimal } from 'decimal.js'
 import { tradingApi } from '../api/trading'
 import { TriggerStatusTag } from '../components/StatusTag'
-import type { OrderPreview, OrderPreviewCheckItem, TriggerEvent } from '../types'
+import { useProfitDisplay } from '../hooks/useProfitDisplay'
+import type { OrderPreview, OrderPreviewCheckItem, OrderRecord, TriggerEvent } from '../types'
 import { toTableRequestResult } from '../utils/proTable'
 
 function formatDecimalText(value?: string) {
@@ -52,11 +53,16 @@ function renderCheckItems(items: OrderPreviewCheckItem[]) {
 export function TriggersPage() {
   const { message } = AntApp.useApp()
   const actionRef = useRef<ActionType | undefined>(undefined)
+  const profitDisplay = useProfitDisplay()
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerEvent>()
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [orderPreview, setOrderPreview] = useState<OrderPreview>()
   const [previewError, setPreviewError] = useState('')
+  const [orderDrawerOpen, setOrderDrawerOpen] = useState(false)
+  const [selectedOrderTrigger, setSelectedOrderTrigger] = useState<TriggerEvent>()
+  const [selectedOrder, setSelectedOrder] = useState<OrderRecord>()
+  const [orderLoading, setOrderLoading] = useState(false)
 
   const getErrorMessage = (error: unknown) => {
     if (axios.isAxiosError<{ message?: string }>(error)) {
@@ -122,6 +128,21 @@ export function TriggersPage() {
     }
   }
 
+  const openOrderDrawer = async (trigger: TriggerEvent) => {
+    setSelectedOrderTrigger(trigger)
+    setSelectedOrder(undefined)
+    setOrderDrawerOpen(true)
+    setOrderLoading(true)
+    try {
+      const orders = await tradingApi.getOrders()
+      setSelectedOrder(orders.find(order => order.triggerId === trigger.id))
+    } catch (error) {
+      message.error(getErrorMessage(error))
+    } finally {
+      setOrderLoading(false)
+    }
+  }
+
   const columns = useMemo<ProColumns<TriggerEvent>[]>(
     () => [
       {
@@ -183,7 +204,14 @@ export function TriggersPage() {
           )
 
           if (row.status !== 'pending') {
-            return [<Tag key='processed'>已处理</Tag>, deleteAction]
+            return [
+              row.status === 'confirmed' ? (
+                <Button key='order' type='link' onClick={() => openOrderDrawer(row)}>
+                  订单记录
+                </Button>
+              ) : null,
+              deleteAction,
+            ].filter(Boolean)
           }
 
           return [
@@ -213,7 +241,6 @@ export function TriggersPage() {
             >
               <Button type='link'>忽略</Button>
             </Popconfirm>,
-            deleteAction,
           ]
         },
       },
@@ -292,6 +319,63 @@ export function TriggersPage() {
           </Space>
         ),
       },
+      {
+        title: '账户预检',
+        dataIndex: 'accountPassed',
+        render: (_, row) => (
+          <Space direction='vertical' size={4}>
+            <Tag color={row.accountPassed ? 'success' : 'error'}>{row.accountPassed ? '通过' : '未通过'}</Tag>
+            {renderCheckItems(row.accountItems ?? [])}
+          </Space>
+        ),
+      },
+      {
+        title: '成交后余额',
+        dataIndex: 'nextAvailableQuoteBalance',
+        render: (_, row) => `${formatDecimalText(row.nextAvailableQuoteBalance)} USDT`,
+      },
+      {
+        title: '成交后持仓',
+        dataIndex: 'nextAvailableBaseQuantity',
+        render: (_, row) => formatDecimalText(row.nextAvailableBaseQuantity),
+      },
+      {
+        title: '预计已实现盈亏',
+        dataIndex: 'estimatedRealizedPnl',
+        render: (_, row) => profitDisplay.renderMoney(row.estimatedRealizedPnl, 'USDT'),
+      },
+    ],
+    [profitDisplay],
+  )
+
+  const orderColumns = useMemo<ProDescriptionsItemProps<OrderRecord>[]>(
+    () => [
+      { title: '交易所', dataIndex: 'exchange', render: (_, row) => <Tag>{row.exchange.toUpperCase()}</Tag> },
+      { title: '交易对', dataIndex: 'symbol' },
+      {
+        title: '方向',
+        dataIndex: 'side',
+        render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag>,
+      },
+      { title: '订单类型', dataIndex: 'orderType', render: (_, row) => (row.orderType === 'market' ? '市价' : '限价') },
+      { title: '基础币数量', dataIndex: 'baseQuantity', render: (_, row) => formatDecimalText(row.baseQuantity) },
+      { title: '计价币金额', dataIndex: 'quoteAmount', render: (_, row) => `${formatDecimalText(row.quoteAmount)} USDT` },
+      { title: '委托价格', dataIndex: 'price', render: (_, row) => (row.price ? `${formatDecimalText(row.price)} USDT` : '-') },
+      {
+        title: '订单状态',
+        dataIndex: 'status',
+        render: (_, row) => <Tag color={row.status === 'filled' ? 'success' : row.status === 'submitted' ? 'processing' : 'default'}>{row.status}</Tag>,
+      },
+      {
+        title: '下单模式',
+        dataIndex: 'simulationMode',
+        render: (_, row) => <Tag color={row.simulationMode ? 'processing' : 'error'}>{row.simulationMode ? '模拟下单' : '真实下单'}</Tag>,
+      },
+      { title: '订单号', dataIndex: 'exchangeOrderId', render: (_, row) => <Typography.Text copyable>{row.exchangeOrderId}</Typography.Text> },
+      { title: '触发 ID', dataIndex: 'triggerId', render: (_, row) => <Typography.Text copyable>{row.triggerId}</Typography.Text> },
+      { title: '规则 ID', dataIndex: 'ruleId', render: (_, row) => <Typography.Text copyable>{row.ruleId}</Typography.Text> },
+      { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+      { title: '响应摘要', dataIndex: 'rawMessage', span: 2 },
     ],
     [],
   )
@@ -321,7 +405,7 @@ export function TriggersPage() {
         onCancel={closePreview}
         onOk={confirmSelectedOrder}
         okButtonProps={{
-          disabled: !orderPreview || !orderPreview.tradingRulePassed || !orderPreview.riskPassed,
+          disabled: !orderPreview || !orderPreview.tradingRulePassed || !orderPreview.riskPassed || orderPreview.accountPassed === false,
         }}
       >
         <Spin spinning={previewLoading}>
@@ -331,14 +415,33 @@ export function TriggersPage() {
             {orderPreview ? (
               <>
                 <ProDescriptions<OrderPreview> size='small' column={1} bordered dataSource={orderPreview} columns={previewColumns} />
-                {!orderPreview.tradingRulePassed || !orderPreview.riskPassed ? (
-                  <Alert type='warning' message='交易规则或风控未通过，暂不能确认下单。' showIcon />
+                {!orderPreview.tradingRulePassed || !orderPreview.riskPassed || orderPreview.accountPassed === false ? (
+                  <Alert type='warning' message='交易规则、风控或账户预检未通过，暂不能确认下单。' showIcon />
                 ) : null}
               </>
             ) : null}
           </Space>
         </Spin>
       </Modal>
+      <Drawer
+        title='订单记录'
+        width={760}
+        open={orderDrawerOpen}
+        onClose={() => {
+          setOrderDrawerOpen(false)
+          setSelectedOrderTrigger(undefined)
+          setSelectedOrder(undefined)
+        }}
+      >
+        <Space direction='vertical' size={16} style={{ width: '100%' }}>
+          {selectedOrderTrigger ? <Typography.Text type='secondary'>当前触发 ID：{selectedOrderTrigger.id}</Typography.Text> : null}
+          {selectedOrder ? (
+            <ProDescriptions<OrderRecord> column={1} bordered loading={orderLoading} dataSource={selectedOrder} columns={orderColumns} />
+          ) : (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={orderLoading ? '订单记录加载中' : '暂无关联订单记录'} />
+          )}
+        </Space>
+      </Drawer>
     </PageContainer>
   )
 }

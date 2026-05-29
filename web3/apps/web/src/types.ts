@@ -7,6 +7,8 @@ export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
 export type RiskCheckStatus = 'passed' | 'rejected';
 export type RiskTradingMode = 'simulation_only' | 'allow_real';
 export type RuleRuntimeStatus = 'idle' | 'running' | 'paused' | 'limit_reached' | 'error';
+export type TradeAccountType = 'simulation' | 'real';
+export type TradeOperationLogLevel = 'info' | 'warning' | 'error';
 export type AuditLogLevel = 'info' | 'warning' | 'error';
 export type AuditLogAction =
   | 'signal.created'
@@ -18,6 +20,7 @@ export type AuditLogAction =
   | 'trigger.confirmed'
   | 'trigger.ignored'
   | 'order.submitted'
+  | 'order.final_validation_failed'
   | 'order.failed'
   | 'strategy.error';
 
@@ -219,6 +222,16 @@ export interface OrderPreview {
   riskPassed: boolean;
   /** 风控检查明细 */
   riskItems: OrderPreviewCheckItem[];
+  /** 交易账户检查是否通过 */
+  accountPassed?: boolean;
+  /** 交易账户检查明细 */
+  accountItems?: OrderPreviewCheckItem[];
+  /** 成交后计价币可用余额 */
+  nextAvailableQuoteBalance?: string;
+  /** 成交后基础币可用数量 */
+  nextAvailableBaseQuantity?: string;
+  /** 卖出时预计已实现盈亏 */
+  estimatedRealizedPnl?: string;
   /** 预览生成时间 */
   previewedAt: string;
 }
@@ -306,6 +319,232 @@ export interface DashboardSummary {
   orderCount: number;
   /** 当前行情缓存数量 */
   tickerCount: number;
+}
+
+export interface TradeAccount {
+  /** 账户主键 */
+  id: string;
+  /** 账户类型 */
+  accountType: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 默认计价币种 */
+  quoteCurrency: string;
+  /** 初始权益 */
+  initialEquity: string;
+  /** 可用计价币余额 */
+  availableQuoteBalance: string;
+  /** 冻结计价币余额 */
+  lockedQuoteBalance: string;
+  /** 创建时间 */
+  createdAt: string;
+  /** 更新时间 */
+  updatedAt: string;
+}
+
+export interface TradePosition {
+  /** 持仓主键 */
+  id: string;
+  /** 关联账户 ID */
+  accountId: string;
+  /** 账户类型 */
+  accountType: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 基础币种 */
+  baseCurrency: string;
+  /** 计价币种 */
+  quoteCurrency: string;
+  /** 当前总持仓数量 */
+  quantity: string;
+  /** 当前可卖出数量 */
+  availableQuantity: string;
+  /** 冻结数量 */
+  lockedQuantity: string;
+  /** 平均持仓成本价 */
+  avgCostPrice: string;
+  /** 当前剩余持仓成本 */
+  costAmount: string;
+  /** 已实现盈亏 */
+  realizedPnl: string;
+  /** 累计手续费金额 */
+  feeAmount: string;
+  /** 创建时间 */
+  createdAt: string;
+  /** 更新时间 */
+  updatedAt: string;
+}
+
+export interface TradeFill {
+  /** 成交记录主键 */
+  id: string;
+  /** 关联账户 ID */
+  accountId: string;
+  /** 关联订单 ID */
+  orderId?: string;
+  /** 账户类型 */
+  accountType: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 买入或卖出方向 */
+  side: OrderSide;
+  /** 成交价格 */
+  price: string;
+  /** 成交基础币数量 */
+  baseQuantity: string;
+  /** 成交计价币金额 */
+  quoteAmount: string;
+  /** 手续费金额 */
+  feeAmount: string;
+  /** 手续费币种 */
+  feeCurrency: string;
+  /** 本次成交已实现盈亏 */
+  realizedPnl: string;
+  /** 原始响应或本地撮合说明 */
+  rawMessage: string;
+  /** 成交时间 */
+  createdAt: string;
+}
+
+export interface TradeOperationLog {
+  /** 操作日志主键 */
+  id: string;
+  /** 关联账户 ID */
+  accountId: string;
+  /** 账户类型 */
+  accountType: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 日志级别 */
+  level: TradeOperationLogLevel;
+  /** 操作动作 */
+  action: string;
+  /** 操作摘要 */
+  message: string;
+  /** 结构化详情 JSON 字符串 */
+  payloadJson?: string;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+export interface TradeOrderCheckItem {
+  /** 检查项编码 */
+  code: string;
+  /** 是否通过 */
+  passed: boolean;
+  /** 检查说明 */
+  message: string;
+}
+
+export interface TradeOrderPreview {
+  /** 下单模式 */
+  mode: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 下单方向 */
+  side: OrderSide;
+  /** 下单类型 */
+  orderType: OrderType;
+  /** 执行参考价 */
+  executionPrice: string;
+  /** 基础币数量 */
+  baseQuantity: string;
+  /** 计价币金额 */
+  quoteAmount: string;
+  /** 手续费金额 */
+  feeAmount: string;
+  /** 手续费币种 */
+  feeCurrency: string;
+  /** 卖出时预计已实现盈亏 */
+  estimatedRealizedPnl: string;
+  /** 成交后计价币可用余额 */
+  nextAvailableQuoteBalance: string;
+  /** 成交后基础币可用数量 */
+  nextAvailableBaseQuantity: string;
+  /** 检查项是否全部通过 */
+  passed: boolean;
+  /** 检查项明细 */
+  checkItems: TradeOrderCheckItem[];
+  /** 预览生成时间 */
+  previewedAt: string;
+}
+
+export interface TradeOrderPayload {
+  mode: TradeAccountType;
+  exchange: ExchangeCode;
+  symbol: string;
+  side: OrderSide;
+  orderType: OrderType;
+  baseQuantity?: string;
+  quoteAmount?: string;
+  limitPrice?: string;
+}
+
+export interface TradePositionView extends TradePosition {
+  /** 最新市场价 */
+  marketPrice: string;
+  /** 当前持仓市值 */
+  marketValue: string;
+  /** 浮动盈亏 */
+  unrealizedPnl: string;
+  /** 浮动收益率百分比 */
+  unrealizedPnlPercent: string;
+}
+
+export interface TradeAccountSummary {
+  /** 账户主键 */
+  accountId: string;
+  /** 下单模式 */
+  mode: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 计价币种 */
+  quoteCurrency: string;
+  /** 初始权益 */
+  initialEquity: string;
+  /** 可用计价币余额 */
+  availableQuoteBalance: string;
+  /** 冻结计价币余额 */
+  lockedQuoteBalance: string;
+  /** 持仓市值 */
+  positionMarketValue: string;
+  /** 总权益 */
+  totalEquity: string;
+  /** 已实现盈亏 */
+  realizedPnl: string;
+  /** 浮动盈亏 */
+  unrealizedPnl: string;
+  /** 总收益 */
+  totalPnl: string;
+  /** 总收益率百分比 */
+  totalPnlPercent: string;
+  /** 统计时间 */
+  calculatedAt: string;
+}
+
+export type TradeEquityHistorySource = 'snapshot' | 'carried' | 'initial';
+
+export interface TradeEquityHistoryPoint {
+  /** 账户主键 */
+  accountId: string;
+  /** 下单模式 */
+  mode: TradeAccountType;
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 计价币种 */
+  quoteCurrency: string;
+  /** 日期，格式 YYYY-MM-DD */
+  date: string;
+  /** 总资产 */
+  totalEquity: string;
+  /** 数据来源 */
+  source: TradeEquityHistorySource;
 }
 
 export interface OrderRecord {

@@ -41,6 +41,8 @@ cp .env.example .env
 - `RISK_DAILY_MAX_TRIGGER_COUNT`：每日最大通过风控次数，默认 `20`
 - `RISK_DAILY_MAX_QUOTE_AMOUNT`：每日最大通过风控计价金额，默认 `5000`
 - `RISK_TRADING_MODE`：风控交易模式，默认 `simulation_only`
+- `SIMULATION_INITIAL_QUOTE_BALANCE`：模拟账户初始本金，默认 `10000`
+- `SIMULATION_QUOTE_CURRENCY`：模拟账户默认计价币种，默认 `USDT`
 - `OKX_API_KEY`、`OKX_API_SECRET`、`OKX_API_PASSPHRASE`：OKX 真实下单预留配置
 - `BINANCE_API_KEY`、`BINANCE_API_SECRET`：Binance 真实下单预留配置
 
@@ -54,6 +56,9 @@ cp .env.example .env
 
 - OKX 公共行情 WebSocket 订阅
 - Binance 公共行情、K 线、交易规则和 WebSocket ticker 订阅
+- 交易账户、持仓、成交和操作日志基础账本，支持按下单模式区分模拟和真实
+- 持仓收益和交易日志页面
+- 模拟买入、模拟卖出、持仓更新和收益统计
 - 监控规则配置
 - 目标价触发检测
 - 前端确认后模拟下单
@@ -69,6 +74,6 @@ cp .env.example .env
 后续版本先推进多交易所公共能力，再进入真实交易能力：
 
 - `v0.3.x`：按 Binance Spot 官方文档补齐公共行情、交易规则、K 线、WebSocket 和下单前预览能力。
-- `v0.4.x`：在交易规则、风控和预览稳定后，再接入真实交易前置能力。
+- `v0.4.x`：先完善规则驱动的模拟真实交易账户、买卖、收益和日志，并让模拟和真实共用持仓与日志页面，再接入真实交易前置能力。当前已完成真实余额预检，真实下单仍未开放。
 
 Binance 公共能力已按官方 Spot API 文档接入，真实下单仍未开放。官方文档：https://developers.binance.com/docs/binance-spot-api-docs

@@ -92,11 +92,26 @@ export interface PlaceOrderResult {
   rawMessage: string;
 }
 
+export interface AccountBalance {
+  /** 币种，例如 USDT 或 BTC */
+  currency: string;
+  /** 可用余额 */
+  available: string;
+  /** 冻结余额 */
+  locked: string;
+  /** 总余额 */
+  total: string;
+  /** 余额查询错误，真实交易前置校验失败时返回 */
+  error?: string;
+}
+
 export interface ExchangeAdapter {
   /** 交易所编码 */
   readonly code: ExchangeCode;
   /** 订阅行情，收到价格后通过回调交给行情服务 */
   connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void): void;
+  /** 订阅 K 线，图表实时曲线使用交易所官方 candle 数据，返回取消订阅函数 */
+  connectCandleStream?(symbol: string, bar: string, onCandle: (candle: MarketCandle) => void): () => void;
   /** 查询最新价格，WebSocket 暂无数据时作为补偿 */
   getLatestPrice(symbol: string): Promise<TickerPrice>;
   /** 查询完整行情快照，用于总览行情列表 */
@@ -107,6 +122,8 @@ export interface ExchangeAdapter {
   getCandles?(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]>;
   /** 查询交易规则，用于下单前校验 */
   getInstrumentRules?(): Promise<InstrumentRule[]>;
+  /** 查询账户余额，真实交易前校验使用 */
+  getAccountBalances?(currencies?: string[]): Promise<AccountBalance[]>;
   /** 下单接口，第一版只开放模拟下单，真实下单预留 */
   placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult>;
 }

@@ -9,8 +9,10 @@ import { RiskCheckRepository } from '../repositories/risk-check.repository.js';
 import { RiskConfigRepository } from '../repositories/risk-config.repository.js';
 import { RuleRepository } from '../repositories/rule.repository.js';
 import { SignalRepository } from '../repositories/signal.repository.js';
+import { TradeAccountRepository } from '../repositories/trade-account.repository.js';
 import { TriggerRepository } from '../repositories/trigger.repository.js';
 import { registerApiRoutes } from '../routes/api.routes.js';
+import { marketCandleSubscriptionMessageSchema } from '../routes/dto.js';
 import { AuditLogService } from '../services/audit-log.service.js';
 import { MarketCapService } from '../services/market-cap.service.js';
 import { MarketService } from '../services/market.service.js';
@@ -21,6 +23,8 @@ import { RiskConfigService } from '../services/risk-config.service.js';
 import { RiskService } from '../services/risk.service.js';
 import { SignalService } from '../services/signal.service.js';
 import { StrategyService } from '../services/strategy.service.js';
+import { TradeAccountService } from '../services/trade-account.service.js';
+import { TradeExecutionService } from '../services/trade-execution.service.js';
 import { TradingRuleService } from '../services/trading-rule.service.js';
 
 export interface ServerRuntime {
@@ -64,6 +68,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const triggerRepository = new TriggerRepository(db);
   const orderRepository = new OrderRepository(db);
   const auditLogRepository = new AuditLogRepository(db);
+  const tradeAccountRepository = new TradeAccountRepository(db);
   const notificationService = new NotificationService();
   const auditLogService = new AuditLogService(auditLogRepository);
   const marketCapService = new MarketCapService();
@@ -77,12 +82,19 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     tradingMode: appConfig.risk.tradingMode
   });
   riskConfigService.ensureDefault();
+  const tradeAccountService = new TradeAccountService(tradeAccountRepository, {
+    initialQuoteBalance: appConfig.simulation.initialQuoteBalance,
+    quoteCurrency: appConfig.simulation.quoteCurrency,
+    exchanges: ['okx', 'binance']
+  });
+  tradeAccountService.ensureDefaultSimulationAccounts();
   const riskService = new RiskService(riskCheckRepository, auditLogService, riskConfigService, {
     enableRealTrading: appConfig.enableRealTrading,
   });
   const signalService = new SignalService(signalRepository, triggerRepository, auditLogService, riskService);
-  const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService);
-  const orderService = new OrderService(exchangeFactory, ruleRepository, triggerRepository, orderRepository, auditLogService);
+  const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService);
+  const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService, tradeExecutionService);
+  const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService);
   const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService);
 
   await registerApiRoutes(app, {
@@ -98,12 +110,28 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     ruleRepository,
     signalRepository,
     signalService,
+    tradeAccountService,
+    tradeExecutionService,
     tradingRuleService,
     triggerRepository
   });
 
   // WebSocket 依赖 Fastify 底层 http server，需要在路由注册后绑定到同一个服务实例。
-  notificationService.bind(app.server);
+  notificationService.bind(app.server, (message, send) => {
+    const parsed = marketCandleSubscriptionMessageSchema.safeParse(message);
+    if (!parsed.success) {
+      return undefined;
+    }
+
+    const { exchange, symbol, bar } = parsed.data.payload;
+    return marketService.connectCandleStream(exchange, symbol, bar, candle => {
+      send('market.candle.updated', {
+        exchange,
+        bar,
+        ...candle
+      });
+    });
+  });
 
   let closed = false;
 

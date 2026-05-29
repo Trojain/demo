@@ -22,6 +22,7 @@ const actionMeta: Record<AuditLogAction, string> = {
   'trigger.confirmed': '触发确认',
   'trigger.ignored': '触发忽略',
   'order.submitted': '订单提交',
+  'order.final_validation_failed': '最终校验失败',
   'order.failed': '下单失败',
   'strategy.error': '策略异常',
 }

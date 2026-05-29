@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Layout, Menu, Space, Tag, Typography } from 'antd'
-import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, OrderedListOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, OrderedListOutlined, SafetyOutlined, ThunderboltOutlined, WalletOutlined } from '@ant-design/icons'
 import styles from './DashboardLayout.module.scss'
 
 const { Header, Content, Sider } = Layout
@@ -31,9 +31,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>监控总览</Link> },
             { key: '/rules', icon: <OrderedListOutlined />, label: <Link to='/rules'>监控规则</Link> },
             { key: '/signals', icon: <ThunderboltOutlined />, label: <Link to='/signals'>交易信号</Link> },
-            { key: '/risk-checks', icon: <SafetyOutlined />, label: <Link to='/risk-checks'>风控检查</Link> },
             { key: '/triggers', icon: <BellOutlined />, label: <Link to='/triggers'>触发确认</Link> },
-            { key: '/orders', icon: <ThunderboltOutlined />, label: <Link to='/orders'>订单记录</Link> },
+            { key: '/trade-positions', icon: <WalletOutlined />, label: <Link to='/trade-positions'>持仓收益</Link> },
+            { key: '/trade-logs', icon: <AuditOutlined />, label: <Link to='/trade-logs'>交易日志</Link> },
             { key: '/audit-logs', icon: <AuditOutlined />, label: <Link to='/audit-logs'>审计日志</Link> },
             { key: '/risk-config', icon: <SafetyOutlined />, label: <Link to='/risk-config'>风控配置</Link> },
             { key: '/market-health', icon: <LineChartOutlined />, label: <Link to='/market-health'>行情健康</Link> },

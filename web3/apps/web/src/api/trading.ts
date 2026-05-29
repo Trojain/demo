@@ -14,6 +14,16 @@ import type {
   RiskConfig,
   RiskCheck,
   TickerPrice,
+  TradeAccount,
+  TradeEquityHistoryPoint,
+  TradeAccountSummary,
+  TradeAccountType,
+  TradeFill,
+  TradeOrderPayload,
+  TradeOrderPreview,
+  TradeOperationLog,
+  TradePosition,
+  TradePositionView,
   TradingSignal,
   TriggerEvent,
   UpdateRiskConfigPayload,
@@ -73,6 +83,68 @@ export const tradingApi = {
     const { data } = await apiClient.get<RiskConfig>('/risk-config');
     return data;
   },
+  getTradeAccounts: async (mode?: TradeAccountType) => {
+    const { data } = await apiClient.get<TradeAccount[]>('/trade/accounts', {
+      params: { mode }
+    });
+    return data;
+  },
+  getTradePositions: async (mode?: TradeAccountType, exchange?: ExchangeCode) => {
+    const { data } = await apiClient.get<TradePosition[]>('/trade/positions', {
+      params: { mode, exchange }
+    });
+    return data;
+  },
+  getTradeFills: async (mode?: TradeAccountType, exchange?: ExchangeCode, limit = 100) => {
+    const { data } = await apiClient.get<TradeFill[]>('/trade/fills', {
+      params: { mode, exchange, limit }
+    });
+    return data;
+  },
+  getTradeLogs: async (mode?: TradeAccountType, exchange?: ExchangeCode, limit = 100) => {
+    const { data } = await apiClient.get<TradeOperationLog[]>('/trade/logs', {
+      params: { mode, exchange, limit }
+    });
+    return data;
+  },
+  getTradeSummary: async (mode?: TradeAccountType) => {
+    const { data } = await apiClient.get<TradeAccountSummary[]>('/trade/summary', {
+      params: { mode }
+    });
+    return data;
+  },
+  getTradeEquityHistory: async (mode?: TradeAccountType, exchange?: ExchangeCode, days = 30) => {
+    const { data } = await apiClient.get<TradeEquityHistoryPoint[]>('/trade/equity-history', {
+      params: { mode, exchange, days }
+    });
+    return data;
+  },
+  getTradePositionValuations: async (mode?: TradeAccountType, exchange?: ExchangeCode) => {
+    const { data } = await apiClient.get<TradePositionView[]>('/trade/positions/valuation', {
+      params: { mode, exchange }
+    });
+    return data;
+  },
+  previewTradeOrder: async (payload: TradeOrderPayload) => {
+    const { data } = await apiClient.post<TradeOrderPreview>('/trade/orders/preview', payload);
+    return data;
+  },
+  confirmTradeOrder: async (preview: TradeOrderPayload) => {
+    const { data } = await apiClient.post<OrderRecord>('/trade/orders/confirm', { preview });
+    return data;
+  },
+  getSimulationAccounts: async () => {
+    return tradingApi.getTradeAccounts('simulation');
+  },
+  getSimulationPositions: async (exchange?: ExchangeCode) => {
+    return tradingApi.getTradePositions('simulation', exchange);
+  },
+  getSimulationFills: async (exchange?: ExchangeCode, limit = 100) => {
+    return tradingApi.getTradeFills('simulation', exchange, limit);
+  },
+  getSimulationLogs: async (exchange?: ExchangeCode, limit = 100) => {
+    return tradingApi.getTradeLogs('simulation', exchange, limit);
+  },
   updateRiskConfig: async (payload: UpdateRiskConfigPayload) => {
     const { data } = await apiClient.put<RiskConfig>('/risk-config', payload);
     return data;
@@ -127,7 +199,7 @@ export const tradingApi = {
     });
     return data;
   },
-  getMarketCandles: async (symbol: string, bar = '1m', exchange: ExchangeCode = 'okx') => {
+  getMarketCandles: async (symbol: string, bar = '10s', exchange: ExchangeCode = 'okx') => {
     const { data } = await apiClient.get<MarketCandle[]>('/market/candles', {
       params: { exchange, symbol, bar }
     });

@@ -3,9 +3,12 @@ import { appConfig } from '../config/env.js'
 
 const proxyAgent = appConfig.exchangeHttpProxy ? new ProxyAgent(appConfig.exchangeHttpProxy) : undefined
 
-export async function fetchExchangeJson<T>(url: string): Promise<T> {
+export async function fetchExchangeJson<T>(url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<T> {
   try {
     const response = await fetch(url, {
+      method: init?.method,
+      headers: init?.headers,
+      body: init?.body,
       dispatcher: proxyAgent,
     })
 

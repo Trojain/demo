@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { App as AntApp, Button, Col, Empty, Row, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Col, Empty, Row, Segmented, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
 import { LineChartOutlined } from '@ant-design/icons'
 import { PageContainer, ProCard, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components'
+import { createMarketCandleConnection } from '../api/realtime'
 import { tradingApi } from '../api/trading'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSymbol, getMarketSymbolOptions } from '../constants/market'
 import { useBootstrapTrading } from '../hooks/useBootstrapTrading'
@@ -10,6 +11,25 @@ import { useTradingStore } from '../stores/tradingStore'
 import type { ExchangeCode, MarketCandle, MarketTickerSnapshot } from '../types'
 import { toTableRequestResult } from '../utils/proTable'
 import styles from './page.module.scss'
+
+type MarketCandleBar = '1s' | '10s' | '1m' | '5m' | '15m'
+const CANDLE_REST_CALIBRATION_INTERVAL_MS = 60_000
+
+const CANDLE_BAR_OPTIONS: Array<{ label: string; value: MarketCandleBar }> = [
+  { label: '1秒', value: '1s' },
+  { label: '10秒', value: '10s' },
+  { label: '1分', value: '1m' },
+  { label: '5分', value: '5m' },
+  { label: '15分', value: '15m' },
+]
+
+const CANDLE_POINT_LIMIT_BY_BAR: Record<MarketCandleBar, number> = {
+  '1s': 300,
+  '10s': 120,
+  '1m': 1440,
+  '5m': 288,
+  '15m': 96,
+}
 
 function formatMoneyCompact(value?: string) {
   const numberValue = Number(value)
@@ -33,15 +53,10 @@ function formatMoneyCompact(value?: string) {
 }
 
 function formatPriceAxis(value: number) {
-  if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toFixed(2)}K`
-  }
-
-  if (Math.abs(value) >= 1) {
-    return value.toFixed(2)
-  }
-
-  return value.toFixed(5)
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 function formatUsd(value: number) {
@@ -52,11 +67,52 @@ function formatUsd(value: number) {
   }).format(value)
 }
 
+function mergeRealtimeCandle(candles: MarketCandle[], candle: MarketCandle, bar: MarketCandleBar) {
+  const bucketTime = new Date(candle.time).getTime()
+  if (!Number.isFinite(bucketTime)) {
+    return candles
+  }
+
+  const bucketIsoTime = new Date(bucketTime).toISOString()
+  const pointLimit = CANDLE_POINT_LIMIT_BY_BAR[bar]
+  const candleIndex = candles.findIndex(item => item.time === bucketIsoTime)
+
+  if (candleIndex >= 0) {
+    const nextCandle = { ...candle, time: bucketIsoTime }
+    const currentCandle = candles[candleIndex]
+    if (
+      currentCandle.open === nextCandle.open &&
+      currentCandle.high === nextCandle.high &&
+      currentCandle.low === nextCandle.low &&
+      currentCandle.close === nextCandle.close &&
+      currentCandle.volume === nextCandle.volume &&
+      currentCandle.volumeCurrency === nextCandle.volumeCurrency
+    ) {
+      return candles
+    }
+
+    return [...candles.slice(0, candleIndex), nextCandle, ...candles.slice(candleIndex + 1)]
+  }
+
+  return [
+    ...candles,
+    {
+      ...candle,
+      time: bucketIsoTime,
+    },
+  ]
+    .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime())
+    .slice(-pointLimit)
+}
+
 export function OverviewPage() {
   const { message } = AntApp.useApp()
   useBootstrapTrading()
+  const candleRequestingRef = useRef(false)
+  const candleRequestTokenRef = useRef(0)
   const [selectedExchange, setSelectedExchange] = useState<ExchangeCode>('okx')
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
+  const [selectedBar, setSelectedBar] = useState<MarketCandleBar>('10s')
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
   const dashboardSummary = useTradingStore(state => state.dashboardSummary)
@@ -69,6 +125,10 @@ export function OverviewPage() {
       })),
     [candles],
   )
+  const realtimePrice = candleSeries.length > 0 ? candleSeries[candleSeries.length - 1].price : undefined
+  const firstPrice = candleSeries.length > 0 ? candleSeries[0].price : undefined
+  const trendUp = Number.isFinite(realtimePrice) && Number.isFinite(firstPrice) ? (realtimePrice ?? 0) >= (firstPrice ?? 0) : true
+  const trendColor = trendUp ? '#16a34a' : '#ff4d6d'
 
   const handleSelectSymbol = useCallback((symbol: string) => {
     setSelectedSymbol(symbol)
@@ -81,6 +141,13 @@ export function OverviewPage() {
     const options = getMarketSymbolOptions(exchange)
     setSelectedExchange(exchange)
     setSelectedSymbol(options[0]?.value ?? DEFAULT_MARKET_SYMBOL)
+    setCandles([])
+    setCandleError('')
+  }, [])
+
+  const handleSelectBar = useCallback((bar: string | number) => {
+    setSelectedBar(bar as MarketCandleBar)
+    // 切换周期时重新查询对应 K 线，避免旧周期数据和新周期标签混在一起。
     setCandles([])
     setCandleError('')
   }, [])
@@ -163,37 +230,74 @@ export function OverviewPage() {
     [handleSelectSymbol],
   )
 
-  useEffect(() => {
-    let ignore = false
+  const loadCandles = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && candleRequestingRef.current) {
+      return
+    }
 
-    const loadCandles = async () => {
+    const requestToken = candleRequestTokenRef.current + 1
+    candleRequestTokenRef.current = requestToken
+    candleRequestingRef.current = true
+    if (!options?.silent) {
       setCandlesLoading(true)
-      setCandleError('')
-      try {
-        const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, '1m', selectedExchange)
-        if (!ignore) {
-          setCandles(nextCandles)
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'K 线数据加载失败'
-        if (!ignore) {
-          setCandles([])
-          setCandleError(errorMessage)
-          message.error(`${selectedSymbol} 走势加载失败`)
-        }
-      } finally {
-        if (!ignore) {
+    }
+    setCandleError('')
+    try {
+      const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, selectedBar, selectedExchange)
+      if (requestToken === candleRequestTokenRef.current) {
+        setCandles(nextCandles)
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'K 线数据加载失败'
+      if (requestToken === candleRequestTokenRef.current) {
+        setCandles([])
+        setCandleError(errorMessage)
+        message.error(`${selectedSymbol} ${selectedBar} 走势加载失败`)
+      }
+    } finally {
+      if (requestToken === candleRequestTokenRef.current) {
+        candleRequestingRef.current = false
+        if (!options?.silent) {
           setCandlesLoading(false)
         }
       }
     }
+  }, [message, selectedBar, selectedExchange, selectedSymbol])
 
+  useEffect(() => {
     void loadCandles()
+  }, [loadCandles])
 
-    return () => {
-      ignore = true
+  useEffect(() => {
+    return createMarketCandleConnection({
+      exchange: selectedExchange,
+      symbol: selectedSymbol,
+      bar: selectedBar,
+      onCandle: candle => {
+        setCandles(currentCandles => mergeRealtimeCandle(currentCandles, candle, selectedBar))
+      },
+      onConnectionLost: () => {
+        message.error('K 线推送连接异常，请检查后端服务是否启动')
+      },
+    })
+  }, [message, selectedBar, selectedExchange, selectedSymbol])
+
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadCandles({ silent: true })
+      }
     }
-  }, [message, selectedExchange, selectedSymbol])
+
+    // WebSocket 负责实时推进图表，REST K 线只做低频校准，避免 Network 中持续刷 candles 请求。
+    const timer = window.setInterval(refreshWhenVisible, CANDLE_REST_CALIBRATION_INTERVAL_MS)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [loadCandles, selectedBar])
 
   const option = useMemo(
     () => ({
@@ -219,7 +323,7 @@ export function OverviewPage() {
           ].join('')
         },
       },
-      grid: { left: 56, right: 24, top: 28, bottom: 38 },
+      grid: { left: 24, right: 82, top: 28, bottom: 38 },
       xAxis: {
         type: 'time',
         boundaryGap: false,
@@ -227,14 +331,17 @@ export function OverviewPage() {
         axisTick: { show: false },
         axisLabel: {
           color: '#94a3b8',
-          formatter: (value: number) => new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          formatter: (value: number) =>
+            selectedBar.endsWith('s')
+              ? new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+              : new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
         },
         splitLine: { show: false },
       },
       yAxis: {
         type: 'value',
         scale: true,
-        position: 'left',
+        position: 'right',
         axisLabel: {
           color: '#94a3b8',
           formatter: formatPriceAxis,
@@ -254,6 +361,28 @@ export function OverviewPage() {
           showSymbol: false,
           data: candleSeries.map(item => [new Date(item.time).getTime(), item.price]),
           lineStyle: { width: 2, color: '#f5b400' },
+          markLine: Number.isFinite(realtimePrice)
+            ? {
+                symbol: 'none',
+                silent: true,
+                lineStyle: {
+                  color: trendColor,
+                  type: 'dashed',
+                  width: 1,
+                },
+                label: {
+                  show: true,
+                  position: 'end',
+                  formatter: () => formatPriceAxis(realtimePrice ?? 0),
+                  color: '#ffffff',
+                  backgroundColor: trendColor,
+                  borderRadius: 4,
+                  padding: [4, 6],
+                  fontWeight: 700,
+                },
+                data: [{ yAxis: realtimePrice }],
+              }
+            : undefined,
           areaStyle: {
             color: {
               type: 'linear',
@@ -270,7 +399,7 @@ export function OverviewPage() {
         },
       ],
     }),
-    [candleSeries, selectedSymbol],
+    [candleSeries, realtimePrice, selectedBar, selectedSymbol, trendColor],
   )
 
   return (
@@ -301,13 +430,16 @@ export function OverviewPage() {
               </Space>
             }
           >
-            {candlesLoading ? (
-              <Skeleton active paragraph={{ rows: 8 }} />
-            ) : candleSeries.length > 0 ? (
-              <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 405 }} />
-            ) : (
-              <Empty description={candleError || '暂无 24 小时行情'} />
-            )}
+            <Space direction='vertical' size={12} style={{ width: '100%' }}>
+              <Segmented size='small' value={selectedBar} options={CANDLE_BAR_OPTIONS} onChange={handleSelectBar} />
+              {candlesLoading ? (
+                <Skeleton active paragraph={{ rows: 8 }} />
+              ) : candleSeries.length > 0 ? (
+                <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 405 }} />
+              ) : (
+                <Empty description={candleError || '暂无行情数据'} />
+              )}
+            </Space>
           </ProCard>
         </Col>
         <Col xs={24} lg={10}>

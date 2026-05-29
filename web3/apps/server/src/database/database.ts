@@ -130,6 +130,90 @@ export function createDatabase(databasePath: string) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS trade_accounts (
+      id TEXT PRIMARY KEY,
+      account_type TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      quote_currency TEXT NOT NULL,
+      initial_equity TEXT NOT NULL,
+      available_quote_balance TEXT NOT NULL,
+      locked_quote_balance TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS trade_positions (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      account_type TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      base_currency TEXT NOT NULL,
+      quote_currency TEXT NOT NULL,
+      quantity TEXT NOT NULL,
+      available_quantity TEXT NOT NULL,
+      locked_quantity TEXT NOT NULL,
+      avg_cost_price TEXT NOT NULL,
+      cost_amount TEXT NOT NULL,
+      realized_pnl TEXT NOT NULL,
+      fee_amount TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (account_id) REFERENCES trade_accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS trade_fills (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      order_id TEXT,
+      account_type TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      side TEXT NOT NULL,
+      price TEXT NOT NULL,
+      base_quantity TEXT NOT NULL,
+      quote_amount TEXT NOT NULL,
+      fee_amount TEXT NOT NULL,
+      fee_currency TEXT NOT NULL,
+      realized_pnl TEXT NOT NULL,
+      raw_message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (account_id) REFERENCES trade_accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS trade_operation_logs (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      account_type TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      level TEXT NOT NULL,
+      action TEXT NOT NULL,
+      message TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (account_id) REFERENCES trade_accounts(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS trade_equity_snapshots (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      account_type TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      quote_currency TEXT NOT NULL,
+      snapshot_date TEXT NOT NULL,
+      total_equity TEXT NOT NULL,
+      available_quote_balance TEXT NOT NULL,
+      locked_quote_balance TEXT NOT NULL,
+      position_market_value TEXT NOT NULL,
+      realized_pnl TEXT NOT NULL,
+      unrealized_pnl TEXT NOT NULL,
+      total_pnl TEXT NOT NULL,
+      total_pnl_percent TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (account_id) REFERENCES trade_accounts(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_monitor_rules_enabled ON monitor_rules(enabled);
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_status ON trading_signals(status);
@@ -139,6 +223,12 @@ export function createDatabase(databasePath: string) {
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trade_accounts_identity ON trade_accounts(account_type, exchange, quote_currency);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trade_positions_account_symbol ON trade_positions(account_id, symbol);
+    CREATE INDEX IF NOT EXISTS idx_trade_fills_account_created_at ON trade_fills(account_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_trade_operation_logs_account_created_at ON trade_operation_logs(account_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trade_equity_snapshots_account_date ON trade_equity_snapshots(account_id, snapshot_date);
+    CREATE INDEX IF NOT EXISTS idx_trade_equity_snapshots_query ON trade_equity_snapshots(account_type, exchange, snapshot_date);
   `);
 
   migrateMonitorRules(db);

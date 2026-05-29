@@ -1,18 +1,29 @@
-import { nanoid } from 'nanoid'
-import type { ExchangeFactory } from '../exchange/exchange-factory.js'
-import type { OrderRepository } from '../repositories/order.repository.js'
 import type { RuleRepository } from '../repositories/rule.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
-import type { OrderRecord } from '../types/domain.js'
-import { appConfig } from '../config/env.js'
+import type { OrderPreview, OrderPreviewCheckItem, OrderRecord } from '../types/domain.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { OrderPreviewService } from './order-preview.service.js'
+import { TradeExecutionError, type TradeExecutionService } from './trade-execution.service.js'
+
+export class FinalOrderValidationError extends Error {
+  constructor(
+    message: string,
+    /** 最终确认时重新生成的下单预览，便于接口层返回可排查信息 */
+    readonly preview: OrderPreview,
+    /** 未通过的最终校验项 */
+    readonly failedItems: OrderPreviewCheckItem[],
+  ) {
+    super(message)
+    this.name = 'FinalOrderValidationError'
+  }
+}
 
 export class OrderService {
   constructor(
-    private readonly exchangeFactory: ExchangeFactory,
     private readonly ruleRepository: RuleRepository,
     private readonly triggerRepository: TriggerRepository,
-    private readonly orderRepository: OrderRepository,
+    private readonly orderPreviewService: OrderPreviewService,
+    private readonly tradeExecutionService: TradeExecutionService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -31,35 +42,10 @@ export class OrderService {
       throw new Error('关联监控规则不存在')
     }
 
-    const simulationMode = rule.simulationMode || !appConfig.enableRealTrading
-    const adapter = this.exchangeFactory.getAdapter(rule.exchange)
-    const result = await adapter.placeOrder({
-      symbol: rule.symbol,
-      side: rule.side,
-      type: rule.orderType,
-      baseQuantity: rule.baseQuantity,
-      quoteAmount: rule.quoteAmount,
-      price: rule.limitPrice,
-      clientOrderId: `web3-${nanoid(18)}`,
-      simulationMode,
-    })
-
-    const order = this.orderRepository.create({
-      id: nanoid(),
+    const finalPreview = await this.validateBeforeSubmit(triggerId)
+    const order = await this.tradeExecutionService.confirmRuleTrigger({
       triggerId,
-      ruleId: rule.id,
-      exchange: rule.exchange,
-      symbol: rule.symbol,
-      side: rule.side,
-      orderType: rule.orderType,
-      baseQuantity: rule.baseQuantity,
-      quoteAmount: rule.quoteAmount,
-      price: rule.limitPrice,
-      exchangeOrderId: result.exchangeOrderId,
-      status: result.status,
-      simulationMode,
-      rawMessage: result.rawMessage,
-      createdAt: new Date().toISOString(),
+      rule,
     })
 
     this.triggerRepository.markConfirmed(triggerId)
@@ -90,10 +76,49 @@ export class OrderService {
         exchange: rule.exchange,
         side: rule.side,
         orderType: rule.orderType,
-        simulationMode,
+        simulationMode: order.simulationMode,
         exchangeOrderId: order.exchangeOrderId,
       },
     })
     return order
   }
+
+  private async validateBeforeSubmit(triggerId: string): Promise<OrderPreview> {
+    const preview = await this.orderPreviewService.preview(triggerId)
+    const failedItems = [...preview.tradingRuleItems, ...preview.riskItems, ...(preview.accountItems ?? [])].filter(item => !item.passed)
+
+    if (preview.tradingRulePassed && preview.riskPassed && preview.accountPassed !== false && failedItems.length === 0) {
+      return preview
+    }
+
+    const reason = failedItems.map(item => item.message).join('；') || '最终校验未通过'
+    // 最终确认前重新走交易规则和风控预览，防止用户打开预览后行情或配置变化导致绕过校验。
+    this.auditLogService.record({
+      level: 'warning',
+      action: 'order.final_validation_failed',
+      entityType: 'trigger',
+      entityId: triggerId,
+      ruleId: preview.ruleId,
+      triggerId,
+      message: `${preview.symbol} 下单最终校验未通过：${reason}`,
+      payload: {
+        exchange: preview.exchange,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        executionPrice: preview.executionPrice,
+        estimatedQuoteAmount: preview.estimatedQuoteAmount,
+        simulationMode: preview.simulationMode,
+        failedItems,
+        tradingRuleItems: preview.tradingRuleItems,
+        riskItems: preview.riskItems,
+        accountItems: preview.accountItems,
+        previewedAt: preview.previewedAt,
+      },
+    })
+
+    throw new FinalOrderValidationError(`下单最终校验未通过：${reason}`, preview, failedItems)
+  }
 }
+
+export { TradeExecutionError }

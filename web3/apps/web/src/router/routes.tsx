@@ -5,12 +5,12 @@ import { Navigate } from 'react-router-dom';
 const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })));
 const RulesPage = lazy(() => import('../pages/RulesPage').then((module) => ({ default: module.RulesPage })));
 const TriggersPage = lazy(() => import('../pages/TriggersPage').then((module) => ({ default: module.TriggersPage })));
-const OrdersPage = lazy(() => import('../pages/OrdersPage').then((module) => ({ default: module.OrdersPage })));
 const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage').then((module) => ({ default: module.AuditLogsPage })));
 const SignalsPage = lazy(() => import('../pages/SignalsPage').then((module) => ({ default: module.SignalsPage })));
-const RiskChecksPage = lazy(() => import('../pages/RiskChecksPage').then((module) => ({ default: module.RiskChecksPage })));
 const MarketHealthPage = lazy(() => import('../pages/MarketHealthPage').then((module) => ({ default: module.MarketHealthPage })));
 const RiskConfigPage = lazy(() => import('../pages/RiskConfigPage').then((module) => ({ default: module.RiskConfigPage })));
+const TradePositionsPage = lazy(() => import('../pages/TradePositionsPage').then((module) => ({ default: module.TradePositionsPage })));
+const TradeLogsPage = lazy(() => import('../pages/TradeLogsPage').then((module) => ({ default: module.TradeLogsPage })));
 
 export const appRoutes: RouteObject[] = [
   {
@@ -30,16 +30,16 @@ export const appRoutes: RouteObject[] = [
     element: <TriggersPage />
   },
   {
-    path: '/orders',
-    element: <OrdersPage />
+    path: '/trade-positions',
+    element: <TradePositionsPage />
+  },
+  {
+    path: '/trade-logs',
+    element: <TradeLogsPage />
   },
   {
     path: '/signals',
     element: <SignalsPage />
-  },
-  {
-    path: '/risk-checks',
-    element: <RiskChecksPage />
   },
   {
     path: '/market-health',

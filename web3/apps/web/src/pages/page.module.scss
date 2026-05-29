@@ -119,3 +119,98 @@
 .marketMetric {
   color: #111827;
 }
+
+.tradeSummaryCards {
+  margin-bottom: 16px;
+
+  :global(.ant-pro-card) {
+    border-radius: 8px;
+  }
+}
+
+.tradeSummaryCard {
+  min-width: 420px;
+
+  :global(.ant-pro-card-body) {
+    min-height: 188px;
+  }
+}
+
+.tradeSummaryTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.tradeSummaryDescription {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.assetTrendChart {
+  position: relative;
+  min-height: 132px;
+}
+
+.assetTrendStartLabel,
+.assetTrendEndLabel {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  color: #aeb4bd;
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.assetTrendStartLabel {
+  left: 12px;
+}
+
+.assetTrendEndLabel {
+  right: 12px;
+}
+
+.tradeSummaryMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 14px;
+  color: #667085;
+  font-size: 12px;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.tradeSummaryEmpty {
+  margin-bottom: 16px;
+  padding: 24px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+@media (max-width: 900px) {
+  .tradeSummaryCard {
+    min-width: 100%;
+  }
+
+  .tradeSummaryMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tradeSummaryMetrics {
+    grid-template-columns: 1fr;
+  }
+}

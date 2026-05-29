@@ -4,9 +4,11 @@ import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
 import type { MarketService } from '../services/market.service.js'
 import type { OrderPreviewService } from '../services/order-preview.service.js'
-import type { OrderService } from '../services/order.service.js'
+import { FinalOrderValidationError, TradeExecutionError, type OrderService } from '../services/order.service.js'
 import type { RiskConfigService } from '../services/risk-config.service.js'
 import type { SignalService } from '../services/signal.service.js'
+import type { TradeAccountService } from '../services/trade-account.service.js'
+import type { TradeExecutionService } from '../services/trade-execution.service.js'
 import { RuleValidationError, type TradingRuleService } from '../services/trading-rule.service.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
 import type { AuditLogRepository } from '../repositories/audit-log.repository.js'
@@ -25,7 +27,15 @@ import {
   previewOrderSchema,
   listRiskChecksQuerySchema,
   updateRiskConfigSchema,
-  idParamSchema
+  idParamSchema,
+  simulationExchangeQuerySchema,
+  listSimulationRecordsQuerySchema,
+  tradeAccountQuerySchema,
+  tradeEquityHistoryQuerySchema,
+  tradePositionQuerySchema,
+  listTradeRecordsQuerySchema,
+  tradeOrderPreviewSchema,
+  tradeOrderConfirmSchema
 } from './dto.js'
 import { OVERVIEW_SYMBOLS_BY_EXCHANGE } from '../services/market.service.js'
 
@@ -42,6 +52,8 @@ export interface ApiRouteDeps {
   ruleRepository: RuleRepository
   signalRepository: SignalRepository
   signalService: SignalService
+  tradeAccountService: TradeAccountService
+  tradeExecutionService: TradeExecutionService
   tradingRuleService: TradingRuleService
   triggerRepository: TriggerRepository
 }
@@ -174,6 +186,125 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   })
 
   app.get('/api/risk-config', async () => deps.riskConfigService.getConfig())
+
+  app.get('/api/trade/accounts', async (request, reply) => {
+    const parsed = tradeAccountQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易账户查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listAccounts(parsed.data.mode)
+  })
+
+  app.get('/api/trade/positions', async (request, reply) => {
+    const parsed = tradePositionQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易持仓查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listPositions(parsed.data.mode, parsed.data.exchange)
+  })
+
+  app.get('/api/trade/fills', async (request, reply) => {
+    const parsed = listTradeRecordsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易成交查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listFills(parsed.data.mode, parsed.data.exchange, parsed.data.limit)
+  })
+
+  app.get('/api/trade/logs', async (request, reply) => {
+    const parsed = listTradeRecordsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易操作日志查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listOperationLogs(parsed.data.mode, parsed.data.exchange, parsed.data.limit)
+  })
+
+  app.get('/api/trade/summary', async (request, reply) => {
+    const parsed = tradeAccountQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易收益统计参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeExecutionService.listAccountSummaries(parsed.data.mode)
+  })
+
+  app.get('/api/trade/equity-history', async (request, reply) => {
+    const parsed = tradeEquityHistoryQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '总资产历史查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeExecutionService.listEquityHistory(parsed.data)
+  })
+
+  app.get('/api/trade/positions/valuation', async (request, reply) => {
+    const parsed = tradePositionQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '持仓收益查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeExecutionService.listPositionViews(parsed.data.mode, parsed.data.exchange)
+  })
+
+  app.post('/api/trade/orders/preview', async (request, reply) => {
+    const parsed = tradeOrderPreviewSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易预览参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeExecutionService.preview(parsed.data)
+  })
+
+  app.post('/api/trade/orders/confirm', async (request, reply) => {
+    const parsed = tradeOrderConfirmSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易确认参数不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      const order = await deps.tradeExecutionService.confirm(parsed.data.preview)
+      return reply.status(201).send(order)
+    } catch (error) {
+      if (error instanceof TradeExecutionError) {
+        return reply.status(400).send({ message: error.message, preview: error.preview })
+      }
+
+      return reply.status(400).send({ message: error instanceof Error ? error.message : '交易确认失败' })
+    }
+  })
+
+  app.get('/api/simulation/accounts', async () => deps.tradeAccountService.listAccounts('simulation'))
+
+  app.get('/api/simulation/positions', async (request, reply) => {
+    const parsed = simulationExchangeQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '模拟持仓查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listPositions('simulation', parsed.data.exchange)
+  })
+
+  app.get('/api/simulation/fills', async (request, reply) => {
+    const parsed = listSimulationRecordsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '模拟成交查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listFills('simulation', parsed.data.exchange, parsed.data.limit)
+  })
+
+  app.get('/api/simulation/logs', async (request, reply) => {
+    const parsed = listSimulationRecordsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '模拟日志查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listOperationLogs('simulation', parsed.data.exchange, parsed.data.limit)
+  })
 
   app.put('/api/risk-config', async (request, reply) => {
     const parsed = updateRiskConfigSchema.safeParse(request.body)
@@ -375,17 +506,20 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       const order = await deps.orderService.confirmTrigger(parsed.data.triggerId)
       return reply.status(201).send(order)
     } catch (error) {
-      deps.auditLogService.record({
-        level: 'error',
-        action: 'order.failed',
-        entityType: 'trigger',
-        entityId: parsed.data.triggerId,
-        triggerId: parsed.data.triggerId,
-        message: error instanceof Error ? error.message : '确认下单失败',
-        payload: {
+      if (!(error instanceof FinalOrderValidationError) && !(error instanceof TradeExecutionError)) {
+        deps.auditLogService.record({
+          level: 'error',
+          action: 'order.failed',
+          entityType: 'trigger',
+          entityId: parsed.data.triggerId,
           triggerId: parsed.data.triggerId,
-        },
-      })
+          message: error instanceof Error ? error.message : '确认下单失败',
+          payload: {
+            triggerId: parsed.data.triggerId,
+          },
+        })
+      }
+
       return reply.status(400).send({
         message: error instanceof Error ? error.message : '确认下单失败',
       })

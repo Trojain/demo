@@ -39,6 +39,8 @@ const envSchema = z.object({
   RISK_DAILY_MAX_TRIGGER_COUNT: z.coerce.number().int().min(1).default(20),
   RISK_DAILY_MAX_QUOTE_AMOUNT: decimalString.default('5000'),
   RISK_TRADING_MODE: z.enum(['simulation_only', 'allow_real']).default('simulation_only'),
+  SIMULATION_INITIAL_QUOTE_BALANCE: decimalString.default('10000'),
+  SIMULATION_QUOTE_CURRENCY: z.string().min(1).default('USDT'),
 })
 
 const parsedEnv = envSchema.parse(process.env)
@@ -81,5 +83,11 @@ export const appConfig = {
     dailyMaxQuoteAmount: parsedEnv.RISK_DAILY_MAX_QUOTE_AMOUNT,
     /** 交易模式，simulation_only 表示仅允许模拟交易 */
     tradingMode: parsedEnv.RISK_TRADING_MODE,
+  },
+  simulation: {
+    /** 模拟账户初始本金，按默认计价币种记录，用于纸面交易和收益率计算 */
+    initialQuoteBalance: parsedEnv.SIMULATION_INITIAL_QUOTE_BALANCE,
+    /** 模拟账户默认计价币种，当前建议使用 USDT */
+    quoteCurrency: parsedEnv.SIMULATION_QUOTE_CURRENCY.toUpperCase(),
   },
 } as const

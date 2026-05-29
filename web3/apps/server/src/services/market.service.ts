@@ -2,6 +2,7 @@ import type { ExchangeCode, MarketHealth, MonitorRule } from '../types/domain.js
 import type { MarketCandle, MarketTickerSnapshot, TickerPrice } from '../types/exchange.js'
 import { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { MarketCapService } from './market-cap.service.js'
+import { Decimal } from 'decimal.js'
 
 export const OVERVIEW_SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'DOGE-USDT', 'OKB-USDT', 'BNB-USDT'] as const
 export const OVERVIEW_SYMBOLS_BY_EXCHANGE: Record<ExchangeCode, readonly string[]> = {
@@ -13,10 +14,12 @@ const OVERVIEW_REFRESH_INTERVAL_MS = 5_000
 const TICKER_REST_MIN_INTERVAL_MS = 3_000
 const TICKER_STALE_MS = 10_000
 const REST_BACKOFF_MS = 30_000
-const CANDLE_CACHE_TTL_MS = 60_000
+const DEFAULT_CANDLE_CACHE_TTL_MS = 60_000
 const EXCHANGE_CANDLE_PAGE_LIMIT = 300
 
 const candleLimitByBar: Record<string, number> = {
+  '1s': 300,
+  '10s': 120,
   '1m': 1440,
   '5m': 288,
   '15m': 96,
@@ -83,7 +86,11 @@ export class MarketService {
         acc[rule.exchange].push(rule.symbol)
         return acc
       },
-      { okx: [], binance: [] },
+      {
+        // 监控总览曲线需要持续收到 WebSocket 行情，即使当前没有配置对应规则也要订阅。
+        okx: [...OVERVIEW_SYMBOLS_BY_EXCHANGE.okx],
+        binance: [...OVERVIEW_SYMBOLS_BY_EXCHANGE.binance],
+      },
     )
 
     ;(Object.keys(grouped) as ExchangeCode[]).forEach(exchange => {
@@ -214,6 +221,80 @@ export class MarketService {
     return this.latestTicker.size
   }
 
+  private aggregateCandles(candles: MarketCandle[], barSeconds: number, limit: number) {
+    const grouped = new Map<number, MarketCandle[]>()
+    candles.forEach(candle => {
+      const time = new Date(candle.time).getTime()
+      if (!Number.isFinite(time)) {
+        return
+      }
+
+      const bucketTime = Math.floor(time / (barSeconds * 1000)) * barSeconds * 1000
+      const bucket = grouped.get(bucketTime) ?? []
+      bucket.push(candle)
+      grouped.set(bucketTime, bucket)
+    })
+
+    return [...grouped.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([bucketTime, bucket]) => {
+        const sortedBucket = bucket.sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime())
+        const first = sortedBucket[0]
+        const last = sortedBucket[sortedBucket.length - 1]
+        const high = sortedBucket.reduce((max, item) => Decimal.max(max, item.high), new Decimal(first.high)).toFixed()
+        const low = sortedBucket.reduce((min, item) => Decimal.min(min, item.low), new Decimal(first.low)).toFixed()
+        const volume = sortedBucket.reduce((total, item) => total.plus(item.volume || '0'), new Decimal(0)).toFixed()
+        const volumeCurrency = sortedBucket.reduce((total, item) => total.plus(item.volumeCurrency || '0'), new Decimal(0)).toFixed()
+
+        return {
+          symbol: first.symbol,
+          time: new Date(bucketTime).toISOString(),
+          open: first.open,
+          high,
+          low,
+          close: last.close,
+          volume,
+          volumeCurrency,
+        }
+      })
+      .slice(-limit)
+  }
+
+  connectCandleStream(exchange: ExchangeCode, symbol: string, bar: string, onCandle: (candle: MarketCandle) => void) {
+    const adapter = this.exchangeFactory.getAdapter(exchange)
+    if (!adapter.connectCandleStream) {
+      throw new Error('当前交易所暂不支持 K 线 WebSocket')
+    }
+
+    if (bar !== '10s') {
+      return adapter.connectCandleStream(symbol, bar, onCandle)
+    }
+
+    const sourceCandles = new Map<string, MarketCandle>()
+    // 10 秒是本地聚合周期，底层只订阅交易所官方 1 秒 K 线，避免传入交易所未确认支持的 10s。
+    return adapter.connectCandleStream(symbol, '1s', candle => {
+      const time = new Date(candle.time).getTime()
+      if (!Number.isFinite(time)) {
+        return
+      }
+
+      const bucketTime = Math.floor(time / 10_000) * 10_000
+      const bucketStart = new Date(bucketTime).toISOString()
+      for (const itemTime of sourceCandles.keys()) {
+        const itemBucketTime = Math.floor(new Date(itemTime).getTime() / 10_000) * 10_000
+        if (itemBucketTime !== bucketTime) {
+          sourceCandles.delete(itemTime)
+        }
+      }
+
+      sourceCandles.set(candle.time, candle)
+      const aggregated = this.aggregateCandles([...sourceCandles.values()], 10, 1)[0]
+      if (aggregated) {
+        onCandle({ ...aggregated, time: bucketStart })
+      }
+    })
+  }
+
   getHealth(exchange: ExchangeCode = 'okx'): MarketHealth {
     const now = Date.now()
     const backoffUntil = this.restBackoffUntil.get(exchange) ?? 0
@@ -244,9 +325,11 @@ export class MarketService {
 
   async getRecentCandles(exchange: ExchangeCode, symbol: string, bar: string) {
     const limit = candleLimitByBar[bar] ?? 288
+    const requestBar = bar === '10s' ? '1s' : bar
+    const requestLimit = bar === '10s' ? limit * 10 : limit
     const cacheKey = `${exchange}:${symbol.toUpperCase()}:${bar}:${limit}`
     const cached = this.candleCache.get(cacheKey)
-    if (cached && Date.now() - cached.cachedAt < CANDLE_CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.cachedAt < DEFAULT_CANDLE_CACHE_TTL_MS) {
       return cached.data
     }
 
@@ -258,9 +341,10 @@ export class MarketService {
     const candles: MarketCandle[] = []
     let after: string | undefined
 
-    while (candles.length < limit) {
-      const pageLimit = Math.min(EXCHANGE_CANDLE_PAGE_LIMIT, limit - candles.length)
-      const page = await adapter.getCandles(symbol, bar, pageLimit, after)
+    while (candles.length < requestLimit) {
+      const pageLimit = Math.min(EXCHANGE_CANDLE_PAGE_LIMIT, requestLimit - candles.length)
+      // 交易所官方 K 线支持 1s，但没有统一 10s 周期，所以 10s 只在本服务内按 1s 数据聚合。
+      const page = await adapter.getCandles(symbol, requestBar, pageLimit, after)
       if (page.length === 0) {
         break
       }
@@ -280,9 +364,10 @@ export class MarketService {
       }
     }
 
-    const uniqueCandles = [...new Map(candles.map(item => [item.time, item])).values()]
+    const uniqueSourceCandles = [...new Map(candles.map(item => [item.time, item])).values()]
       .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime())
-      .slice(-limit)
+      .slice(-requestLimit)
+    const uniqueCandles = bar === '10s' ? this.aggregateCandles(uniqueSourceCandles, 10, limit) : uniqueSourceCandles.slice(-limit)
 
     this.candleCache.set(cacheKey, {
       cachedAt: Date.now(),

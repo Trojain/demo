@@ -6,6 +6,7 @@ import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import { appConfig } from '../config/env.js'
 import type { MarketService } from './market.service.js'
 import type { RiskConfigService } from './risk-config.service.js'
+import type { TradeExecutionService } from './trade-execution.service.js'
 import { RuleValidationError, type TradingRuleService } from './trading-rule.service.js'
 
 interface PreviewContext {
@@ -29,6 +30,7 @@ export class OrderPreviewService {
     private readonly marketService: MarketService,
     private readonly riskConfigService: RiskConfigService,
     private readonly tradingRuleService: TradingRuleService,
+    private readonly tradeExecutionService: TradeExecutionService,
   ) {}
 
   async preview(triggerId: string): Promise<OrderPreview> {
@@ -55,6 +57,16 @@ export class OrderPreviewService {
 
     const tradingRuleItems = await this.buildTradingRuleItems(rule)
     const riskItems = this.buildRiskItems(context)
+    const tradePreview = await this.tradeExecutionService.preview({
+      mode: rule.simulationMode || !appConfig.enableRealTrading ? 'simulation' : 'real',
+      exchange: rule.exchange,
+      symbol: rule.symbol,
+      side: rule.side,
+      orderType: rule.orderType,
+      baseQuantity: rule.baseQuantity,
+      quoteAmount: rule.quoteAmount,
+      limitPrice: rule.limitPrice,
+    })
 
     return {
       triggerId: trigger.id,
@@ -75,6 +87,11 @@ export class OrderPreviewService {
       tradingRuleItems,
       riskPassed: riskItems.every(item => item.passed),
       riskItems,
+      accountPassed: tradePreview.passed,
+      accountItems: tradePreview.checkItems,
+      nextAvailableQuoteBalance: tradePreview.nextAvailableQuoteBalance,
+      nextAvailableBaseQuantity: tradePreview.nextAvailableBaseQuantity,
+      estimatedRealizedPnl: tradePreview.estimatedRealizedPnl,
       previewedAt: new Date().toISOString(),
     }
   }
