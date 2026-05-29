@@ -19,13 +19,13 @@ import type {
   TradePosition,
   TradePositionView,
 } from '../types/domain.js'
-import type { AccountBalance, InstrumentRule } from '../types/exchange.js'
+import type { AccountBalance, InstrumentRule, TickerPrice } from '../types/exchange.js'
 import type { RiskConfigService } from './risk-config.service.js'
 import type { TradingRuleService } from './trading-rule.service.js'
 
 type ValuationContext = {
   /** 单次估值请求内的行情缓存，避免账户汇总、持仓列表重复查询同一交易对最新价 */
-  tickerPriceCache: Map<string, Promise<string>>
+  tickerPriceCache: Map<string, Promise<TickerPrice>>
 }
 
 export class TradeExecutionError extends Error {
@@ -508,26 +508,27 @@ export class TradeExecutionService {
     }
   }
 
-  private async getCachedTickerPrice(context: ValuationContext, exchange: ExchangeCode, symbol: string): Promise<string> {
+  private async getCachedTickerPrice(context: ValuationContext, exchange: ExchangeCode, symbol: string): Promise<TickerPrice> {
     const cacheKey = `${exchange}:${symbol}`
     const cached = context.tickerPriceCache.get(cacheKey)
     if (cached) {
       return cached
     }
 
-    const pricePromise = this.exchangeFactory.getAdapter(exchange).getLatestPrice(symbol).then(ticker => ticker.price)
-    context.tickerPriceCache.set(cacheKey, pricePromise)
-    return pricePromise
+    const tickerPromise = this.exchangeFactory.getAdapter(exchange).getLatestPrice(symbol)
+    context.tickerPriceCache.set(cacheKey, tickerPromise)
+    return tickerPromise
   }
 
   private async toPositionView(position: TradePosition, context: ValuationContext): Promise<TradePositionView> {
-    const marketPrice = await this.getCachedTickerPrice(context, position.exchange, position.symbol)
-    const marketValue = new Decimal(position.quantity).mul(marketPrice)
+    const latestTicker = await this.getCachedTickerPrice(context, position.exchange, position.symbol)
+    const marketValue = new Decimal(position.quantity).mul(latestTicker.price)
     const unrealizedPnl = marketValue.minus(position.costAmount)
     const costAmount = new Decimal(position.costAmount)
     return {
       ...position,
-      marketPrice,
+      marketPrice: latestTicker.price,
+      marketEventTime: latestTicker.eventTime,
       marketValue: marketValue.toFixed(),
       unrealizedPnl: unrealizedPnl.toFixed(),
       unrealizedPnlPercent: costAmount.isZero() ? '0' : unrealizedPnl.div(costAmount).mul(100).toFixed(2),

@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Tag } from 'antd'
 import { Line } from '@ant-design/plots'
-import { PageContainer, ProTable, StatisticCard, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { PageContainer, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
+import { Decimal } from 'decimal.js'
 import { tradingApi } from '../api/trading'
 import { useProfitDisplay } from '../hooks/useProfitDisplay'
-import type { TradeAccountSummary, TradeAccountType, TradeEquityHistoryPoint, TradePositionView } from '../types'
-import { toTableRequestResult } from '../utils/proTable'
+import { useTradingStore } from '../stores/tradingStore'
+import type { TickerPrice, TradeAccount, TradeAccountSummary, TradeAccountType, TradeEquityHistoryPoint, TradePosition, TradePositionView } from '../types'
+import { createMarketPriceSnapshot, mergeMarketPriceMap, tickerKey, type MarketPriceSnapshot } from '../utils/marketPrice'
 import styles from './page.module.scss'
 
-const AUTO_REFRESH_INTERVAL_MS = 10000
 const ASSET_TREND_AXIS_LABEL_INTERVAL = 6
 
 function renderMode(mode: TradeAccountType) {
@@ -53,12 +54,84 @@ function buildVisibleAxisLabels(trend: Array<{ date: string; value: number }>) {
   )
 }
 
+function buildMarketPriceSnapshots(tickers: TickerPrice[], positionViews: TradePositionView[] = []) {
+  return [
+    ...positionViews.map(position =>
+      createMarketPriceSnapshot(
+        {
+          exchange: position.exchange,
+          symbol: position.symbol,
+          price: position.marketPrice,
+          eventTime: position.marketEventTime ?? '',
+        },
+        'valuation',
+      ),
+    ),
+    ...tickers.map(ticker => createMarketPriceSnapshot(ticker, 'rest')),
+  ]
+}
+
+function calculatePositionViews(positions: TradePosition[], latestPriceByKey: Record<string, MarketPriceSnapshot>): TradePositionView[] {
+  return positions.map(position => {
+    const marketPrice = latestPriceByKey[tickerKey(position)]?.price ?? '0'
+    const marketValue = new Decimal(position.quantity).mul(marketPrice)
+    const unrealizedPnl = marketValue.minus(position.costAmount)
+    const costAmount = new Decimal(position.costAmount)
+    const unrealizedPnlPercent = costAmount.isZero() ? new Decimal(0) : unrealizedPnl.div(costAmount).mul(100)
+
+    return {
+      ...position,
+      marketPrice,
+      marketValue: marketValue.toFixed(),
+      unrealizedPnl: unrealizedPnl.toFixed(),
+      unrealizedPnlPercent: unrealizedPnlPercent.toFixed(2),
+    }
+  })
+}
+
+function calculateSummaries(accounts: TradeAccount[], positionViews: TradePositionView[], calculatedAt: string): TradeAccountSummary[] {
+  return accounts.map(account => {
+    const accountPositions = positionViews.filter(position => position.accountId === account.id)
+    const positionMarketValue = accountPositions.reduce((sum, position) => sum.plus(position.marketValue), new Decimal(0))
+    const unrealizedPnl = accountPositions.reduce((sum, position) => sum.plus(position.unrealizedPnl), new Decimal(0))
+    const realizedPnl = accountPositions.reduce((sum, position) => sum.plus(position.realizedPnl), new Decimal(0))
+    const totalEquity = new Decimal(account.availableQuoteBalance).plus(account.lockedQuoteBalance).plus(positionMarketValue)
+    const totalPnl = totalEquity.minus(account.initialEquity)
+    const initialEquity = new Decimal(account.initialEquity)
+    const totalPnlPercent = initialEquity.isZero() ? new Decimal(0) : totalPnl.div(initialEquity).mul(100)
+
+    return {
+      accountId: account.id,
+      mode: account.accountType,
+      exchange: account.exchange,
+      quoteCurrency: account.quoteCurrency,
+      initialEquity: account.initialEquity,
+      availableQuoteBalance: account.availableQuoteBalance,
+      lockedQuoteBalance: account.lockedQuoteBalance,
+      positionMarketValue: positionMarketValue.toFixed(),
+      totalEquity: totalEquity.toFixed(),
+      realizedPnl: realizedPnl.toFixed(),
+      unrealizedPnl: unrealizedPnl.toFixed(),
+      totalPnl: totalPnl.toFixed(),
+      totalPnlPercent: totalPnlPercent.toFixed(2),
+      calculatedAt,
+    }
+  })
+}
+
 export function TradePositionsPage() {
-  const actionRef = useRef<ActionType | undefined>(undefined)
-  const summaryRequestingRef = useRef(false)
+  const loadingRef = useRef(false)
   const profitDisplay = useProfitDisplay()
-  const [summaries, setSummaries] = useState<TradeAccountSummary[]>([])
+  const realtimeTickers = useTradingStore(state => state.tickers)
+  const [accounts, setAccounts] = useState<TradeAccount[]>([])
+  const [positions, setPositions] = useState<TradePosition[]>([])
   const [equityHistory, setEquityHistory] = useState<TradeEquityHistoryPoint[]>([])
+  const [latestPriceByKey, setLatestPriceByKey] = useState<Record<string, MarketPriceSnapshot>>({})
+  const [calculatedAt, setCalculatedAt] = useState(() => new Date().toISOString())
+  const [loading, setLoading] = useState(false)
+
+  const positionViews = useMemo(() => calculatePositionViews(positions, latestPriceByKey), [latestPriceByKey, positions])
+  const summaries = useMemo(() => calculateSummaries(accounts, positionViews, calculatedAt), [accounts, calculatedAt, positionViews])
 
   const positionColumns = useMemo<ProColumns<TradePositionView>[]>(
     () => [
@@ -85,49 +158,64 @@ export function TradePositionsPage() {
     [profitDisplay],
   )
 
-  const loadSummaries = useCallback(async () => {
-    if (summaryRequestingRef.current) {
+  const loadPageData = useCallback(async () => {
+    if (loadingRef.current) {
       return
     }
 
-    summaryRequestingRef.current = true
+    loadingRef.current = true
+    setLoading(true)
     try {
-      const [nextSummaries, nextEquityHistory] = await Promise.all([
-        tradingApi.getTradeSummary(),
+      const [nextAccounts, nextPositions, nextEquityHistory, nextPositionViews, nextTickers] = await Promise.all([
+        tradingApi.getTradeAccounts(),
+        tradingApi.getTradePositions(),
         tradingApi.getTradeEquityHistory(undefined, undefined, 30),
+        tradingApi.getTradePositionValuations(),
+        tradingApi.getTickers(),
       ])
-      setSummaries(nextSummaries)
+      setAccounts(nextAccounts)
+      setPositions(nextPositions)
       setEquityHistory(nextEquityHistory)
+      const initialSnapshots = buildMarketPriceSnapshots(nextTickers, nextPositionViews)
+      let latestAcceptedEventTime: string | undefined
+      setLatestPriceByKey(current => {
+        // 首屏和手动刷新也走统一合并规则，避免接口旧值覆盖掉已经收到的实时行情。
+        const result = mergeMarketPriceMap(current, initialSnapshots)
+        latestAcceptedEventTime = result.latestAcceptedEventTime
+        return result.changed ? result.nextMap : current
+      })
+      setCalculatedAt(current => latestAcceptedEventTime ?? current)
     } finally {
-      summaryRequestingRef.current = false
+      loadingRef.current = false
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadSummaries()
-  }, [loadSummaries])
-
-  const reloadPageData = useCallback(() => {
-    loadSummaries()
-    actionRef.current?.reload()
-  }, [loadSummaries])
+    void loadPageData()
+  }, [loadPageData])
 
   useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') {
-        reloadPageData()
-      }
+    if (realtimeTickers.length === 0) {
+      return
     }
 
-    // 持仓收益依赖交易所最新行情，页面可见时低频刷新，页面隐藏时暂停以减少行情请求压力。
-    const timer = window.setInterval(refreshWhenVisible, AUTO_REFRESH_INTERVAL_MS)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    const positionKeys = new Set(positions.map(position => tickerKey(position)))
+    const matchedTickers = realtimeTickers.filter(ticker => positionKeys.has(tickerKey(ticker)))
+    if (matchedTickers.length === 0) {
+      return
     }
-  }, [reloadPageData])
+
+    let latestAcceptedEventTime: string | undefined
+    setLatestPriceByKey(current => {
+      const result = mergeMarketPriceMap(current, matchedTickers.map(ticker => createMarketPriceSnapshot(ticker, 'realtime')))
+      latestAcceptedEventTime = result.latestAcceptedEventTime
+      return result.changed ? result.nextMap : current
+    })
+    if (latestAcceptedEventTime) {
+      setCalculatedAt(latestAcceptedEventTime)
+    }
+  }, [positions, realtimeTickers])
 
   return (
     <PageContainer subTitle='查看模拟和真实交易共用的账户总资产、持仓市值、浮动盈亏和已实现盈亏'>
@@ -213,14 +301,14 @@ export function TradePositionsPage() {
       )}
 
       <ProTable<TradePositionView>
-        actionRef={actionRef}
         rowKey='id'
         search={false}
         columns={positionColumns}
-        request={async () => toTableRequestResult(await tradingApi.getTradePositionValuations())}
+        dataSource={positionViews}
+        loading={loading}
         pagination={{ pageSize: 10 }}
         toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => reloadPageData()}>
+          <Button key='reload' icon={<ReloadOutlined />} loading={loading} onClick={() => void loadPageData()}>
             刷新持仓
           </Button>,
         ]}

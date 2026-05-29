@@ -39,10 +39,8 @@ export class StrategyService {
     try {
       enabledRules = this.ruleRepository.listEnabled()
       try {
-        const overviewSnapshots = await this.marketService.refreshOverviewSnapshots('okx')
-        overviewSnapshots.forEach(ticker => {
-          this.notificationService.broadcast('ticker.updated', ticker)
-        })
+        // 总览快照只用于刷新服务端缓存，实时价格推送由交易所 WebSocket ticker 负责，避免缓存快照覆盖实时价格。
+        await this.marketService.refreshOverviewSnapshots('okx')
       } catch (error) {
         const message = error instanceof Error ? error.message : '总览行情刷新失败'
         // 总览行情属于看板刷新，失败时只写审计日志，规则状态由单条规则检测结果决定。

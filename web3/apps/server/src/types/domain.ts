@@ -363,6 +363,8 @@ export interface TradeOrderPreview {
 export interface TradePositionView extends TradePosition {
   /** 最新市场价 */
   marketPrice: string;
+  /** 最新市场价对应的行情时间 */
+  marketEventTime?: string;
   /** 当前持仓市值 */
   marketValue: string;
   /** 浮动盈亏 */

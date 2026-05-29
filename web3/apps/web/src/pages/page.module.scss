@@ -120,6 +120,46 @@
   color: #111827;
 }
 
+.marketActionGroup {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 86px;
+}
+
+.tradeActionButton {
+  color: #00a862;
+  font-weight: 600;
+}
+
+.tradePlanMarketInfo {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  color: #667085;
+  font-size: 12px;
+  border: 1px solid #eef1f5;
+  border-radius: 6px;
+  background: #fbfcfd;
+
+  strong {
+    color: #111827;
+    font-size: 16px;
+    text-align: center;
+  }
+}
+
+.tradePlanAdvancedCard {
+  margin-top: 8px;
+
+  :global(.ant-pro-card-body) {
+    padding-inline: 0;
+  }
+}
+
 .tradeSummaryCards {
   margin-bottom: 16px;
 
@@ -210,6 +250,14 @@
 }
 
 @media (max-width: 560px) {
+  .tradePlanMarketInfo {
+    grid-template-columns: 1fr;
+
+    strong {
+      text-align: left;
+    }
+  }
+
   .tradeSummaryMetrics {
     grid-template-columns: 1fr;
   }

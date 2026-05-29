@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Layout, Menu, Space, Tag, Typography } from 'antd'
-import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, OrderedListOutlined, SafetyOutlined, ThunderboltOutlined, WalletOutlined } from '@ant-design/icons'
+import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, SafetyOutlined, ThunderboltOutlined, WalletOutlined } from '@ant-design/icons'
 import styles from './DashboardLayout.module.scss'
 
 const { Header, Content, Sider } = Layout
@@ -29,7 +29,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           className={styles.menu}
           items={[
             { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>监控总览</Link> },
-            { key: '/rules', icon: <OrderedListOutlined />, label: <Link to='/rules'>监控规则</Link> },
             { key: '/signals', icon: <ThunderboltOutlined />, label: <Link to='/signals'>交易信号</Link> },
             { key: '/triggers', icon: <BellOutlined />, label: <Link to='/triggers'>触发确认</Link> },
             { key: '/trade-positions', icon: <WalletOutlined />, label: <Link to='/trade-positions'>持仓收益</Link> },

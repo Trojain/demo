@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { DashboardSummary, MarketTickerSnapshot, MonitorRule, OrderRecord, TickerPrice, TriggerEvent } from '../types';
 import { tradingApi } from '../api/trading';
+import { createMarketPriceSnapshot, shouldAcceptMarketPrice, tickerKey } from '../utils/marketPrice';
 
 interface TradingState {
   /** 监控总览轻量统计 */
@@ -96,10 +97,24 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
   setTicker: (ticker) => {
-    const nextTickers = [ticker, ...get().tickers.filter((item) => `${item.exchange}:${item.symbol}` !== `${ticker.exchange}:${ticker.symbol}`)];
-    const nextOverview = get().marketOverview.map((item) =>
-      `${item.exchange}:${item.symbol}` === `${ticker.exchange}:${ticker.symbol}` ? { ...item, ...ticker } : item
-    );
+    const currentTickers = get().tickers;
+    const currentTicker = currentTickers.find((item) => tickerKey(item) === tickerKey(ticker));
+    // WebSocket 实时行情和 REST 快照都可能进入同一通道，旧 eventTime 不能覆盖新价格。
+    if (!shouldAcceptMarketPrice(
+      currentTicker ? createMarketPriceSnapshot(currentTicker, 'realtime') : undefined,
+      createMarketPriceSnapshot(ticker, 'realtime'),
+    )) {
+      return;
+    }
+
+    const nextTickers = [ticker, ...currentTickers.filter((item) => tickerKey(item) !== tickerKey(ticker))];
+    const nextOverview = get().marketOverview.map((item) => {
+      if (tickerKey(item) !== tickerKey(ticker)) {
+        return item;
+      }
+
+      return shouldAcceptMarketPrice(createMarketPriceSnapshot(item, 'rest'), createMarketPriceSnapshot(ticker, 'realtime')) ? { ...item, ...ticker } : item;
+    });
     const nextSeries = [...get().priceSeries, toPricePoint(ticker)].slice(-80);
     set({
       tickers: nextTickers,
