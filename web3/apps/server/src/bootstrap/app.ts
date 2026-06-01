@@ -19,6 +19,8 @@ import { MarketService } from '../services/market.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { OrderPreviewService } from '../services/order-preview.service.js';
 import { OrderService } from '../services/order.service.js';
+import { PrivateOrderStreamService } from '../services/private-order-stream.service.js';
+import { RealOrderSyncService } from '../services/real-order-sync.service.js';
 import { RiskConfigService } from '../services/risk-config.service.js';
 import { RiskService } from '../services/risk.service.js';
 import { SignalService } from '../services/signal.service.js';
@@ -31,6 +33,8 @@ export interface ServerRuntime {
   app: FastifyInstance;
   services: {
     strategyService: StrategyService;
+    realOrderSyncService: RealOrderSyncService;
+    privateOrderStreamService: PrivateOrderStreamService;
   };
   close: () => Promise<void>;
 }
@@ -96,6 +100,12 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService, tradeExecutionService);
   const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService);
   const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService, orderService);
+  const realOrderSyncService = new RealOrderSyncService(exchangeFactory, orderRepository, tradeAccountRepository, auditLogService, {
+    intervalMs: appConfig.realOrderSync.intervalMs,
+    lookbackMinutes: appConfig.realOrderSync.lookbackMinutes,
+    batchSize: appConfig.realOrderSync.batchSize,
+  });
+  const privateOrderStreamService = new PrivateOrderStreamService(exchangeFactory, realOrderSyncService, auditLogService);
 
   await registerApiRoutes(app, {
     auditLogRepository,
@@ -138,7 +148,9 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   return {
     app,
     services: {
-      strategyService
+      strategyService,
+      realOrderSyncService,
+      privateOrderStreamService,
     },
     close: async () => {
       if (closed) {
@@ -148,6 +160,8 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
       closed = true;
       // 先停止策略扫描，再关闭 HTTP 服务和数据库，避免退出期间继续产生数据库写入。
       strategyService.stop();
+      privateOrderStreamService.stop();
+      realOrderSyncService.stop();
       await app.close();
       db.close();
     }

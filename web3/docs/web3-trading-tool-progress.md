@@ -2002,6 +2002,84 @@ pnpm --filter @web3/web typecheck
 pnpm lint
 ```
 
+## v0.4.13  2026-06-01
+
+### 已完成
+
+- 新增 `RealOrderSyncService`，后台定时同步最近未终态的真实订单。
+- `ExchangeAdapter` 增加订单详情查询能力，OKX 与 Binance 均已接入官方现货订单查询接口。
+- OKX 真实订单状态同步基于 `GET /api/v5/trade/order`，同步订单状态、累计成交数量、均价、累计成交额和手续费摘要。
+- Binance 真实订单状态同步基于 `GET /api/v3/order`，并额外通过 `GET /api/v3/myTrades` 聚合手续费，避免继续把手续费留成空值。
+- 本地 `order_records` 增加真实订单待同步列表查询和状态回写能力。
+- 真实订单进入 `filled` 后，会自动回写本地真实账本：
+  - 更新真实账户可用余额与冻结余额
+  - 生成真实成交记录
+  - 更新本地真实持仓数量与成本
+  - 写入真实成交操作日志
+- 新增订单同步审计动作：
+  - `order.synced`
+  - `order.sync_failed`
+- 前端审计日志和成交与日志页已接入新的同步审计动作展示。
+- 新增真实订单状态同步配置：
+  - `REAL_ORDER_SYNC_INTERVAL_MS`
+  - `REAL_ORDER_SYNC_LOOKBACK_MINUTES`
+  - `REAL_ORDER_SYNC_BATCH_SIZE`
+
+### 已确认决策
+
+- `v0.4.13` 先采用私有 REST 轮询补齐真实订单闭环，不等待私有 WebSocket 再落地。
+- 真实账本当前只保证对“由本系统发出的真实订单”建立本地成本基线，不做全量历史资产导入。
+- 对于缺少本地持仓成本基线的真实卖出订单，当前只同步订单状态和账户余额，不强行猜测持仓收益。
+- Binance 手续费不在订单查询响应中直接返回，因此通过官方 `myTrades` 聚合获取；若该补充接口失败，仍保证订单状态主链路可继续同步。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.4.14  2026-06-01
+
+### 已完成
+
+- 新增 `PrivateOrderStreamService`，统一管理真实交易私有推送启动、停止和异常审计。
+- `ExchangeAdapter` 增加 `connectPrivateTradeStream` 统一能力，OKX 与 Binance 适配层共用同一套订单和余额推送回调模型。
+- `RealOrderSyncService` 从“整单成交一次性回写”重构为“累计成交减已入账成交”的增量模型：
+  - 支持 `partially_filled`
+  - 支持部分成交后撤单
+  - 支持 REST 同步和私有推送重复回放下的幂等增量入账
+- `OrderRepository` 增加按 `exchange + exchangeOrderId` 查询本地订单能力，私有推送可直接关联本地订单记录。
+- `TradeAccountRepository` 增加按订单聚合已入账成交数量、成交金额和手续费总额的能力，作为增量入账基线。
+- OKX 私有推送按官方 V5 文档接入：
+  - `wss://ws.okx.com:8443/ws/v5/private`
+  - `login`
+  - `orders`
+  - `account`
+- Binance 私有推送按官方 Spot WebSocket API 文档接入：
+  - `wss://ws-api.binance.com:443/ws-api/v3`
+  - `userDataStream.subscribe.signature`
+  - `executionReport`
+  - `outboundAccountPosition`
+- 私有推送收到订单累计成交后，会优先回写本地 `order_records`、`trade_fills`、`trade_positions`、`trade_accounts` 和操作日志。
+- 私有推送收到余额快照后，会同步刷新内存中的真实余额快照，并更新已建账的真实账户余额。
+- 原有 `v0.4.13` 真实订单 REST 同步继续保留，作为私有推送断线、漏推或重启后的兜底补偿链路。
+
+### 已确认决策
+
+- 真实订单状态同步采用“私有推送优先 + REST 兜底”的双通道模型，不移除既有 REST 轮询。
+- 本地真实账本继续只追踪“由本系统发出的真实订单”，不导入交易所全量历史资产。
+- Binance 私有推送当前优先消费官方用户数据流中的订单和余额快照事件，`balanceUpdate` 这种只有增量而没有完整余额快照的事件暂不作为账本主数据源。
+- 对于手续费币种不在当前跟踪资产中的场景，仍保留结构化日志，账本只按当前可识别口径入账。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm lint
+```
+
 ## v0.4.12  2026-06-01
 
 ### 已完成

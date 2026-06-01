@@ -22,8 +22,10 @@ export type AuditLogAction =
   | 'trigger.failed'
   | 'trigger.ignored'
   | 'order.submitted'
+  | 'order.synced'
   | 'order.final_validation_failed'
   | 'order.failed'
+  | 'order.sync_failed'
   | 'strategy.error';
 
 export interface MonitorRule {

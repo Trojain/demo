@@ -106,6 +106,77 @@ export interface PlaceOrderResult {
   rawMessage: string;
 }
 
+export interface GetOrderDetailRequest {
+  /** 统一交易对 */
+  symbol: string;
+  /** 交易所订单号 */
+  exchangeOrderId: string;
+}
+
+export interface GetOrderDetailResult {
+  /** 统一订单状态 */
+  status: UnifiedOrderStatus;
+  /** 成交均价或订单价格摘要 */
+  price?: string;
+  /** 当前累计成交基础币数量 */
+  baseQuantity?: string;
+  /** 当前累计成交计价币金额 */
+  quoteAmount?: string;
+  /** 当前累计手续费金额 */
+  feeAmount?: string;
+  /** 手续费币种 */
+  feeCurrency?: string;
+  /** 交易所最后更新时间 */
+  updatedAt?: string;
+  /** 原始响应摘要 */
+  rawMessage: string;
+}
+
+export interface PrivateOrderUpdate {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 统一交易对 */
+  symbol: string;
+  /** 交易所订单号 */
+  exchangeOrderId: string;
+  /** 统一订单状态 */
+  status: UnifiedOrderStatus;
+  /** 当前累计成交均价或订单价格摘要 */
+  price?: string;
+  /** 当前累计成交基础币数量 */
+  baseQuantity?: string;
+  /** 当前累计成交计价币金额 */
+  quoteAmount?: string;
+  /** 当前累计手续费金额 */
+  feeAmount?: string;
+  /** 手续费币种 */
+  feeCurrency?: string;
+  /** 交易所最后更新时间 */
+  updatedAt?: string;
+  /** 原始推送摘要 */
+  rawMessage: string;
+}
+
+export interface PrivateBalanceUpdate {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 当前推送内的余额快照 */
+  balances: AccountBalance[];
+  /** 交易所最后更新时间 */
+  updatedAt?: string;
+  /** 原始推送摘要 */
+  rawMessage: string;
+}
+
+export interface PrivateTradeStreamHandlers {
+  /** 订单状态推送回调 */
+  onOrderUpdate: (update: PrivateOrderUpdate) => void;
+  /** 余额推送回调 */
+  onBalanceUpdate?: (update: PrivateBalanceUpdate) => void;
+  /** 推送链路错误回调 */
+  onError?: (error: Error) => void;
+}
+
 export interface AccountBalance {
   /** 币种，例如 USDT 或 BTC */
   currency: string;
@@ -138,6 +209,10 @@ export interface ExchangeAdapter {
   getInstrumentRules?(): Promise<InstrumentRule[]>;
   /** 查询账户余额，真实交易前校验使用 */
   getAccountBalances?(currencies?: string[]): Promise<AccountBalance[]>;
+  /** 查询订单详情，用于真实订单状态同步 */
+  getOrderDetail?(request: GetOrderDetailRequest): Promise<GetOrderDetailResult>;
+  /** 连接私有交易推送，优先接订单与账户余额更新 */
+  connectPrivateTradeStream?(handlers: PrivateTradeStreamHandlers): () => void;
   /** 下单接口，第一版只开放模拟下单，真实下单预留 */
   placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult>;
 }

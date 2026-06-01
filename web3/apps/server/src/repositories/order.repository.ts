@@ -68,6 +68,38 @@ export class OrderRepository {
     return row ? mapOrder(row) : undefined
   }
 
+  findByExchangeOrderId(exchange: OrderRecord['exchange'], exchangeOrderId: string): OrderRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM order_records
+         WHERE exchange = ?
+           AND exchange_order_id = ?
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get(exchange, exchangeOrderId) as OrderRow | undefined
+    return row ? mapOrder(row) : undefined
+  }
+
+  listPendingRealOrders(input: {
+    /** 只同步该时间之后创建的真实订单，避免长尾历史订单持续占用查询配额。 */
+    createdAfter: string
+    /** 单次同步最多处理多少条记录。 */
+    limit: number
+  }): OrderRecord[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM order_records
+         WHERE simulation_mode = 0
+           AND created_at >= ?
+           AND status IN ('submitted', 'partially_filled')
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(input.createdAfter, input.limit)
+      .map(row => mapOrder(row as OrderRow))
+  }
+
   countAll(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS count FROM order_records').get() as { count: number }
     return row.count
@@ -95,6 +127,50 @@ export class OrderRepository {
       })
 
     return order
+  }
+
+  updateSyncSnapshot(input: {
+    id: string
+    status: OrderRecord['status']
+    baseQuantity?: string
+    quoteAmount?: string
+    price?: string
+    rawMessage: string
+  }): OrderRecord | undefined {
+    const current = this.findById(input.id)
+    if (!current) {
+      return undefined
+    }
+
+    const nextOrder: OrderRecord = {
+      ...current,
+      status: input.status,
+      baseQuantity: input.baseQuantity ?? current.baseQuantity,
+      quoteAmount: input.quoteAmount ?? current.quoteAmount,
+      price: input.price ?? current.price,
+      rawMessage: input.rawMessage,
+    }
+
+    this.db
+      .prepare(
+        `UPDATE order_records
+         SET status = @status,
+             base_quantity = @baseQuantity,
+             quote_amount = @quoteAmount,
+             price = @price,
+             raw_message = @rawMessage
+         WHERE id = @id`,
+      )
+      .run({
+        id: nextOrder.id,
+        status: nextOrder.status,
+        baseQuantity: nextOrder.baseQuantity ?? null,
+        quoteAmount: nextOrder.quoteAmount ?? null,
+        price: nextOrder.price ?? null,
+        rawMessage: nextOrder.rawMessage,
+      })
+
+    return nextOrder
   }
 
   delete(id: string): boolean {

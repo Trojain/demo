@@ -23,4 +23,6 @@ await runtime.app.listen({
 })
 
 runtime.services.strategyService.start()
+runtime.services.realOrderSyncService.start()
+runtime.services.privateOrderStreamService.start()
 runtime.app.log.info(`Web3 行情监控服务已启动，启动时间：${dayjs().format('YYYY-MM-DD HH:mm:ss')}，数据库位置：${appConfig.databasePath}`)

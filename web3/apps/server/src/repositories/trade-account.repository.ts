@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { Decimal } from 'decimal.js'
 import type { ExchangeCode, TradeAccount, TradeAccountType, TradeEquitySnapshot, TradeFill, TradeOperationLog, TradePosition } from '../types/domain.js'
 
 type TradeAccountRow = {
@@ -355,6 +356,50 @@ export class TradeAccountRepository {
       })
 
     return fill
+  }
+
+  findFillByOrderId(orderId: string): TradeFill | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM trade_fills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(orderId) as TradeFillRow | undefined
+
+    return row ? mapTradeFill(row) : undefined
+  }
+
+  getFillTotalsByOrderId(orderId: string) {
+    const rows = this.db
+      .prepare(
+        `SELECT
+           base_quantity AS baseQuantity,
+           quote_amount AS quoteAmount,
+           fee_amount AS feeAmount
+         FROM trade_fills
+         WHERE order_id = ?`,
+      )
+      .all(orderId) as Array<{
+      baseQuantity?: string
+      quoteAmount?: string
+      feeAmount?: string
+    }>
+
+    const totals = rows.reduce(
+      (result, row) => ({
+        baseQuantity: result.baseQuantity.plus(row.baseQuantity ?? 0),
+        quoteAmount: result.quoteAmount.plus(row.quoteAmount ?? 0),
+        feeAmount: result.feeAmount.plus(row.feeAmount ?? 0),
+      }),
+      {
+        baseQuantity: new Decimal(0),
+        quoteAmount: new Decimal(0),
+        feeAmount: new Decimal(0),
+      },
+    )
+
+    return {
+      baseQuantity: totals.baseQuantity.toFixed(),
+      quoteAmount: totals.quoteAmount.toFixed(),
+      feeAmount: totals.feeAmount.toFixed(),
+    }
   }
 
   upsertEquitySnapshot(snapshot: TradeEquitySnapshot): TradeEquitySnapshot {

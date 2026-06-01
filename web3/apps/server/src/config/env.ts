@@ -34,6 +34,9 @@ const envSchema = z.object({
   OKX_SIMULATED: booleanString.default(true),
   BINANCE_API_KEY: z.string().default(''),
   BINANCE_API_SECRET: z.string().default(''),
+  REAL_ORDER_SYNC_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
+  REAL_ORDER_SYNC_LOOKBACK_MINUTES: z.coerce.number().int().min(1).default(240),
+  REAL_ORDER_SYNC_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
   RISK_MAX_QUOTE_AMOUNT: decimalString.default('1000'),
   RISK_MAX_MARKET_AGE_MS: z.coerce.number().int().min(1000).default(10_000),
   RISK_DAILY_MAX_TRIGGER_COUNT: z.coerce.number().int().min(1).default(20),
@@ -71,6 +74,14 @@ export const appConfig = {
     apiKey: parsedEnv.BINANCE_API_KEY,
     /** Binance API Secret，后续接入真实下单时使用 */
     apiSecret: parsedEnv.BINANCE_API_SECRET,
+  },
+  realOrderSync: {
+    /** 真实订单状态同步轮询间隔，单位毫秒，建议保持 10 秒以上降低交易所私有接口压力 */
+    intervalMs: parsedEnv.REAL_ORDER_SYNC_INTERVAL_MS,
+    /** 真实订单状态同步回看窗口，单位分钟，只同步最近一段时间内仍未终态的订单 */
+    lookbackMinutes: parsedEnv.REAL_ORDER_SYNC_LOOKBACK_MINUTES,
+    /** 单次同步最多处理多少条真实订单，避免启动后历史数据一次性打满私有接口 */
+    batchSize: parsedEnv.REAL_ORDER_SYNC_BATCH_SIZE,
   },
   risk: {
     /** 单笔最大计价金额，例如 USDT 金额，超过后交易信号会被风控拒绝 */

@@ -2,7 +2,19 @@ import { nanoid } from 'nanoid';
 import { Decimal } from 'decimal.js';
 import { createHmac } from 'node:crypto';
 import WebSocket from 'ws';
-import type { AccountBalance, ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js';
+import type {
+  AccountBalance,
+  ExchangeAdapter,
+  GetOrderDetailRequest,
+  GetOrderDetailResult,
+  InstrumentRule,
+  MarketCandle,
+  MarketTickerSnapshot,
+  PlaceOrderRequest,
+  PlaceOrderResult,
+  PrivateTradeStreamHandlers,
+  TickerPrice,
+} from '../../types/exchange.js';
 import { fetchExchangeJson } from '../http-client.js';
 import { normalizeExchangeOrderError } from '../exchange-order-error.js';
 import { toDisplaySymbol, toOkxInstId } from '../symbol.js';
@@ -61,16 +73,74 @@ type OkxPlaceOrderResponse = {
   }>;
 };
 
+type OkxOrderDetailResponse = {
+  data?: Array<{
+    ordId?: string;
+    state?: string;
+    avgPx?: string;
+    px?: string;
+    accFillSz?: string;
+    fee?: string;
+    feeCcy?: string;
+    uTime?: string;
+  }>;
+};
+
+type OkxPrivateEventResponse = {
+  event?: string;
+  code?: string;
+  msg?: string;
+  arg?: {
+    channel?: string;
+  };
+};
+
+type OkxPrivateOrderStreamResponse = OkxPrivateEventResponse & {
+  arg?: {
+    channel?: string;
+    instId?: string;
+  };
+  data?: Array<{
+    ordId?: string;
+    instId?: string;
+    state?: string;
+    avgPx?: string;
+    px?: string;
+    accFillSz?: string;
+    fee?: string;
+    feeCcy?: string;
+    uTime?: string;
+  }>;
+};
+
+type OkxPrivateAccountStreamResponse = OkxPrivateEventResponse & {
+  data?: Array<{
+    uTime?: string;
+    details?: Array<{
+      ccy?: string;
+      availBal?: string;
+      availEq?: string;
+      frozenBal?: string;
+      cashBal?: string;
+      eq?: string;
+    }>;
+  }>;
+};
+
 export class OkxAdapter implements ExchangeAdapter {
   readonly code = 'okx' as const;
   private ws?: WebSocket;
   private candleWs?: WebSocket;
+  private privateTradeWs?: WebSocket;
   private reconnectTimer?: NodeJS.Timeout;
   private candleReconnectTimer?: NodeJS.Timeout;
+  private privateTradeReconnectTimer?: NodeJS.Timeout;
   private currentTickerSignature = '';
   private currentCandleSignature = '';
   private tickerHandler?: (ticker: TickerPrice) => void;
   private candleHandler?: (candle: MarketCandle) => void;
+  private privateTradeHandlers?: PrivateTradeStreamHandlers;
+  private privateTradeStopRequested = false;
 
   connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void) {
     const uniqueSymbols = [...new Set(symbols.map(toOkxInstId))].sort();
@@ -337,6 +407,77 @@ export class OkxAdapter implements ExchangeAdapter {
     });
   }
 
+  connectPrivateTradeStream(handlers: PrivateTradeStreamHandlers) {
+    if (!appConfig.okx.apiKey || !appConfig.okx.apiSecret || !appConfig.okx.passphrase) {
+      return () => undefined;
+    }
+
+    this.privateTradeHandlers = handlers;
+    this.privateTradeStopRequested = false;
+    clearTimeout(this.privateTradeReconnectTimer);
+    this.privateTradeWs?.close();
+    this.openPrivateTradeStream();
+
+    return () => {
+      this.privateTradeStopRequested = true;
+      clearTimeout(this.privateTradeReconnectTimer);
+      this.privateTradeReconnectTimer = undefined;
+      this.privateTradeWs?.close();
+      this.privateTradeWs = undefined;
+    };
+  }
+
+  async getOrderDetail(request: GetOrderDetailRequest): Promise<GetOrderDetailResult> {
+    try {
+      if (!appConfig.okx.apiKey || !appConfig.okx.apiSecret || !appConfig.okx.passphrase) {
+        throw new Error('OKX API Key、Secret 或 Passphrase 未配置，无法查询真实订单详情');
+      }
+
+      const params = new URLSearchParams({
+        instId: toOkxInstId(request.symbol),
+        ordId: request.exchangeOrderId,
+      });
+      const requestPath = `/api/v5/trade/order?${params.toString()}`;
+      const timestamp = new Date().toISOString();
+      const signature = createHmac('sha256', appConfig.okx.apiSecret)
+        .update(`${timestamp}GET${requestPath}`)
+        .digest('base64');
+      const payload = await fetchExchangeJson<OkxOrderDetailResponse>(`https://www.okx.com${requestPath}`, {
+        method: 'GET',
+        headers: {
+          'OK-ACCESS-KEY': appConfig.okx.apiKey,
+          'OK-ACCESS-SIGN': signature,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': appConfig.okx.passphrase,
+          'x-simulated-trading': appConfig.okx.simulated ? '1' : '0',
+        },
+      });
+      const detail = payload.data?.[0];
+      if (!detail?.ordId) {
+        throw new Error(`OKX 订单详情返回缺少 ordId，响应=${JSON.stringify(payload)}`);
+      }
+
+      const averagePrice = this.resolvePositiveDecimal(detail.avgPx) ?? this.resolvePositiveDecimal(detail.px);
+      const accumulatedBaseQuantity = this.resolvePositiveDecimal(detail.accFillSz);
+      return {
+        status: this.mapOrderState(detail.state),
+        price: averagePrice,
+        baseQuantity: accumulatedBaseQuantity,
+        // OKX 订单详情会返回累计成交数量和均价，这里按官方字段推导累计成交额，用于本地账本和页面展示。
+        quoteAmount:
+          averagePrice && accumulatedBaseQuantity
+            ? new Decimal(averagePrice).mul(accumulatedBaseQuantity).toFixed()
+            : undefined,
+        feeAmount: detail.fee ? new Decimal(detail.fee).abs().toFixed() : undefined,
+        feeCurrency: detail.feeCcy,
+        updatedAt: detail.uTime ? new Date(Number(detail.uTime)).toISOString() : undefined,
+        rawMessage: JSON.stringify(payload),
+      };
+    } catch (error) {
+      throw normalizeExchangeOrderError(this.code, error);
+    }
+  }
+
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {
     try {
       if (request.simulationMode) {
@@ -446,5 +587,176 @@ export class OkxAdapter implements ExchangeAdapter {
     }
 
     return size;
+  }
+
+  private openPrivateTradeStream() {
+    this.privateTradeWs = createExchangeWebSocket('wss://ws.okx.com:8443/ws/v5/private');
+
+    this.privateTradeWs.on('open', () => {
+      this.privateTradeWs?.send(JSON.stringify(this.buildPrivateLoginPayload()));
+    });
+
+    this.privateTradeWs.on('message', raw => {
+      if (raw.toString() === 'pong') {
+        return;
+      }
+
+      const payload = JSON.parse(raw.toString()) as OkxPrivateOrderStreamResponse | OkxPrivateAccountStreamResponse;
+      if (payload.event === 'login') {
+        if (payload.code !== '0') {
+          this.privateTradeHandlers?.onError?.(new Error(`OKX 私有推送登录失败：${payload.msg ?? payload.code ?? '未知错误'}`));
+          this.privateTradeWs?.close();
+          return;
+        }
+
+        this.subscribePrivateChannels();
+        return;
+      }
+
+      if (payload.event === 'error') {
+        this.privateTradeHandlers?.onError?.(new Error(`OKX 私有推送异常：${payload.msg ?? payload.code ?? '未知错误'}`));
+        return;
+      }
+
+      if (payload.arg?.channel === 'orders') {
+        this.handlePrivateOrderMessage(payload as OkxPrivateOrderStreamResponse);
+        return;
+      }
+
+      if (payload.arg?.channel === 'account') {
+        this.handlePrivateAccountMessage(payload as OkxPrivateAccountStreamResponse);
+      }
+    });
+
+    this.privateTradeWs.on('ping', data => {
+      this.privateTradeWs?.pong(data);
+    });
+
+    this.privateTradeWs.on('close', () => {
+      this.privateTradeWs = undefined;
+      if (this.privateTradeStopRequested) {
+        return;
+      }
+
+      clearTimeout(this.privateTradeReconnectTimer);
+      this.privateTradeReconnectTimer = setTimeout(() => {
+        this.openPrivateTradeStream();
+      }, 3000);
+    });
+
+    this.privateTradeWs.on('error', error => {
+      this.privateTradeHandlers?.onError?.(error instanceof Error ? error : new Error('OKX 私有推送连接异常'));
+      this.privateTradeWs?.close();
+    });
+  }
+
+  private buildPrivateLoginPayload() {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const signature = createHmac('sha256', appConfig.okx.apiSecret)
+      .update(`${timestamp}GET/users/self/verify`)
+      .digest('base64');
+
+    return {
+      op: 'login',
+      args: [{
+        apiKey: appConfig.okx.apiKey,
+        passphrase: appConfig.okx.passphrase,
+        timestamp,
+        sign: signature,
+      }],
+    };
+  }
+
+  private subscribePrivateChannels() {
+    this.privateTradeWs?.send(JSON.stringify({
+      op: 'subscribe',
+      args: [
+        { channel: 'orders', instType: 'SPOT' },
+        { channel: 'account', extraParams: JSON.stringify({ updateInterval: '0' }) },
+      ],
+    }));
+  }
+
+  private handlePrivateOrderMessage(payload: OkxPrivateOrderStreamResponse) {
+    payload.data?.forEach(item => {
+      if (!item.ordId || !item.instId) {
+        return;
+      }
+
+      const price = this.resolvePositiveDecimal(item.avgPx) ?? this.resolvePositiveDecimal(item.px);
+      const baseQuantity = this.resolvePositiveDecimal(item.accFillSz);
+      this.privateTradeHandlers?.onOrderUpdate({
+        exchange: this.code,
+        symbol: toDisplaySymbol(item.instId),
+        exchangeOrderId: item.ordId,
+        status: this.mapOrderState(item.state),
+        price,
+        baseQuantity,
+        quoteAmount: price && baseQuantity ? new Decimal(price).mul(baseQuantity).toFixed() : undefined,
+        feeAmount: item.fee ? new Decimal(item.fee).abs().toFixed() : undefined,
+        feeCurrency: item.feeCcy,
+        updatedAt: item.uTime ? new Date(Number(item.uTime)).toISOString() : undefined,
+        rawMessage: JSON.stringify(item),
+      });
+    });
+  }
+
+  private handlePrivateAccountMessage(payload: OkxPrivateAccountStreamResponse) {
+    payload.data?.forEach(item => {
+      const balances = (item.details ?? [])
+        .filter(detail => Boolean(detail.ccy))
+        .map(detail => {
+          const available = detail.availBal || detail.availEq || '0';
+          const locked = detail.frozenBal || '0';
+          const total = detail.eq || detail.cashBal || new Decimal(available).plus(locked).toFixed();
+          return {
+            currency: detail.ccy!,
+            available,
+            locked,
+            total,
+          };
+        });
+      if (balances.length === 0) {
+        return;
+      }
+
+      this.privateTradeHandlers?.onBalanceUpdate?.({
+        exchange: this.code,
+        balances,
+        updatedAt: item.uTime ? new Date(Number(item.uTime)).toISOString() : undefined,
+        rawMessage: JSON.stringify(item),
+      });
+    });
+  }
+
+  private mapOrderState(state?: string): GetOrderDetailResult['status'] {
+    switch ((state || '').toLowerCase()) {
+      case 'live':
+        return 'submitted';
+      case 'partially_filled':
+        return 'partially_filled';
+      case 'filled':
+        return 'filled';
+      case 'canceled':
+      case 'mmp_canceled':
+        return 'cancelled';
+      case 'order_failed':
+        return 'failed';
+      default:
+        return 'submitted';
+    }
+  }
+
+  private resolvePositiveDecimal(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+
+    try {
+      const decimalValue = new Decimal(value);
+      return decimalValue.greaterThan(0) ? decimalValue.toFixed() : undefined;
+    } catch {
+      return undefined;
+    }
   }
 }

@@ -2,7 +2,19 @@ import { nanoid } from 'nanoid'
 import WebSocket from 'ws'
 import { Decimal } from 'decimal.js'
 import { createHmac } from 'node:crypto'
-import type { AccountBalance, ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js'
+import type {
+  AccountBalance,
+  ExchangeAdapter,
+  GetOrderDetailRequest,
+  GetOrderDetailResult,
+  InstrumentRule,
+  MarketCandle,
+  MarketTickerSnapshot,
+  PlaceOrderRequest,
+  PlaceOrderResult,
+  PrivateTradeStreamHandlers,
+  TickerPrice,
+} from '../../types/exchange.js'
 import { fetchExchangeJson } from '../http-client.js'
 import { normalizeExchangeOrderError } from '../exchange-order-error.js'
 import { toBinanceSymbol, toDisplaySymbol } from '../symbol.js'
@@ -101,16 +113,75 @@ type BinancePlaceOrderResponse = {
   msg?: string
 }
 
+type BinanceQueryOrderResponse = {
+  orderId?: number
+  status?: string
+  price?: string
+  origQty?: string
+  executedQty?: string
+  cummulativeQuoteQty?: string
+  updateTime?: number
+}
+
+type BinanceTradeFillResponse = Array<{
+  orderId?: number
+  commission?: string
+  commissionAsset?: string
+}>
+
+type BinanceUserDataStreamResponse = {
+  id?: string
+  status?: number
+  error?: {
+    code?: number
+    msg?: string
+  }
+  result?: {
+    subscriptionId?: number
+  }
+  subscriptionId?: number
+  event?: {
+    e?: string
+    E?: number
+    T?: number
+    s?: string
+    i?: number
+    X?: string
+    p?: string
+    z?: string
+    Z?: string
+    n?: string
+    N?: string | null
+    u?: number
+    B?: Array<{
+      a?: string
+      f?: string
+      l?: string
+    }>
+  }
+}
+
+type BinancePrivateFeeTracker = {
+  amount: Decimal
+  currency?: string
+  mixed: boolean
+}
+
 export class BinanceAdapter implements ExchangeAdapter {
   readonly code = 'binance' as const
   private ws?: WebSocket
   private candleWs?: WebSocket
+  private privateTradeWs?: WebSocket
   private reconnectTimer?: NodeJS.Timeout
   private candleReconnectTimer?: NodeJS.Timeout
+  private privateTradeReconnectTimer?: NodeJS.Timeout
   private currentTickerSignature = ''
   private currentCandleSignature = ''
   private tickerHandler?: (ticker: TickerPrice) => void
   private candleHandler?: (candle: MarketCandle) => void
+  private privateTradeHandlers?: PrivateTradeStreamHandlers
+  private privateTradeStopRequested = false
+  private readonly privateOrderFeeTrackers = new Map<string, BinancePrivateFeeTracker>()
 
   connectTickerStream(symbols: string[], onTicker: (ticker: TickerPrice) => void) {
     const uniqueSymbols = [...new Set(symbols.map(toBinanceSymbol))].sort()
@@ -343,6 +414,74 @@ export class BinanceAdapter implements ExchangeAdapter {
       }))
   }
 
+  connectPrivateTradeStream(handlers: PrivateTradeStreamHandlers) {
+    if (!appConfig.binance.apiKey || !appConfig.binance.apiSecret) {
+      return () => undefined
+    }
+
+    this.privateTradeHandlers = handlers
+    this.privateTradeStopRequested = false
+    clearTimeout(this.privateTradeReconnectTimer)
+    this.privateTradeWs?.close()
+    this.openPrivateTradeStream()
+
+    return () => {
+      this.privateTradeStopRequested = true
+      clearTimeout(this.privateTradeReconnectTimer)
+      this.privateTradeReconnectTimer = undefined
+      this.privateTradeWs?.close()
+      this.privateTradeWs = undefined
+      this.privateOrderFeeTrackers.clear()
+    }
+  }
+
+  async getOrderDetail(request: GetOrderDetailRequest): Promise<GetOrderDetailResult> {
+    try {
+      if (!appConfig.binance.apiKey || !appConfig.binance.apiSecret) {
+        throw new Error('Binance API Key 或 Secret 未配置，无法查询真实订单详情')
+      }
+
+      const params = new URLSearchParams({
+        symbol: toBinanceSymbol(request.symbol),
+        orderId: request.exchangeOrderId,
+        recvWindow: '5000',
+        timestamp: String(Date.now()),
+      })
+      const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
+      params.set('signature', signature)
+      const payload = await fetchExchangeJson<BinanceQueryOrderResponse>(`https://api.binance.com/api/v3/order?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-MBX-APIKEY': appConfig.binance.apiKey,
+        },
+      })
+      if (!payload.orderId) {
+        throw new Error(`Binance 订单详情返回缺少 orderId，响应=${JSON.stringify(payload)}`)
+      }
+
+      const baseQuantity = this.resolvePositiveDecimal(payload.executedQty)
+      const quoteAmount = this.resolvePositiveDecimal(payload.cummulativeQuoteQty)
+      const averagePrice = this.resolveAveragePrice(baseQuantity, quoteAmount) ?? this.resolvePositiveDecimal(payload.price)
+      const fee = await this.tryGetOrderFee(request, payload.orderId)
+
+      return {
+        status: this.mapOrderStatus(payload.status),
+        price: averagePrice,
+        baseQuantity,
+        quoteAmount,
+        feeAmount: fee?.amount,
+        feeCurrency: fee?.currency,
+        updatedAt: payload.updateTime ? new Date(payload.updateTime).toISOString() : undefined,
+        rawMessage: JSON.stringify({
+          order: payload,
+          trades: fee?.rawTrades ?? [],
+        }),
+      }
+    } catch (error) {
+      throw normalizeExchangeOrderError(this.code, error)
+    }
+  }
+
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {
     try {
       if (request.simulationMode) {
@@ -425,6 +564,178 @@ export class BinanceAdapter implements ExchangeAdapter {
     return params
   }
 
+  private openPrivateTradeStream() {
+    this.privateTradeWs = createExchangeWebSocket('wss://ws-api.binance.com:443/ws-api/v3')
+
+    this.privateTradeWs.on('open', () => {
+      this.privateTradeWs?.send(JSON.stringify(this.buildPrivateSubscribePayload()))
+    })
+
+    this.privateTradeWs.on('message', raw => {
+      const payload = JSON.parse(raw.toString()) as BinanceUserDataStreamResponse
+      if (payload.error) {
+        this.privateTradeHandlers?.onError?.(new Error(`Binance 私有推送异常：${payload.error.msg ?? payload.error.code ?? '未知错误'}`))
+        return
+      }
+
+      if (payload.id && payload.status && payload.status >= 400) {
+        this.privateTradeHandlers?.onError?.(new Error(`Binance 私有推送订阅失败，状态码 ${payload.status}`))
+        this.privateTradeWs?.close()
+        return
+      }
+
+      if (!payload.event?.e) {
+        return
+      }
+
+      this.handlePrivateStreamEvent(payload)
+    })
+
+    this.privateTradeWs.on('ping', data => {
+      this.privateTradeWs?.pong(data)
+    })
+
+    this.privateTradeWs.on('close', () => {
+      this.privateTradeWs = undefined
+      if (this.privateTradeStopRequested) {
+        return
+      }
+
+      clearTimeout(this.privateTradeReconnectTimer)
+      this.privateTradeReconnectTimer = setTimeout(() => {
+        this.openPrivateTradeStream()
+      }, 3000)
+    })
+
+    this.privateTradeWs.on('error', error => {
+      this.privateTradeHandlers?.onError?.(error instanceof Error ? error : new Error('Binance 私有推送连接异常'))
+      this.privateTradeWs?.close()
+    })
+  }
+
+  private buildPrivateSubscribePayload() {
+    const params = {
+      apiKey: appConfig.binance.apiKey,
+      recvWindow: 5000,
+      timestamp: Date.now(),
+    }
+
+    return {
+      id: nanoid(),
+      method: 'userDataStream.subscribe.signature',
+      params: {
+        ...params,
+        signature: this.signPrivateStreamParams(params),
+      },
+    }
+  }
+
+  private signPrivateStreamParams(params: Record<string, string | number>) {
+    const payload = Object.entries(params)
+      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&')
+    return createHmac('sha256', appConfig.binance.apiSecret).update(payload).digest('hex')
+  }
+
+  private handlePrivateStreamEvent(payload: BinanceUserDataStreamResponse) {
+    const event = payload.event
+    if (!event?.e) {
+      return
+    }
+
+    if (event.e === 'executionReport') {
+      this.handleExecutionReport(event)
+      return
+    }
+
+    if (event.e === 'outboundAccountPosition') {
+      this.handleOutboundAccountPosition(event)
+      return
+    }
+
+    if (event.e === 'eventStreamTerminated') {
+      this.privateTradeHandlers?.onError?.(new Error('Binance 用户数据流已终止，准备自动重连'))
+      this.privateTradeWs?.close()
+    }
+  }
+
+  private handleExecutionReport(event: NonNullable<BinanceUserDataStreamResponse['event']>) {
+    if (!event.s || !event.i) {
+      return
+    }
+
+    const orderId = String(event.i)
+    const feeTracker = this.updatePrivateFeeTracker(orderId, event.n, event.N ?? undefined)
+    const baseQuantity = this.resolvePositiveDecimal(event.z)
+    const quoteAmount = this.resolvePositiveDecimal(event.Z)
+    this.privateTradeHandlers?.onOrderUpdate({
+      exchange: this.code,
+      symbol: toDisplaySymbol(event.s),
+      exchangeOrderId: orderId,
+      status: this.mapOrderStatus(event.X),
+      price: this.resolveAveragePrice(baseQuantity, quoteAmount) ?? this.resolvePositiveDecimal(event.p),
+      baseQuantity,
+      quoteAmount,
+      feeAmount: feeTracker?.mixed ? undefined : feeTracker?.amount.toFixed(),
+      feeCurrency: feeTracker?.mixed ? undefined : feeTracker?.currency,
+      updatedAt: new Date(event.T ?? event.E ?? Date.now()).toISOString(),
+      rawMessage: JSON.stringify(event),
+    })
+
+    if (this.isFinalOrderStatus(event.X)) {
+      this.privateOrderFeeTrackers.delete(orderId)
+    }
+  }
+
+  private handleOutboundAccountPosition(event: NonNullable<BinanceUserDataStreamResponse['event']>) {
+    const balances = (event.B ?? [])
+      .filter(item => Boolean(item.a))
+      .map(item => ({
+        currency: item.a!,
+        available: item.f ?? '0',
+        locked: item.l ?? '0',
+        total: new Decimal(item.f ?? 0).plus(item.l ?? 0).toFixed(),
+      }))
+    if (balances.length === 0) {
+      return
+    }
+
+    this.privateTradeHandlers?.onBalanceUpdate?.({
+      exchange: this.code,
+      balances,
+      updatedAt: new Date(event.u ?? event.E ?? Date.now()).toISOString(),
+      rawMessage: JSON.stringify(event),
+    })
+  }
+
+  private updatePrivateFeeTracker(orderId: string, commission?: string, commissionCurrency?: string) {
+    const currentTracker = this.privateOrderFeeTrackers.get(orderId) ?? {
+      amount: new Decimal(0),
+      currency: commissionCurrency,
+      mixed: false,
+    }
+
+    if (commission && new Decimal(commission).greaterThan(0)) {
+      if (currentTracker.currency && commissionCurrency && currentTracker.currency !== commissionCurrency) {
+        currentTracker.mixed = true
+      }
+
+      if (!currentTracker.currency && commissionCurrency) {
+        currentTracker.currency = commissionCurrency
+      }
+
+      currentTracker.amount = currentTracker.amount.plus(commission)
+    }
+
+    this.privateOrderFeeTrackers.set(orderId, currentTracker)
+    return currentTracker
+  }
+
+  private isFinalOrderStatus(status?: string) {
+    return ['FILLED', 'CANCELED', 'REJECTED', 'EXPIRED', 'EXPIRED_IN_MATCH'].includes((status || '').toUpperCase())
+  }
+
   private mapOrderStatus(status?: string): PlaceOrderResult['status'] {
     switch ((status || '').toUpperCase()) {
       case 'NEW':
@@ -445,6 +756,53 @@ export class BinanceAdapter implements ExchangeAdapter {
     }
   }
 
+  private async tryGetOrderFee(request: GetOrderDetailRequest, orderId: number) {
+    try {
+      const params = new URLSearchParams({
+        symbol: toBinanceSymbol(request.symbol),
+        orderId: String(orderId),
+        recvWindow: '5000',
+        timestamp: String(Date.now()),
+      })
+      const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
+      params.set('signature', signature)
+      const trades = await fetchExchangeJson<BinanceTradeFillResponse>(`https://api.binance.com/api/v3/myTrades?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'X-MBX-APIKEY': appConfig.binance.apiKey,
+        },
+      })
+      if (!Array.isArray(trades) || trades.length === 0) {
+        return undefined
+      }
+
+      const feeByCurrency = new Map<string, Decimal>()
+      trades.forEach(trade => {
+        if (!trade.commission || !trade.commissionAsset) {
+          return
+        }
+
+        const currentAmount = feeByCurrency.get(trade.commissionAsset) ?? new Decimal(0)
+        feeByCurrency.set(trade.commissionAsset, currentAmount.plus(trade.commission))
+      })
+      if (feeByCurrency.size !== 1) {
+        return {
+          rawTrades: trades,
+        }
+      }
+
+      const [currency, amount] = feeByCurrency.entries().next().value as [string, Decimal]
+      return {
+        amount: amount.toFixed(),
+        currency,
+        rawTrades: trades,
+      }
+    } catch {
+      // Binance 手续费需要从 myTrades 聚合获取。该补充接口失败时仍保留订单状态主链路可用性。
+      return undefined
+    }
+  }
+
   private resolveReturnedPrice(price?: string, fallbackPrice?: string) {
     if (price && new Decimal(price).greaterThan(0)) {
       return price
@@ -459,5 +817,35 @@ export class BinanceAdapter implements ExchangeAdapter {
     }
 
     return fallbackQuoteAmount
+  }
+
+  private resolvePositiveDecimal(value?: string) {
+    if (!value) {
+      return undefined
+    }
+
+    try {
+      const decimalValue = new Decimal(value)
+      return decimalValue.greaterThan(0) ? decimalValue.toFixed() : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private resolveAveragePrice(baseQuantity?: string, quoteAmount?: string) {
+    if (!baseQuantity || !quoteAmount) {
+      return undefined
+    }
+
+    try {
+      const decimalBaseQuantity = new Decimal(baseQuantity)
+      if (!decimalBaseQuantity.greaterThan(0)) {
+        return undefined
+      }
+
+      return new Decimal(quoteAmount).div(decimalBaseQuantity).toFixed()
+    } catch {
+      return undefined
+    }
   }
 }
