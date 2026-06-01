@@ -6,6 +6,8 @@ export type OrderSide = 'buy' | 'sell';
 
 export type OrderType = 'market' | 'limit';
 
+export type TradeOrderQuantityType = 'base' | 'quote';
+
 export type TriggerStatus = 'pending' | 'confirmed' | 'ignored' | 'failed';
 
 export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
@@ -337,6 +339,8 @@ export interface TradeOrderPreview {
   side: OrderSide;
   /** 下单类型 */
   orderType: OrderType;
+  /** 下单数量语义，base 表示按基础币数量下单，quote 表示按计价币金额下单 */
+  quantityType: TradeOrderQuantityType;
   /** 执行参考价 */
   executionPrice: string;
   /** 基础币数量 */

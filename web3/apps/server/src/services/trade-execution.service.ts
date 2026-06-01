@@ -17,6 +17,7 @@ import type {
   TradeAccountType,
   TradeOrderCheckItem,
   TradeOrderPreview,
+  TradeOrderQuantityType,
   TradePosition,
   TradePositionView,
 } from '../types/domain.js'
@@ -80,14 +81,16 @@ export class TradeExecutionService {
     const rules = await this.tradingRuleService.listInstrumentRules(exchange)
     const instrumentRule = rules.find(rule => rule.symbol === symbol)
     const executionPrice = new Decimal(input.orderType === 'limit' && input.limitPrice ? input.limitPrice : latestTicker.price)
+    const quantityType = this.resolveQuantityType(input)
     const baseQuantity = this.resolveBaseQuantity(input, executionPrice, instrumentRule)
-    const quoteAmount = baseQuantity.mul(executionPrice)
+    const quoteAmount = this.resolveQuoteAmount(input, baseQuantity, executionPrice)
     const feeAmount = new Decimal(0)
     const account = this.findAccount(input.mode, exchange, instrumentRule?.quoteCurrency ?? 'USDT')
     const position = account ? this.tradeAccountRepository.findPosition(account.id, symbol) : undefined
     const realBalances = input.mode === 'real' ? await this.safeGetRealBalances(exchange, [instrumentRule?.quoteCurrency ?? 'USDT', instrumentRule?.baseCurrency ?? symbol.split('-')[0]]) : []
     const checkItems = this.buildCheckItems({
       input,
+      quantityType,
       instrumentRule,
       executionPrice,
       baseQuantity,
@@ -106,6 +109,7 @@ export class TradeExecutionService {
       symbol,
       side: input.side,
       orderType: input.orderType,
+      quantityType,
       executionPrice: executionPrice.toFixed(),
       baseQuantity: baseQuantity.toFixed(),
       quoteAmount: quoteAmount.toFixed(),
@@ -273,9 +277,9 @@ export class TradeExecutionService {
         symbol: preview.symbol,
         side: preview.side,
         type: preview.orderType,
-        // 市价买入优先按计价币金额下单，卖出和限价单统一按基础币数量下单，减少交易所口径差异。
-        quoteAmount: preview.side === 'buy' && preview.orderType === 'market' ? preview.quoteAmount : undefined,
-        baseQuantity: preview.side === 'sell' || preview.orderType === 'limit' ? preview.baseQuantity : undefined,
+        // 真实下单时严格沿用预检阶段确认过的数量语义，避免适配层再次猜测。
+        quoteAmount: preview.orderType === 'market' && preview.quantityType === 'quote' ? preview.quoteAmount : undefined,
+        baseQuantity: preview.orderType === 'limit' || preview.quantityType === 'base' ? preview.baseQuantity : undefined,
         price: preview.orderType === 'limit' ? preview.executionPrice : undefined,
         clientOrderId,
         simulationMode: false,
@@ -345,9 +349,10 @@ export class TradeExecutionService {
         symbol: preview.symbol,
         side: preview.side,
         orderType: preview.orderType,
-        baseQuantity: exchangeResult.baseQuantity ?? preview.baseQuantity,
-        quoteAmount: exchangeResult.quoteAmount ?? preview.quoteAmount,
-        price: exchangeResult.price ?? preview.executionPrice,
+        // 真实订单记录优先保留“已明确知道”的参数，避免把预估成交价和预估成交额当成交易所真实返回。
+        baseQuantity: exchangeResult.baseQuantity ?? (preview.orderType === 'limit' || preview.quantityType === 'base' ? preview.baseQuantity : undefined),
+        quoteAmount: exchangeResult.quoteAmount ?? (preview.quantityType === 'quote' ? preview.quoteAmount : undefined),
+        price: exchangeResult.price ?? (preview.orderType === 'limit' ? preview.executionPrice : undefined),
         exchangeOrderId: exchangeResult.exchangeOrderId,
         status: exchangeResult.status,
         simulationMode: false,
@@ -567,14 +572,26 @@ export class TradeExecutionService {
     }
   }
 
+  private resolveQuantityType(input: TradeOrderPreviewInput): TradeOrderQuantityType {
+    return input.baseQuantity ? 'base' : 'quote'
+  }
+
   private resolveBaseQuantity(input: TradeOrderPreviewInput, executionPrice: Decimal, instrumentRule?: InstrumentRule) {
     if (input.baseQuantity) {
       return new Decimal(input.baseQuantity)
     }
 
     const rawQuantity = new Decimal(input.quoteAmount ?? '0').div(executionPrice)
-    // Binance 市价单优先使用 MARKET_LOT_SIZE，其他场景继续使用常规 lotSize。
+    // 按计价币金额预估基础币数量时，继续按当前交易对步长向下取整，仅用于预览展示和模拟成交估值。
     return this.floorToStep(rawQuantity, this.resolveQuantityStep(input, instrumentRule))
+  }
+
+  private resolveQuoteAmount(input: TradeOrderPreviewInput, baseQuantity: Decimal, executionPrice: Decimal) {
+    if (input.quoteAmount) {
+      return new Decimal(input.quoteAmount)
+    }
+
+    return baseQuantity.mul(executionPrice)
   }
 
   private floorToStep(value: Decimal, step?: string) {
@@ -588,6 +605,7 @@ export class TradeExecutionService {
 
   private buildCheckItems(context: {
     input: TradeOrderPreviewInput
+    quantityType: TradeOrderQuantityType
     instrumentRule?: InstrumentRule
     executionPrice: Decimal
     baseQuantity: Decimal
@@ -598,7 +616,7 @@ export class TradeExecutionService {
     realBalances: AccountBalance[]
   }): TradeOrderCheckItem[] {
     const items: TradeOrderCheckItem[] = []
-    const { input, instrumentRule, executionPrice, baseQuantity, quoteAmount, feeAmount, account, position, realBalances } = context
+    const { input, quantityType, instrumentRule, executionPrice, baseQuantity, quoteAmount, feeAmount, account, position, realBalances } = context
     const riskConfig = this.riskConfigService.getConfig()
 
     items.push({
@@ -610,18 +628,35 @@ export class TradeExecutionService {
     if (instrumentRule) {
       const quantityStep = this.resolveQuantityStep(input, instrumentRule)
       const minQuantity = this.resolveMinQuantity(input, instrumentRule)
+      const usesQuoteOrderSizing = this.usesQuoteOrderSizing(input, quantityType)
       items.push({
         code: 'instrument.state',
         passed: instrumentRule.state === 'live',
         message: instrumentRule.state === 'live' ? '交易对处于可交易状态' : `交易对当前状态为 ${instrumentRule.state}`,
       })
-      items.push(this.checkStep('price.step', executionPrice, instrumentRule.tickSize, `价格需符合最小变动单位 ${instrumentRule.tickSize}`))
-      items.push(this.checkStep('quantity.step', baseQuantity, quantityStep, `数量需符合最小变动单位 ${quantityStep}`))
-      items.push({
-        code: 'quantity.min',
-        passed: baseQuantity.greaterThanOrEqualTo(minQuantity),
-        message: `基础币数量 ${baseQuantity.toFixed()}，最小下单数量 ${minQuantity}`,
-      })
+      items.push(
+        input.orderType === 'limit'
+          ? this.checkStep('price.step', executionPrice, instrumentRule.tickSize, `价格需符合最小变动单位 ${instrumentRule.tickSize}`)
+          : {
+              code: 'price.reference',
+              passed: executionPrice.greaterThan(0),
+              message: `市价单按实时行情预估，当前参考价 ${executionPrice.toFixed()}`,
+            },
+      )
+      if (usesQuoteOrderSizing) {
+        items.push({
+          code: 'quantity.estimated',
+          passed: baseQuantity.greaterThan(0),
+          message: `本次按计价币金额下单，预估基础币数量 ${baseQuantity.toFixed()}`,
+        })
+      } else {
+        items.push(this.checkStep('quantity.step', baseQuantity, quantityStep, `数量需符合最小变动单位 ${quantityStep}`))
+        items.push({
+          code: 'quantity.min',
+          passed: baseQuantity.greaterThanOrEqualTo(minQuantity),
+          message: `基础币数量 ${baseQuantity.toFixed()}，最小下单数量 ${minQuantity}`,
+        })
+      }
       if (instrumentRule.minNotional) {
         items.push({
           code: 'notional.min',
@@ -668,6 +703,10 @@ export class TradeExecutionService {
     }
 
     return items
+  }
+
+  private usesQuoteOrderSizing(input: TradeOrderPreviewInput, quantityType: TradeOrderQuantityType) {
+    return quantityType === 'quote' && input.orderType === 'market'
   }
 
   private resolveQuantityStep(input: TradeOrderPreviewInput, instrumentRule?: InstrumentRule) {

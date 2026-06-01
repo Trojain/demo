@@ -61,18 +61,20 @@ export class TradingRuleService {
     }
 
     if (input.quoteAmount) {
-      const minQuantity = this.resolveMinQuantity(input.exchange, input.orderType, instrumentRule)
       this.validatePositiveDecimal(input.quoteAmount, 'quoteAmount', '计价币金额', issues)
-      try {
-        const estimatedBaseQuantity = new Decimal(input.quoteAmount).div(input.targetPrice)
-        if (estimatedBaseQuantity.lessThan(minQuantity)) {
-          issues.push({
-            path: 'quoteAmount',
-            message: `按目标价估算的基础币数量不能小于最小下单数量 ${minQuantity}`,
-          })
+      if (!this.usesQuoteOrderSizing(input.orderType, input.baseQuantity, input.quoteAmount)) {
+        const minQuantity = this.resolveMinQuantity(input.exchange, input.orderType, instrumentRule)
+        try {
+          const estimatedBaseQuantity = new Decimal(input.quoteAmount).div(input.targetPrice)
+          if (estimatedBaseQuantity.lessThan(minQuantity)) {
+            issues.push({
+              path: 'quoteAmount',
+              message: `按目标价估算的基础币数量不能小于最小下单数量 ${minQuantity}`,
+            })
+          }
+        } catch {
+          issues.push({ path: 'quoteAmount', message: '计价币金额估算失败，请检查目标价格和计价币金额' })
         }
-      } catch {
-        issues.push({ path: 'quoteAmount', message: '计价币金额估算失败，请检查目标价格和计价币金额' })
       }
     }
 
@@ -164,5 +166,10 @@ export class TradingRuleService {
     }
 
     return instrumentRule.minSize
+  }
+
+  private usesQuoteOrderSizing(orderType: CreateRuleInput['orderType'], baseQuantity?: string, quoteAmount?: string) {
+    // 市价单按计价币金额下单时，交易所最终成交的基础币数量由撮合结果决定，不能再用估算值反推数量步长做硬校验。
+    return orderType === 'market' && !baseQuantity && Boolean(quoteAmount)
   }
 }

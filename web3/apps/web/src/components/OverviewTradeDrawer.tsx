@@ -522,8 +522,14 @@ export function OverviewTradeDrawer({
             <Typography.Text>交易所：{selectedPlanExchange === 'okx' ? '欧易' : '币安'}</Typography.Text>
             <Typography.Text>委托类型：{quickOrderType === 'market' ? '市价' : '限价'}</Typography.Text>
             <Typography.Text>执行参考价：{formatTradeAmount(preview.executionPrice, 6)} USDT</Typography.Text>
-            <Typography.Text>基础币数量：{formatTradeAmount(preview.baseQuantity, 6)} {coin}</Typography.Text>
-            <Typography.Text>计价币金额：≈ {formatTradeAmount(preview.quoteAmount, QUICK_TRADE_QUOTE_SCALE)} USDT</Typography.Text>
+            <Typography.Text>
+              基础币数量：{preview.quantityType === 'quote' && preview.orderType === 'market' ? '≈ ' : ''}
+              {formatTradeAmount(preview.baseQuantity, 6)} {coin}
+            </Typography.Text>
+            <Typography.Text>
+              计价币金额：{preview.quantityType === 'quote' ? '' : '≈ '}
+              {formatTradeAmount(preview.quoteAmount, QUICK_TRADE_QUOTE_SCALE)} USDT
+            </Typography.Text>
             <Typography.Text>成交后可用余额：{formatTradeAmount(preview.nextAvailableQuoteBalance, 4)} USDT</Typography.Text>
             <Typography.Text>成交后可卖数量：{formatTradeAmount(preview.nextAvailableBaseQuantity, 6)} {coin}</Typography.Text>
           </Space>

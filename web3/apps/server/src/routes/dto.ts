@@ -46,6 +46,9 @@ export const createRuleSchema = z
   .refine(data => data.baseQuantity || data.quoteAmount, {
     message: 'baseQuantity 和 quoteAmount 至少填写一个',
   })
+  .refine(data => !(data.baseQuantity && data.quoteAmount), {
+    message: 'baseQuantity 和 quoteAmount 只能填写一个',
+  })
   .refine(data => data.orderType === 'market' || data.limitPrice, {
     message: '限价单必须填写 limitPrice',
   })
@@ -158,6 +161,9 @@ export const tradeOrderPreviewSchema = z
   })
   .refine(data => data.baseQuantity || data.quoteAmount, {
     message: 'baseQuantity 和 quoteAmount 至少填写一个',
+  })
+  .refine(data => !(data.baseQuantity && data.quoteAmount), {
+    message: 'baseQuantity 和 quoteAmount 只能填写一个',
   })
   .refine(data => data.orderType === 'market' || data.limitPrice, {
     message: '限价单必须填写 limitPrice',

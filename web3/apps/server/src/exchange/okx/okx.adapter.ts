@@ -377,11 +377,11 @@ export class OkxAdapter implements ExchangeAdapter {
         body: bodyJson,
       });
       const orderResult = payload.data?.[0];
+      if (orderResult?.sCode && orderResult.sCode !== '0') {
+        throw new Error(`OKX 下单失败，错误码 ${orderResult.sCode}${orderResult.sMsg ? `，${orderResult.sMsg}` : ''}`);
+      }
       if (!orderResult?.ordId) {
         throw new Error(`OKX 下单返回缺少 ordId，响应=${JSON.stringify(payload)}`);
-      }
-      if (orderResult.sCode && orderResult.sCode !== '0') {
-        throw new Error(`OKX 下单失败，错误码 ${orderResult.sCode}${orderResult.sMsg ? `，${orderResult.sMsg}` : ''}`);
       }
 
       return {
@@ -405,7 +405,7 @@ export class OkxAdapter implements ExchangeAdapter {
 
   private buildPlaceOrderBody(request: PlaceOrderRequest, instId: string) {
     const size = this.resolveOrderSize(request);
-    const body: Record<string, string> = {
+    const body: Record<string, string | boolean> = {
       instId,
       tdMode: 'cash',
       side: request.side,
@@ -423,6 +423,8 @@ export class OkxAdapter implements ExchangeAdapter {
       return body;
     }
 
+    // 官方文档说明现货市价单可通过 banAmend 禁止余额不足时被系统自动缩单，便于预检口径和最终结果保持一致。
+    body.banAmend = true;
     if (request.quoteAmount) {
       body.tgtCcy = 'quote_ccy';
     } else if (request.baseQuantity) {

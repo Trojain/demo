@@ -380,9 +380,9 @@ export class BinanceAdapter implements ExchangeAdapter {
         status: this.mapOrderStatus(payload.status),
         clientOrderId: payload.clientOrderId ?? request.clientOrderId,
         acceptedAt: payload.transactTime ? new Date(payload.transactTime).toISOString() : new Date().toISOString(),
-        price: payload.price || request.price,
+        price: this.resolveReturnedPrice(payload.price, request.price),
         baseQuantity: payload.origQty || request.baseQuantity,
-        quoteAmount: payload.cummulativeQuoteQty || request.quoteAmount,
+        quoteAmount: this.resolveReturnedQuoteAmount(payload.cummulativeQuoteQty, request.quoteAmount),
         rawMessage: JSON.stringify(payload),
       }
     } catch (error) {
@@ -443,5 +443,21 @@ export class BinanceAdapter implements ExchangeAdapter {
       default:
         return 'submitted'
     }
+  }
+
+  private resolveReturnedPrice(price?: string, fallbackPrice?: string) {
+    if (price && new Decimal(price).greaterThan(0)) {
+      return price
+    }
+
+    return fallbackPrice
+  }
+
+  private resolveReturnedQuoteAmount(quoteAmount?: string, fallbackQuoteAmount?: string) {
+    if (quoteAmount && new Decimal(quoteAmount).greaterThan(0)) {
+      return quoteAmount
+    }
+
+    return fallbackQuoteAmount
   }
 }
