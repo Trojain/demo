@@ -98,8 +98,8 @@ export function createDatabase(databasePath: string) {
 
     CREATE TABLE IF NOT EXISTS order_records (
       id TEXT PRIMARY KEY,
-      trigger_id TEXT NOT NULL,
-      rule_id TEXT NOT NULL,
+      trigger_id TEXT,
+      rule_id TEXT,
       exchange TEXT NOT NULL,
       symbol TEXT NOT NULL,
       side TEXT NOT NULL,
@@ -233,6 +233,7 @@ export function createDatabase(databasePath: string) {
 
   migrateMonitorRules(db);
   migrateTradingSignals(db);
+  migrateOrderRecords(db);
 
   return db;
 }
@@ -263,5 +264,58 @@ function migrateTradingSignals(db: Database.Database) {
   if (!columnNames.has('market_event_time')) {
     db.prepare("ALTER TABLE trading_signals ADD COLUMN market_event_time TEXT NOT NULL DEFAULT ''").run();
     db.prepare("UPDATE trading_signals SET market_event_time = created_at WHERE market_event_time = ''").run();
+  }
+}
+
+function migrateOrderRecords(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(order_records)').all() as Array<{ name: string; notnull: number }>;
+  const triggerColumn = columns.find((column) => column.name === 'trigger_id');
+  const ruleColumn = columns.find((column) => column.name === 'rule_id');
+
+  // 兼容旧版本 SQLite，手动快捷交易不再强制依赖 trigger/rule 记录，因此订单表需要允许为空。
+  if (!triggerColumn || !ruleColumn || (triggerColumn.notnull === 0 && ruleColumn.notnull === 0)) {
+    return;
+  }
+
+  db.exec('BEGIN');
+  try {
+    db.exec(`
+      CREATE TABLE order_records_v2 (
+        id TEXT PRIMARY KEY,
+        trigger_id TEXT,
+        rule_id TEXT,
+        exchange TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        side TEXT NOT NULL,
+        order_type TEXT NOT NULL,
+        base_quantity TEXT,
+        quote_amount TEXT,
+        price TEXT,
+        exchange_order_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        simulation_mode INTEGER NOT NULL,
+        raw_message TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (trigger_id) REFERENCES trigger_events(id),
+        FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
+      );
+
+      INSERT INTO order_records_v2 (
+        id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
+        quote_amount, price, exchange_order_id, status, simulation_mode, raw_message, created_at
+      )
+      SELECT
+        id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
+        quote_amount, price, exchange_order_id, status, simulation_mode, raw_message, created_at
+      FROM order_records;
+
+      DROP TABLE order_records;
+      ALTER TABLE order_records_v2 RENAME TO order_records;
+    `);
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at)').run();
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
 }

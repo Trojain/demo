@@ -168,6 +168,171 @@
   }
 }
 
+.tradePlanFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.quickTradeTopRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.quickTradeSelector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quickTradeOrderTabs {
+  :global(.ant-tabs-nav) {
+    margin-bottom: 8px;
+  }
+
+  :global(.ant-tabs-tab) {
+    padding-top: 0;
+  }
+}
+
+.quickTradePanel {
+  padding: 4px 0 0;
+}
+
+.quickTradeAmountHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.quickTradeAmountInput {
+  width: 100%;
+
+  :global(.ant-input-number-group-wrapper) {
+    width: 100%;
+  }
+}
+
+.quickTradePercentControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quickTradePercentBadge {
+  min-width: 52px;
+  padding: 6px 10px;
+  color: #ffffff;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 6px;
+  background: #444444;
+}
+
+.quickTradeMetaRow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 12px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.quickTradeButtons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.quickTradeButtonsSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.quickTradeBuyButton,
+.quickTradeSellButton {
+  height: 56px;
+  border: 0;
+  border-radius: 999px;
+
+  &:disabled,
+  &:disabled:hover,
+  &:disabled:focus {
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+}
+
+.quickTradeBuyButton {
+  background: #ef476f;
+}
+
+.quickTradeBuyButton:not(:disabled):hover,
+.quickTradeBuyButton:not(:disabled):focus {
+  background: #ef476f !important;
+}
+
+.quickTradeBuyButton:disabled,
+.quickTradeBuyButton:disabled:hover,
+.quickTradeBuyButton:disabled:focus {
+  color: rgba(255, 255, 255, 0.72) !important;
+  background: #f7a1b7 !important;
+}
+
+.quickTradeSellButton {
+  background: #22c55e;
+}
+
+.quickTradeSellButton:not(:disabled):hover,
+.quickTradeSellButton:not(:disabled):focus {
+  background: #22c55e !important;
+}
+
+.quickTradeSellButton:disabled,
+.quickTradeSellButton:disabled:hover,
+.quickTradeSellButton:disabled:focus {
+  color: rgba(255, 255, 255, 0.72) !important;
+  background: #8fd9ad !important;
+}
+
+.quickTradeButtonContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+
+  span {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  small {
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12px;
+  }
+}
+
+.quickTradeMetaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-top: 14px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.quickTradeHint {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .tradeSummaryCards {
   margin-bottom: 16px;
 
@@ -270,4 +435,17 @@
   .tradeSummaryMetrics {
     grid-template-columns: 1fr;
   }
+
+  .quickTradeTopRow,
+  .quickTradeButtons,
+  .quickTradeMetaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .quickTradeAmountHeader,
+  .quickTradePercentControls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
 }

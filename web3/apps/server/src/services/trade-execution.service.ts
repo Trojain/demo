@@ -98,42 +98,11 @@ export class TradeExecutionService {
 
   async confirm(input: TradeOrderPreviewInput): Promise<OrderRecord> {
     const preview = await this.preview(input)
-    if (!preview.passed) {
-      const reason = preview.checkItems.filter(item => !item.passed).map(item => item.message).join('；')
-      throw new TradeExecutionError(`交易确认失败：${reason}`, preview)
-    }
-
-    if (preview.mode === 'real') {
-      throw new TradeExecutionError('真实下单接口尚未开放，当前仅完成真实交易前余额校验', preview)
-    }
-
-    const account = this.findAccount('simulation', preview.exchange, preview.feeCurrency)
-    if (!account) {
-      throw new TradeExecutionError('模拟账户不存在，请重启后端或检查初始化日志', preview)
-    }
-
-    return this.tradeAccountRepository.runInTransaction(() => {
-      const now = new Date().toISOString()
-      const order = this.orderRepository.create({
-        id: nanoid(),
-        triggerId: 'manual-trade',
-        ruleId: 'manual-trade',
-        exchange: preview.exchange,
-        symbol: preview.symbol,
-        side: preview.side,
-        orderType: preview.orderType,
-        baseQuantity: preview.baseQuantity,
-        quoteAmount: preview.quoteAmount,
-        price: preview.executionPrice,
-        exchangeOrderId: `sim-trade-${nanoid(12)}`,
-        status: 'filled',
-        simulationMode: true,
-        rawMessage: '模拟交易即时成交，后续真实交易会由交易所订单状态同步',
-        createdAt: now,
-      })
-
-      this.applySimulationFill(account, preview, order, now)
-      return order
+    this.assertPreviewConfirmable(preview)
+    const account = this.findSimulationAccountOrThrow(preview)
+    return this.persistSimulationOrder(account, preview, {
+      // 快捷交易不经过规则和触发事件链路，这里不再伪造外键记录。
+      rawMessage: '模拟交易即时成交，后续真实交易会由交易所订单状态同步',
     })
   }
 
@@ -145,42 +114,12 @@ export class TradeExecutionService {
   }): Promise<OrderRecord> {
     const previewInput = this.toPreviewInput(input.rule)
     const preview = await this.preview(previewInput)
-    if (!preview.passed) {
-      const reason = preview.checkItems.filter(item => !item.passed).map(item => item.message).join('；')
-      throw new TradeExecutionError(`交易确认失败：${reason}`, preview)
-    }
-
-    if (preview.mode === 'real') {
-      throw new TradeExecutionError('真实下单接口尚未开放，当前仅完成真实交易前余额校验', preview)
-    }
-
-    const account = this.findAccount('simulation', preview.exchange, preview.feeCurrency)
-    if (!account) {
-      throw new TradeExecutionError('模拟账户不存在，请重启后端或检查初始化日志', preview)
-    }
-
-    return this.tradeAccountRepository.runInTransaction(() => {
-      const now = new Date().toISOString()
-      const order = this.orderRepository.create({
-        id: nanoid(),
-        triggerId: input.triggerId,
-        ruleId: input.rule.id,
-        exchange: preview.exchange,
-        symbol: preview.symbol,
-        side: preview.side,
-        orderType: preview.orderType,
-        baseQuantity: preview.baseQuantity,
-        quoteAmount: preview.quoteAmount,
-        price: preview.orderType === 'limit' ? preview.executionPrice : undefined,
-        exchangeOrderId: `sim-trade-${nanoid(12)}`,
-        status: 'filled',
-        simulationMode: true,
-        rawMessage: '规则触发后的模拟交易已即时成交，后续真实交易会由交易所订单状态同步',
-        createdAt: now,
-      })
-
-      this.applySimulationFill(account, preview, order, now)
-      return order
+    this.assertPreviewConfirmable(preview)
+    const account = this.findSimulationAccountOrThrow(preview)
+    return this.persistSimulationOrder(account, preview, {
+      triggerId: input.triggerId,
+      ruleId: input.rule.id,
+      rawMessage: '规则触发后的模拟交易已即时成交，后续真实交易会由交易所订单状态同步',
     })
   }
 
@@ -227,6 +166,64 @@ export class TradeExecutionService {
 
   private findAccount(mode: TradeAccountType, exchange: ExchangeCode, quoteCurrency: string) {
     return this.tradeAccountRepository.findAccount(mode, exchange, quoteCurrency.toUpperCase())
+  }
+
+  private assertPreviewConfirmable(preview: TradeOrderPreview) {
+    if (!preview.passed) {
+      const reason = preview.checkItems.filter(item => !item.passed).map(item => item.message).join('；')
+      throw new TradeExecutionError(`交易确认失败：${reason}`, preview)
+    }
+
+    if (preview.mode === 'real') {
+      throw new TradeExecutionError('真实下单接口尚未开放，当前仅完成真实交易前余额校验', preview)
+    }
+  }
+
+  private findSimulationAccountOrThrow(preview: TradeOrderPreview) {
+    const account = this.findAccount('simulation', preview.exchange, preview.feeCurrency)
+    if (!account) {
+      throw new TradeExecutionError('模拟账户不存在，请重启后端或检查初始化日志', preview)
+    }
+
+    return account
+  }
+
+  private persistSimulationOrder(
+    account: TradeAccount,
+    preview: TradeOrderPreview,
+    metadata: {
+      /** 规则触发成交时记录对应触发事件，手动快捷交易保持空值。 */
+      triggerId?: string
+      /** 规则触发成交时记录来源规则，手动快捷交易保持空值。 */
+      ruleId?: string
+      /** 保留当前成交语义，方便成交记录和操作日志区分来源。 */
+      rawMessage: string
+    },
+  ) {
+    return this.tradeAccountRepository.runInTransaction(() => {
+      const now = new Date().toISOString()
+      const order = this.orderRepository.create({
+        id: nanoid(),
+        triggerId: metadata.triggerId,
+        ruleId: metadata.ruleId,
+        exchange: preview.exchange,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        baseQuantity: preview.baseQuantity,
+        quoteAmount: preview.quoteAmount,
+        // 模拟成交在确认阶段已经确定执行参考价，统一落库有利于成交记录和持仓回溯。
+        price: preview.executionPrice,
+        exchangeOrderId: `sim-trade-${nanoid(12)}`,
+        status: 'filled',
+        simulationMode: true,
+        rawMessage: metadata.rawMessage,
+        createdAt: now,
+      })
+
+      this.applySimulationFill(account, preview, order, now)
+      return order
+    })
   }
 
   private toPreviewInput(rule: MonitorRule): TradeOrderPreviewInput {

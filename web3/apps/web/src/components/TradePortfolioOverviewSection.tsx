@@ -197,7 +197,13 @@ const AccountTrendChart = memo(function AccountTrendChart({
   )
 })
 
-export function TradePortfolioOverviewSection() {
+export function TradePortfolioOverviewSection({
+  onSellPosition,
+  refreshSignal = 0,
+}: {
+  onSellPosition?: (position: TradePositionView) => void
+  refreshSignal?: number
+}) {
   const navigate = useNavigate()
   const loadingRef = useRef(false)
   const profitDisplay = useProfitDisplay()
@@ -235,8 +241,23 @@ export function TradePortfolioOverviewSection() {
         render: (_, row) => profitDisplay.renderPercent(row.unrealizedPnlPercent),
       },
       { title: '已实现盈亏', dataIndex: 'realizedPnl', render: (_, row) => profitDisplay.renderMoney(row.realizedPnl, row.quoteCurrency) },
+      {
+        title: '操作',
+        valueType: 'option',
+        width: 100,
+        render: (_, row) => (
+          <Button
+            type='link'
+            size='small'
+            disabled={numberValue(row.availableQuantity) <= 0}
+            onClick={() => onSellPosition?.(row)}
+          >
+            卖出
+          </Button>
+        ),
+      },
     ],
-    [profitDisplay],
+    [onSellPosition, profitDisplay],
   )
 
   const loadSectionData = useCallback(async () => {
@@ -272,8 +293,9 @@ export function TradePortfolioOverviewSection() {
   }, [])
 
   useEffect(() => {
+    // 最新行情交易和持仓卖出共用同一个 Drawer，成交后通过 refreshSignal 主动刷新持仓区块。
     void loadSectionData()
-  }, [loadSectionData])
+  }, [loadSectionData, refreshSignal])
 
   useEffect(() => {
     const matchedTickers = Object.values(realtimeTickerMap)

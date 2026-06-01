@@ -570,10 +570,10 @@ export interface TradeEquityHistoryPoint {
 export interface OrderRecord {
   /** 订单记录主键 */
   id: string;
-  /** 关联触发事件 ID */
-  triggerId: string;
-  /** 关联规则 ID */
-  ruleId: string;
+  /** 关联触发事件 ID，手动快捷交易可为空 */
+  triggerId?: string;
+  /** 关联规则 ID，手动快捷交易可为空 */
+  ruleId?: string;
   /** 交易所编码 */
   exchange: ExchangeCode;
   /** 统一交易对 */

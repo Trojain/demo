@@ -3,8 +3,8 @@ import type { OrderRecord } from '../types/domain.js'
 
 type OrderRow = {
   id: string
-  trigger_id: string
-  rule_id: string
+  trigger_id?: string | null
+  rule_id?: string | null
   exchange: OrderRecord['exchange']
   symbol: string
   side: OrderRecord['side']
@@ -22,8 +22,8 @@ type OrderRow = {
 function mapOrder(row: OrderRow): OrderRecord {
   return {
     id: row.id,
-    triggerId: row.trigger_id,
-    ruleId: row.rule_id,
+    triggerId: row.trigger_id ?? undefined,
+    ruleId: row.rule_id ?? undefined,
     exchange: row.exchange,
     symbol: row.symbol,
     side: row.side,
@@ -81,6 +81,8 @@ export class OrderRepository {
       )
       .run({
         ...order,
+        triggerId: order.triggerId ?? null,
+        ruleId: order.ruleId ?? null,
         baseQuantity: order.baseQuantity ?? null,
         quoteAmount: order.quoteAmount ?? null,
         price: order.price ?? null,

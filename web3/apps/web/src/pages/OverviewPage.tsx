@@ -1,31 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { App as AntApp, Button, Col, Drawer, Empty, Row, Segmented, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Col, Empty, Row, Segmented, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
 import { LineChartOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import {
-  PageContainer,
-  ProCard,
-  ProForm,
-  ProFormDependency,
-  ProFormDigit,
-  type ProFormInstance,
-  ProFormSelect,
-  ProFormText,
-  ProTable,
-  type ProColumns,
-} from '@ant-design/pro-components'
+import { PageContainer, ProCard, ProTable, type ProColumns } from '@ant-design/pro-components'
 import { createMarketCandleConnection } from '../api/realtime'
 import { tradingApi } from '../api/trading'
+import { OverviewTradeDrawer, type TradeDrawerPreset, type TradeDrawerRow } from '../components/OverviewTradeDrawer'
 import { TradePortfolioOverviewSection } from '../components/TradePortfolioOverviewSection'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSymbol, getMarketSymbolOptions } from '../constants/market'
-import { useProfitDisplay } from '../hooks/useProfitDisplay'
 import { useTickerSnapshot } from '../hooks/useTickerSnapshot'
 import { useTradingStore } from '../stores/tradingStore'
-import type { CreateRulePayload, ExchangeCode, MarketCandle, MarketTickerSnapshot, OrderSide, OrderType, TickerPrice, TriggerOperator } from '../types'
-import { createMarketPriceSnapshot, eventTimestamp, shouldAcceptMarketPrice } from '../utils/marketPrice'
+import type { ExchangeCode, MarketCandle, MarketTickerSnapshot, TickerPrice, TradePositionView } from '../types'
+import { createMarketPriceSnapshot, shouldAcceptMarketPrice } from '../utils/marketPrice'
 import styles from './page.module.scss'
 
 type MarketCandleBar = '1s' | '10s' | '1m' | '5m' | '15m'
+
 const CANDLE_REST_CALIBRATION_INTERVAL_MS = 60_000
 const OVERVIEW_CANDLE_BAR_STORAGE_KEY = 'overview.marketCandleBar'
 
@@ -35,21 +25,6 @@ const CANDLE_BAR_OPTIONS: Array<{ label: string; value: MarketCandleBar }> = [
   { label: '1分', value: '1m' },
   { label: '5分', value: '5m' },
   { label: '15分', value: '15m' },
-]
-
-const ORDER_TYPE_OPTIONS: Array<{ label: string; value: OrderType }> = [
-  { label: '市价', value: 'market' },
-  { label: '限价', value: 'limit' },
-]
-
-const ORDER_SIDE_OPTIONS: Array<{ label: string; value: OrderSide }> = [
-  { label: '买入', value: 'buy' },
-  { label: '卖出', value: 'sell' },
-]
-
-const TRADING_MODE_OPTIONS = [
-  { label: '模拟', value: true },
-  { label: '真实', value: false },
 ]
 
 const CANDLE_POINT_LIMIT_BY_BAR: Record<MarketCandleBar, number> = {
@@ -93,6 +68,21 @@ function sortMarketRows(rows: MarketTickerSnapshot[]) {
   })
 }
 
+function formatUsd(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: value >= 1 ? 2 : 6,
+  }).format(value)
+}
+
+function formatPriceAxis(value: number) {
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 function formatMoneyCompact(value?: string) {
   const numberValue = Number(value)
   if (!Number.isFinite(numberValue)) {
@@ -114,57 +104,11 @@ function formatMoneyCompact(value?: string) {
   return formatUsd(numberValue)
 }
 
-function formatPriceAxis(value: number) {
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-}
-
-function formatUsd(value: number) {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: value >= 1 ? 2 : 6,
-  }).format(value)
-}
-
-function formatTickerTime(ticker?: TickerPrice) {
-  const timestamp = eventTimestamp(ticker?.eventTime)
-  if (timestamp === undefined) {
-    return '-'
-  }
-
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(timestamp)
-}
-
-function formatTickerDelay(ticker?: TickerPrice) {
-  const timestamp = eventTimestamp(ticker?.eventTime)
-  if (timestamp === undefined) {
-    return ''
-  }
-
-  const delaySeconds = Math.max(Math.floor((Date.now() - timestamp) / 1000), 0)
-  if (delaySeconds <= 0) {
-    return '延迟 0 秒'
-  }
-
-  return `延迟 ${delaySeconds} 秒`
-}
-
-function formatLivePrice(price?: string) {
-  return price ? `${price} USDT` : '等待实时行情'
-}
-
 function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: TickerPrice) {
   if (!snapshotTicker) {
     return realtimeTicker
   }
+
   if (!realtimeTicker) {
     return snapshotTicker
   }
@@ -187,273 +131,18 @@ function RealtimeMarketPriceCell({ row }: { row: MarketTickerSnapshot }) {
   )
 }
 
-function buildRulePayload(values: Partial<CreateRulePayload>, row: MarketTickerSnapshot, currentPrice?: string): CreateRulePayload {
-  const orderType = (values.orderType ?? 'market') as OrderType
-  const side = (values.side ?? 'buy') as OrderSide
-  const targetPrice = orderType === 'limit' ? values.targetPrice?.trim() || currentPrice || '' : currentPrice || ''
-  const quoteAmount = side === 'buy' ? values.quoteAmount?.trim() || undefined : undefined
-  const baseQuantity = side === 'sell' ? values.baseQuantity?.trim() || undefined : undefined
-
-  return {
-    exchange: (values.exchange ?? row.exchange) as ExchangeCode,
-    symbol: row.symbol,
-    // 简化交易计划入口中，买入默认等价于低于计划价触发，卖出默认等价于高于计划价触发。
-    operator: (side === 'buy' ? 'lte' : 'gte') as TriggerOperator,
-    targetPrice,
-    checkIntervalMs: values.checkIntervalMs ?? 3000,
-    side,
-    orderType,
-    quoteAmount,
-    baseQuantity,
-    // 普通限价计划使用同一个计划价格作为触发价格和委托限价；市价计划按当前价触发，后续仍走人工确认。
-    limitPrice: orderType === 'limit' ? targetPrice : undefined,
-    maxSlippagePercent: values.maxSlippagePercent?.trim() || '0.5',
-    cooldownMs: values.cooldownMs ?? 60000,
-    maxTriggerCount: values.maxTriggerCount ?? 1,
-    simulationMode: values.simulationMode ?? true,
-    enabled: true,
-  }
-}
-
-function TradePlanDrawer({
-  open,
-  row,
-  onCreated,
-  onOpenChange,
+function MarketOverviewTable({
+  exchange,
+  onSelectSymbol,
+  onOpenTrade,
 }: {
-  open: boolean
-  row?: MarketTickerSnapshot
-  onCreated: () => void
-  onOpenChange: (open: boolean) => void
+  exchange: ExchangeCode
+  onSelectSymbol: (symbol: string) => void
+  onOpenTrade: (row: TradeDrawerRow, preset?: TradeDrawerPreset) => void
 }) {
   const { message } = AntApp.useApp()
-  const { getTrendMeta } = useProfitDisplay()
-  const formRef = useRef<ProFormInstance<Partial<CreateRulePayload>> | undefined>(undefined)
-  const [selectedPlanExchange, setSelectedPlanExchange] = useState<ExchangeCode>(row?.exchange ?? 'okx')
-  const previousPriceRef = useRef<string | undefined>(undefined)
-  const [currentPriceDelta, setCurrentPriceDelta] = useState<string>('0')
-  const [priceTrendDirection, setPriceTrendDirection] = useState<'up' | 'down'>('up')
-  const liveTicker = useTickerSnapshot(selectedPlanExchange, row?.symbol)
-  const snapshotTicker = row && selectedPlanExchange === row.exchange ? row : undefined
-  const currentTicker = resolvePreferredTicker(snapshotTicker, liveTicker)
-  const currentPrice = currentTicker?.price
-  const currentPriceText = formatLivePrice(currentPrice)
-  const coin = row ? getCoinSymbol(row.symbol) : ''
-  const numericPriceDelta = Number(currentPriceDelta)
-  const priceTrendMeta = getTrendMeta(
-    Number.isFinite(numericPriceDelta) && numericPriceDelta !== 0 ? currentPriceDelta : priceTrendDirection === 'up' ? '1' : '-1',
-  )
-  const tickerDelayText = formatTickerDelay(currentTicker)
-
-  useEffect(() => {
-    if (!open || !row || selectedPlanExchange === row.exchange) {
-      return
-    }
-
-    setSelectedPlanExchange(row.exchange)
-  }, [open, row?.exchange, selectedPlanExchange])
-
-  useEffect(() => {
-    previousPriceRef.current = undefined
-    setCurrentPriceDelta('0')
-    // 当前价不展示灰色，切换交易对或重新打开时默认先按上涨绿色展示。
-    setPriceTrendDirection('up')
-  }, [open, row?.symbol, selectedPlanExchange])
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    if (!currentPrice) {
-      previousPriceRef.current = undefined
-      setCurrentPriceDelta('0')
-      return
-    }
-
-    const previousPrice = previousPriceRef.current
-    if (!previousPrice) {
-      previousPriceRef.current = currentPrice
-      setCurrentPriceDelta('0')
-      return
-    }
-
-    const nextDelta = (Number(currentPrice) - Number(previousPrice)).toFixed(8)
-    previousPriceRef.current = currentPrice
-    setCurrentPriceDelta(nextDelta)
-    if (Number(nextDelta) > 0) {
-      setPriceTrendDirection('up')
-      return
-    }
-
-    if (Number(nextDelta) < 0) {
-      setPriceTrendDirection('down')
-    }
-  }, [currentPrice, currentTicker?.eventTime, open])
-
-  if (!row) {
-    return null
-  }
-
-  const drawerFooter = (
-    <Space>
-      <Button
-        onClick={() => {
-          formRef.current?.resetFields()
-          onOpenChange(false)
-        }}
-      >
-        取消
-      </Button>
-      <Button type='primary' onClick={() => formRef.current?.submit?.()}>
-        创建交易计划
-      </Button>
-    </Space>
-  )
-
-  return (
-    <Drawer
-      title={`创建 ${row.symbol} 交易计划`}
-      width={520}
-      open={open}
-      destroyOnHidden
-      onClose={() => onOpenChange(false)}
-      footer={drawerFooter}
-    >
-      <ProForm<Partial<CreateRulePayload>>
-        key={`${row.exchange}-${row.symbol}`}
-        formRef={formRef}
-        layout='vertical'
-        initialValues={{
-          exchange: row.exchange,
-          side: 'buy',
-          orderType: 'market',
-          maxSlippagePercent: '0.5',
-          cooldownMs: 60000,
-          checkIntervalMs: 3000,
-          maxTriggerCount: 1,
-          simulationMode: true,
-        }}
-        submitter={false}
-        onFinish={async values => {
-          const orderType = (values.orderType ?? 'market') as OrderType
-          if (orderType === 'market' && !currentPrice) {
-            message.error('当前交易所还没有实时行情，暂不能创建市价计划')
-            return false
-          }
-
-          await tradingApi.createRule(buildRulePayload(values, row, currentPrice))
-          const submittedSide = values.side === 'sell' ? '卖出' : '买入'
-          message.success(`${row.symbol} ${submittedSide}计划已创建`)
-          formRef.current?.resetFields()
-          onCreated()
-          onOpenChange(false)
-          return true
-        }}
-      >
-        <div className={styles.tradePlanMarketInfo}>
-          <span>当前价</span>
-          <Typography.Text
-            className={styles.tradePlanLivePrice}
-            style={{ color: priceTrendMeta.color }}
-          >
-            {priceTrendMeta.Icon ? <priceTrendMeta.Icon className={styles.tradePlanLivePriceIcon} /> : null}
-            {currentPriceText}
-          </Typography.Text>
-          <span title={currentTicker?.eventTime ? new Date(currentTicker.eventTime).toLocaleString() : undefined}>
-            行情时间 {formatTickerTime(currentTicker)}
-            {tickerDelayText ? ` · ${tickerDelayText}` : ''}
-          </span>
-        </div>
-        <ProFormSelect
-          name='exchange'
-          label='交易所'
-          options={MARKET_EXCHANGE_OPTIONS}
-          fieldProps={{
-            onChange: exchange => setSelectedPlanExchange(exchange as ExchangeCode),
-          }}
-          rules={[{ required: true, message: '请选择交易所' }]}
-        />
-        <ProFormSelect name='side' label='交易方向' options={ORDER_SIDE_OPTIONS} rules={[{ required: true, message: '请选择交易方向' }]} />
-        <ProFormSelect name='orderType' label='订单类型' options={ORDER_TYPE_OPTIONS} rules={[{ required: true, message: '请选择订单类型' }]} />
-        <ProFormDependency name={['orderType', 'side']}>
-          {({ orderType, side }) => {
-            const dependencyIsBuy = side !== 'sell'
-            const dependencyPlanPriceLabel = dependencyIsBuy ? '计划买入价' : '计划卖出价'
-            const dependencyPlanPricePlaceholder = dependencyIsBuy
-              ? `当前市价 ${currentPriceText}，价格到达或低于该价格时触发`
-              : `当前市价 ${currentPriceText}，价格到达或高于该价格时触发`
-            return orderType === 'limit' ? (
-              <ProFormText
-                name='targetPrice'
-                label={dependencyPlanPriceLabel}
-                placeholder={dependencyPlanPricePlaceholder}
-                rules={[{ required: true, message: `请输入${dependencyPlanPriceLabel}` }]}
-              />
-            ) : null
-          }}
-        </ProFormDependency>
-        <ProFormDependency name={['side']}>
-          {({ side }) => {
-            const dependencyIsBuy = side !== 'sell'
-            const dependencyAmountFieldName = dependencyIsBuy ? 'quoteAmount' : 'baseQuantity'
-            const dependencyAmountLabel = dependencyIsBuy ? '买入金额' : '卖出数量'
-            const dependencyAmountPlaceholder = dependencyIsBuy
-              ? `当前市价 ${currentPriceText}，输入计划投入金额`
-              : `当前市价 ${currentPriceText}，输入计划卖出数量`
-            return (
-              <ProFormText
-                name={dependencyAmountFieldName}
-                label={dependencyAmountLabel}
-                placeholder={dependencyAmountPlaceholder}
-                fieldProps={{ suffix: dependencyIsBuy ? 'USDT' : coin }}
-                rules={[{ required: true, message: `请输入${dependencyAmountLabel}` }]}
-              />
-            )
-          }}
-        </ProFormDependency>
-        <ProFormSelect
-          name='simulationMode'
-          label='下单模式'
-          options={TRADING_MODE_OPTIONS}
-          rules={[{ required: true, message: '请选择下单模式' }]}
-          extra='真实下单仍受后端总开关、风控配置和账户预检限制'
-        />
-        <ProCard title='高级策略' collapsible defaultCollapsed bordered={false} className={styles.tradePlanAdvancedCard}>
-          <ProFormText
-            name='maxSlippagePercent'
-            label='最大滑点百分比'
-            fieldProps={{ suffix: '%' }}
-            rules={[{ required: true, message: '请输入最大滑点百分比' }]}
-          />
-          <ProFormDigit name='cooldownMs' label='冷却时间毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true, message: '请输入冷却时间' }]} />
-          <ProFormDigit
-            name='checkIntervalMs'
-            label='检测频率毫秒'
-            min={1000}
-            fieldProps={{ precision: 0 }}
-            rules={[{ required: true, message: '请输入检测频率' }]}
-          />
-          <ProFormDigit
-            name='maxTriggerCount'
-            label='最大触发次数'
-            min={1}
-            fieldProps={{ precision: 0 }}
-            rules={[{ required: true, message: '请输入最大触发次数' }]}
-          />
-        </ProCard>
-      </ProForm>
-    </Drawer>
-  )
-}
-
-function MarketOverviewTable({ exchange, onSelectSymbol }: { exchange: ExchangeCode; onSelectSymbol: (symbol: string) => void }) {
-  const { message } = AntApp.useApp()
-  const refreshSummary = useTradingStore(state => state.refreshSummary)
   const [overviewRows, setOverviewRows] = useState<MarketTickerSnapshot[]>([])
   const [loading, setLoading] = useState(false)
-  const [tradePlanOpen, setTradePlanOpen] = useState(false)
-  const [activePlanSymbol, setActivePlanSymbol] = useState<string>()
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -470,16 +159,6 @@ function MarketOverviewTable({ exchange, onSelectSymbol }: { exchange: ExchangeC
   useEffect(() => {
     void loadRows()
   }, [loadRows])
-
-  const activePlanRow = useMemo(
-    () => overviewRows.find(item => item.symbol === activePlanSymbol),
-    [activePlanSymbol, overviewRows],
-  )
-
-  useEffect(() => {
-    setTradePlanOpen(false)
-    setActivePlanSymbol(undefined)
-  }, [exchange])
 
   const marketColumns = useMemo<ProColumns<MarketTickerSnapshot>[]>(
     () => [
@@ -546,12 +225,9 @@ function MarketOverviewTable({ exchange, onSelectSymbol }: { exchange: ExchangeC
               type='text'
               className={styles.tradeActionButton}
               icon={<ThunderboltOutlined />}
-              title='创建交易计划'
-              aria-label={`创建 ${row.symbol} 交易计划`}
-              onClick={() => {
-                setActivePlanSymbol(row.symbol)
-                setTradePlanOpen(true)
-              }}
+              title='交易'
+              aria-label={`打开 ${row.symbol} 交易面板`}
+              onClick={() => onOpenTrade(row)}
             >
               交易
             </Button>
@@ -559,34 +235,21 @@ function MarketOverviewTable({ exchange, onSelectSymbol }: { exchange: ExchangeC
         ),
       },
     ],
-    [onSelectSymbol],
+    [onOpenTrade, onSelectSymbol],
   )
 
   return (
-    <>
-      <ProTable<MarketTickerSnapshot>
-        rowKey={row => `${row.exchange}-${row.symbol}`}
-        className={styles.marketTable}
-        columns={marketColumns}
-        dataSource={overviewRows}
-        loading={loading}
-        search={false}
-        options={false}
-        pagination={false}
-        toolBarRender={false}
-      />
-      <TradePlanDrawer
-        open={tradePlanOpen}
-        row={activePlanRow}
-        onCreated={() => void refreshSummary()}
-        onOpenChange={nextOpen => {
-          setTradePlanOpen(nextOpen)
-          if (!nextOpen) {
-            setActivePlanSymbol(undefined)
-          }
-        }}
-      />
-    </>
+    <ProTable<MarketTickerSnapshot>
+      rowKey={row => `${row.exchange}-${row.symbol}`}
+      className={styles.marketTable}
+      columns={marketColumns}
+      dataSource={overviewRows}
+      loading={loading}
+      search={false}
+      options={false}
+      pagination={false}
+      toolBarRender={false}
+    />
   )
 }
 
@@ -637,11 +300,12 @@ function mergeCalibrationCandles(currentCandles: MarketCandle[], nextCandles: Ma
     const time = new Date(candle.time).getTime()
     return Number.isFinite(time) ? Math.max(latest, time) : latest
   }, 0)
+
   const candleMap = new Map(nextCandles.map(candle => [candle.time, candle]))
   currentCandles.forEach(candle => {
     const time = new Date(candle.time).getTime()
     if (Number.isFinite(time) && time >= latestNextTime) {
-      // REST 低频校准可能命中旧缓存，最新桶优先保留 WebSocket 推送数据，避免曲线回退。
+      // 低频 REST 校准只补全旧桶，最新桶继续以 WebSocket 为准，避免曲线回退。
       candleMap.set(candle.time, candle)
     }
   })
@@ -651,16 +315,22 @@ function mergeCalibrationCandles(currentCandles: MarketCandle[], nextCandles: Ma
 
 export function OverviewPage() {
   const { message } = AntApp.useApp()
+  const refreshSummary = useTradingStore(state => state.refreshSummary)
   const candleRequestingRef = useRef(false)
   const candleRequestTokenRef = useRef(0)
   const pendingRealtimeCandleRef = useRef<MarketCandle | undefined>(undefined)
   const realtimeCandleFrameRef = useRef<number | undefined>(undefined)
+  const [tradeDrawerOpen, setTradeDrawerOpen] = useState(false)
+  const [tradeDrawerRow, setTradeDrawerRow] = useState<TradeDrawerRow>()
+  const [tradeDrawerPreset, setTradeDrawerPreset] = useState<TradeDrawerPreset>()
+  const [portfolioRefreshSignal, setPortfolioRefreshSignal] = useState(0)
   const [selectedExchange, setSelectedExchange] = useState<ExchangeCode>('okx')
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
   const [selectedBar, setSelectedBar] = useState<MarketCandleBar>(() => getInitialMarketCandleBar())
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
   const [candleError, setCandleError] = useState('')
+
   const candleSeries = useMemo(
     () =>
       candles.map(item => ({
@@ -676,7 +346,7 @@ export function OverviewPage() {
 
   const handleSelectSymbol = useCallback((symbol: string) => {
     setSelectedSymbol(symbol)
-    // 切换币种时先清空旧 K 线，避免请求期间继续显示上一个币种的走势。
+    // 切换币种后先清空旧数据，避免图表在请求期间显示错误上下文。
     setCandles([])
     setCandleError('')
   }, [])
@@ -691,16 +361,43 @@ export function OverviewPage() {
 
   const handleSelectBar = useCallback((bar: string | number) => {
     setSelectedBar(bar as MarketCandleBar)
-    // 切换周期时重新查询对应 K 线，避免旧周期数据和新周期标签混在一起。
     setCandles([])
     setCandleError('')
   }, [])
+
+  const handleOpenTradeDrawer = useCallback((row: TradeDrawerRow, preset?: TradeDrawerPreset) => {
+    setTradeDrawerRow(row)
+    setTradeDrawerPreset(preset)
+    setTradeDrawerOpen(true)
+  }, [])
+
+  const handleOpenPositionSellDrawer = useCallback(
+    (position: TradePositionView) => {
+      handleOpenTradeDrawer(
+        {
+          exchange: position.exchange,
+          symbol: position.symbol,
+          price: position.marketPrice,
+          eventTime: position.marketEventTime ?? new Date().toISOString(),
+        },
+        {
+          quickQuoteAmount: position.marketValue,
+          quickMode: position.accountType,
+          readonlyExchange: true,
+          readonlyMode: true,
+          hideBuyAction: true,
+          hidePlanTab: true,
+        },
+      )
+    },
+    [handleOpenTradeDrawer],
+  )
 
   useEffect(() => {
     try {
       window.localStorage.setItem(OVERVIEW_CANDLE_BAR_STORAGE_KEY, selectedBar)
     } catch {
-      // 忽略本地持久化异常，不影响页面实时行情功能。
+      // 本地缓存失败不影响实时图表功能。
     }
   }, [selectedBar])
 
@@ -717,6 +414,7 @@ export function OverviewPage() {
         setCandlesLoading(true)
       }
       setCandleError('')
+
       try {
         const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, selectedBar, selectedExchange)
         if (requestToken === candleRequestTokenRef.current) {
@@ -764,7 +462,7 @@ export function OverviewPage() {
           return
         }
 
-        // 高频推送只在浏览器下一帧统一提交一次状态，避免图表在短时间内重复重绘。
+        // 高频推送只在下一帧提交一次状态，避免图表在短时间内重复重绘。
         realtimeCandleFrameRef.current = window.requestAnimationFrame(() => {
           realtimeCandleFrameRef.current = undefined
           const pendingCandle = pendingRealtimeCandleRef.current
@@ -782,11 +480,14 @@ export function OverviewPage() {
     })
   }, [message, selectedBar, selectedExchange, selectedSymbol])
 
-  useEffect(() => () => {
-    if (realtimeCandleFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(realtimeCandleFrameRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (realtimeCandleFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(realtimeCandleFrameRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -795,14 +496,15 @@ export function OverviewPage() {
       }
     }
 
-    // WebSocket 负责实时推进图表，REST K 线只做低频校准，避免 Network 中持续刷 candles 请求。
+    // 实时推进继续靠 WebSocket，REST 只负责低频校准。
     const timer = window.setInterval(refreshWhenVisible, CANDLE_REST_CALIBRATION_INTERVAL_MS)
     document.addEventListener('visibilitychange', refreshWhenVisible)
+
     return () => {
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [loadCandles, selectedBar])
+  }, [loadCandles])
 
   const option = useMemo(
     () => ({
@@ -915,8 +617,8 @@ export function OverviewPage() {
             title={`实时价格曲线 ${selectedSymbol}`}
             extra={
               <Space>
-                <Select value={selectedExchange} options={MARKET_EXCHANGE_OPTIONS} onChange={handleSelectExchange} style={{ width: 120 }} />
-                <Select value={selectedSymbol} options={getMarketSymbolOptions(selectedExchange)} onChange={handleSelectSymbol} style={{ width: 160 }} />
+                <Select value={selectedExchange} options={MARKET_EXCHANGE_OPTIONS} onChange={value => handleSelectExchange(value as ExchangeCode)} style={{ width: 120 }} />
+                <Select value={selectedSymbol} options={getMarketSymbolOptions(selectedExchange)} onChange={value => handleSelectSymbol(String(value))} style={{ width: 160 }} />
               </Space>
             }
           >
@@ -934,16 +636,33 @@ export function OverviewPage() {
         </Col>
         <Col xs={24} lg={10}>
           <ProCard title='最新行情' bodyStyle={{ padding: 0 }}>
-            <MarketOverviewTable exchange={selectedExchange} onSelectSymbol={handleSelectSymbol} />
+            <MarketOverviewTable exchange={selectedExchange} onSelectSymbol={handleSelectSymbol} onOpenTrade={handleOpenTradeDrawer} />
           </ProCard>
         </Col>
       </Row>
 
       <Row gutter={[16, 16]} className={styles.section}>
         <Col span={24}>
-          <TradePortfolioOverviewSection />
+          <TradePortfolioOverviewSection onSellPosition={handleOpenPositionSellDrawer} refreshSignal={portfolioRefreshSignal} />
         </Col>
       </Row>
+
+      <OverviewTradeDrawer
+        open={tradeDrawerOpen}
+        row={tradeDrawerRow}
+        preset={tradeDrawerPreset}
+        onCreated={() => {
+          void refreshSummary()
+          setPortfolioRefreshSignal(current => current + 1)
+        }}
+        onOpenChange={nextOpen => {
+          setTradeDrawerOpen(nextOpen)
+          if (!nextOpen) {
+            setTradeDrawerRow(undefined)
+            setTradeDrawerPreset(undefined)
+          }
+        }}
+      />
     </PageContainer>
   )
 }
