@@ -12,10 +12,15 @@ export async function fetchExchangeJson<T>(url: string, init?: { method?: string
       dispatcher: proxyAgent,
     })
 
-    const payload = (await response.json()) as T & { code?: string; msg?: string }
+    const rawText = await response.text()
+    const payload = parseExchangePayload<T>(rawText)
 
     if (!response.ok) {
-      throw new Error(`HTTP 状态码 ${response.status}${payload?.msg ? `，${payload.msg}` : ''}`)
+      const errorCode = payload?.code ?? extractErrorCodeFromPayload(rawText)
+      const errorMessage = payload?.msg ?? rawText.trim()
+      throw new Error(
+        `HTTP 状态码 ${response.status}${errorCode !== undefined ? `，交易所错误码 ${errorCode}` : ''}${errorMessage ? `，${errorMessage}` : ''}`,
+      )
     }
 
     // OKX 业务限频通常会通过 code 返回，例如 50011，请在这里保留交易所原始错误码。
@@ -27,6 +32,23 @@ export async function fetchExchangeJson<T>(url: string, init?: { method?: string
   } catch (error) {
     throw new Error(`交易所请求失败：${formatExchangeError(error)}`)
   }
+}
+
+function parseExchangePayload<T>(rawText: string) {
+  if (!rawText) {
+    return {} as T & { code?: string | number; msg?: string }
+  }
+
+  try {
+    return JSON.parse(rawText) as T & { code?: string | number; msg?: string }
+  } catch {
+    return { msg: rawText } as T & { code?: string | number; msg?: string }
+  }
+}
+
+function extractErrorCodeFromPayload(rawText: string) {
+  const parsedCode = rawText.match(/"code"\s*:\s*(-?\d+)/)?.[1]
+  return parsedCode
 }
 
 function formatExchangeError(error: unknown) {

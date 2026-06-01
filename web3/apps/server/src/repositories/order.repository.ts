@@ -42,6 +42,11 @@ function mapOrder(row: OrderRow): OrderRecord {
 export class OrderRepository {
   constructor(private readonly db: Database.Database) {}
 
+  findById(id: string): OrderRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM order_records WHERE id = ? LIMIT 1').get(id) as OrderRow | undefined
+    return row ? mapOrder(row) : undefined
+  }
+
   list(limit = 100): OrderRecord[] {
     return this.db
       .prepare('SELECT * FROM order_records ORDER BY created_at DESC LIMIT ?')

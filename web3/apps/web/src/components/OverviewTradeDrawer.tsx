@@ -184,6 +184,18 @@ function floorDecimalToStep(value: Decimal, step?: string) {
   return value.div(decimalStep).floor().mul(decimalStep)
 }
 
+function resolveQuickTradeQuantityStep(exchange: ExchangeCode, orderType: OrderType, rule?: InstrumentRule) {
+  if (!rule) {
+    return undefined
+  }
+
+  if (exchange === 'binance' && orderType === 'market') {
+    return rule.marketLotSize ?? rule.lotSize
+  }
+
+  return rule.lotSize
+}
+
 export interface TradeDrawerRow extends TickerPrice {
   /** 交易对实时总览表里带的附加行情字段，持仓卖出入口可为空。 */
   open24h?: string
@@ -297,7 +309,7 @@ export function OverviewTradeDrawer({
   }, [quickTradeQuoteCapacity, requestedQuoteAmount])
   // 卖出按交易所 lotSize 先向下取整，保证前端展示数量和后端实际校验口径一致。
   const requestedBaseQuantity = executionPrice.greaterThan(0)
-    ? floorDecimalToStep(requestedQuoteAmount.div(executionPrice), quickInstrumentRule?.lotSize)
+    ? floorDecimalToStep(requestedQuoteAmount.div(executionPrice), resolveQuickTradeQuantityStep(selectedPlanExchange, quickOrderType, quickInstrumentRule))
     : new Decimal(0)
   const canSubmitQuickTrade = requestedQuoteAmount.greaterThan(0) && executionPrice.greaterThan(0)
   const canQuickBuy = canSubmitQuickTrade && requestedQuoteAmount.lessThanOrEqualTo(availableQuoteBalance)
@@ -519,7 +531,7 @@ export function OverviewTradeDrawer({
         okText: side === 'buy' ? '确认买入' : '确认卖出',
         cancelText: '取消',
         onOk: async () => {
-          await tradingApi.confirmTradeOrder(payload)
+          await tradingApi.confirmTradeOrder(payload, preview.confirmToken)
           message.success(`${row.symbol} ${side === 'buy' ? '买入' : '卖出'}已提交`)
           onCreated()
           onOpenChange(false)

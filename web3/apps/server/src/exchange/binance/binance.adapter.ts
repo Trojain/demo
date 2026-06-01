@@ -4,6 +4,7 @@ import { Decimal } from 'decimal.js'
 import { createHmac } from 'node:crypto'
 import type { AccountBalance, ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js'
 import { fetchExchangeJson } from '../http-client.js'
+import { normalizeExchangeOrderError } from '../exchange-order-error.js'
 import { toBinanceSymbol, toDisplaySymbol } from '../symbol.js'
 import { appConfig } from '../../config/env.js'
 import { createExchangeWebSocket } from '../ws-client.js'
@@ -86,6 +87,18 @@ type BinanceAccountResponse = {
     free: string
     locked: string
   }>
+}
+
+type BinancePlaceOrderResponse = {
+  orderId?: number
+  clientOrderId?: string
+  transactTime?: number
+  status?: string
+  price?: string
+  origQty?: string
+  cummulativeQuoteQty?: string
+  code?: number
+  msg?: string
 }
 
 export class BinanceAdapter implements ExchangeAdapter {
@@ -266,6 +279,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       .map(item => {
         const priceFilter = item.filters.find(filter => filter.filterType === 'PRICE_FILTER')
         const lotSizeFilter = item.filters.find(filter => filter.filterType === 'LOT_SIZE')
+        const marketLotSizeFilter = item.filters.find(filter => filter.filterType === 'MARKET_LOT_SIZE')
         const minNotionalFilter = item.filters.find(filter => filter.filterType === 'MIN_NOTIONAL' || filter.filterType === 'NOTIONAL')
 
         return {
@@ -275,7 +289,9 @@ export class BinanceAdapter implements ExchangeAdapter {
           quoteCurrency: item.quoteAsset,
           tickSize: priceFilter?.tickSize ?? '0',
           lotSize: lotSizeFilter?.stepSize ?? '0',
+          marketLotSize: marketLotSizeFilter?.stepSize ?? lotSizeFilter?.stepSize ?? '0',
           minSize: lotSizeFilter?.minQty ?? '0',
+          marketMinSize: marketLotSizeFilter?.minQty ?? lotSizeFilter?.minQty ?? '0',
           minNotional: minNotionalFilter?.minNotional ?? minNotionalFilter?.minNotionalValue,
           state: item.status === 'TRADING' ? 'live' : item.status.toLowerCase(),
         }
@@ -328,14 +344,104 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {
-    if (request.simulationMode) {
-      return {
-        exchangeOrderId: `sim-binance-${nanoid(12)}`,
-        status: 'submitted',
-        rawMessage: `Binance 模拟下单成功，symbol=${request.symbol}, side=${request.side}, type=${request.type}`,
+    try {
+      if (request.simulationMode) {
+        return {
+          exchangeOrderId: `sim-binance-${nanoid(12)}`,
+          status: 'submitted',
+          clientOrderId: request.clientOrderId,
+          acceptedAt: new Date().toISOString(),
+          price: request.price,
+          baseQuantity: request.baseQuantity,
+          quoteAmount: request.quoteAmount,
+          rawMessage: `Binance 模拟下单成功，symbol=${request.symbol}, side=${request.side}, type=${request.type}`,
+        }
       }
+
+      if (!appConfig.binance.apiKey || !appConfig.binance.apiSecret) {
+        throw new Error('Binance API Key 或 Secret 未配置，无法发起真实下单')
+      }
+
+      const params = this.buildPlaceOrderParams(request)
+      const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
+      params.set('signature', signature)
+      const payload = await fetchExchangeJson<BinancePlaceOrderResponse>(`https://api.binance.com/api/v3/order?${params.toString()}`, {
+        method: 'POST',
+        headers: {
+          'X-MBX-APIKEY': appConfig.binance.apiKey,
+        },
+      })
+      if (!payload.orderId) {
+        throw new Error(`Binance 下单返回缺少 orderId，响应=${JSON.stringify(payload)}`)
+      }
+
+      return {
+        exchangeOrderId: String(payload.orderId),
+        status: this.mapOrderStatus(payload.status),
+        clientOrderId: payload.clientOrderId ?? request.clientOrderId,
+        acceptedAt: payload.transactTime ? new Date(payload.transactTime).toISOString() : new Date().toISOString(),
+        price: payload.price || request.price,
+        baseQuantity: payload.origQty || request.baseQuantity,
+        quoteAmount: payload.cummulativeQuoteQty || request.quoteAmount,
+        rawMessage: JSON.stringify(payload),
+      }
+    } catch (error) {
+      throw normalizeExchangeOrderError(this.code, error)
+    }
+  }
+
+  private buildPlaceOrderParams(request: PlaceOrderRequest) {
+    const params = new URLSearchParams({
+      symbol: toBinanceSymbol(request.symbol),
+      side: request.side.toUpperCase(),
+      type: request.type.toUpperCase(),
+      newClientOrderId: request.clientOrderId,
+      recvWindow: '5000',
+      timestamp: String(Date.now()),
+    })
+
+    if (request.type === 'limit') {
+      if (!request.price || !request.baseQuantity) {
+        // Binance 真实限价单统一要求上游先给出基础币数量，避免金额换算口径在适配层分叉。
+        throw new Error('Binance 真实限价单必须同时提供 price 和基础币数量')
+      }
+
+      params.set('timeInForce', 'GTC')
+      params.set('price', request.price)
+      params.set('quantity', request.baseQuantity)
+      return params
     }
 
-    throw new Error('Binance 真实下单尚未在第一版开启，请先保持 ENABLE_REAL_TRADING=false')
+    if (request.quoteAmount) {
+      params.set('quoteOrderQty', request.quoteAmount)
+      return params
+    }
+
+    if (!request.baseQuantity) {
+      throw new Error('Binance 下单缺少数量参数')
+    }
+
+    params.set('quantity', request.baseQuantity)
+    return params
+  }
+
+  private mapOrderStatus(status?: string): PlaceOrderResult['status'] {
+    switch ((status || '').toUpperCase()) {
+      case 'NEW':
+        return 'submitted'
+      case 'PARTIALLY_FILLED':
+        return 'partially_filled'
+      case 'FILLED':
+        return 'filled'
+      case 'CANCELED':
+      case 'PENDING_CANCEL':
+        return 'cancelled'
+      case 'REJECTED':
+      case 'EXPIRED':
+      case 'EXPIRED_IN_MATCH':
+        return 'rejected'
+      default:
+        return 'submitted'
+    }
   }
 }

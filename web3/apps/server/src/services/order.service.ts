@@ -49,6 +49,11 @@ export class OrderService {
       throw new Error('关联监控规则不存在')
     }
 
+    if (executionMode === 'auto' && !rule.simulationMode) {
+      // 真实策略计划在 v0.4.11 阶段仍要求人工确认，这里保留兜底保护，避免其他调用方绕过限制。
+      throw new Error('真实策略计划当前仅支持人工确认执行')
+    }
+
     try {
       const finalPreview = await this.validateBeforeSubmit(triggerId)
       const order = await this.tradeExecutionService.confirmRuleTrigger({
@@ -83,6 +88,7 @@ export class OrderService {
         orderId: order.id,
         message: executionMode === 'auto' ? `${rule.symbol} 自动下单已提交` : `${rule.symbol} 订单已提交`,
         payload: {
+          source: 'rule',
           exchange: rule.exchange,
           side: rule.side,
           orderType: rule.orderType,
@@ -162,6 +168,7 @@ export class OrderService {
         ? input.error.failedItems
         : previewFailedItems
     const message = input.error instanceof Error ? input.error.message : '确认下单失败'
+    const tradeExecutionError = input.error instanceof TradeExecutionError ? input.error : undefined
 
     this.auditLogService.record({
       level: 'warning',
@@ -181,6 +188,8 @@ export class OrderService {
         targetPrice: input.trigger.targetPrice,
         executionMode: input.executionMode,
         failedItems,
+        errorCode: tradeExecutionError?.errorCode,
+        errorCategory: tradeExecutionError?.errorCategory,
       },
     })
     this.auditLogService.record({
@@ -192,9 +201,15 @@ export class OrderService {
       triggerId: input.trigger.id,
       message,
       payload: {
+        source: 'rule',
+        mode: preview && 'mode' in preview ? preview.mode : undefined,
         exchange: input.rule.exchange,
         symbol: input.rule.symbol,
         executionMode: input.executionMode,
+        errorCode: tradeExecutionError?.errorCode,
+        errorCategory: tradeExecutionError?.errorCategory,
+        errorMessage: tradeExecutionError?.message,
+        rawMessage: tradeExecutionError?.rawMessage,
         preview,
         failedItems,
       },

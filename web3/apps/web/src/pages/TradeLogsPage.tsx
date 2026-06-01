@@ -5,7 +5,7 @@ import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-
 import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import { useProfitDisplay } from '../hooks/useProfitDisplay'
-import type { TradeAccountType, TradeFill, TradeOperationLog } from '../types'
+import type { AuditLog, TradeAccountType, TradeFill, TradeOperationLog } from '../types'
 import { toTableRequestResult } from '../utils/proTable'
 
 function renderMode(mode: TradeAccountType) {
@@ -24,12 +24,29 @@ function renderPayload(payloadJson?: string) {
   }
 }
 
+function parseAuditPayload(payloadJson?: string) {
+  if (!payloadJson) {
+    return undefined
+  }
+
+  try {
+    return JSON.parse(payloadJson) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
 export function TradeLogsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fillActionRef = useRef<ActionType | undefined>(undefined)
   const logActionRef = useRef<ActionType | undefined>(undefined)
+  const auditActionRef = useRef<ActionType | undefined>(undefined)
   const profitDisplay = useProfitDisplay()
-  const activeTab = searchParams.get('tab') === 'logs' ? 'logs' : 'fills'
+  const activeTab = searchParams.get('tab') === 'logs'
+    ? 'logs'
+    : searchParams.get('tab') === 'audits'
+      ? 'audits'
+      : 'fills'
 
   const fillColumns = useMemo<ProColumns<TradeFill>[]>(
     () => [
@@ -54,6 +71,79 @@ export function TradeLogsPage() {
       { title: '级别', dataIndex: 'level', width: 90, render: (_, row) => <Tag color={row.level === 'error' ? 'error' : row.level === 'warning' ? 'warning' : 'processing'}>{row.level}</Tag> },
       { title: '动作', dataIndex: 'action', width: 150 },
       { title: '消息', dataIndex: 'message', ellipsis: true },
+      {
+        title: '详情',
+        dataIndex: 'payloadJson',
+        width: 90,
+        render: (_, row) => (
+          <Tooltip title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{renderPayload(row.payloadJson)}</pre>}>
+            <Typography.Link disabled={!row.payloadJson}>查看</Typography.Link>
+          </Tooltip>
+        ),
+      },
+      { title: '时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+    ],
+    [],
+  )
+
+  const auditColumns = useMemo<ProColumns<AuditLog>[]>(
+    () => [
+      {
+        title: '级别',
+        dataIndex: 'level',
+        width: 90,
+        render: (_, row) => <Tag color={row.level === 'error' ? 'error' : row.level === 'warning' ? 'warning' : 'processing'}>{row.level}</Tag>,
+      },
+      { title: '动作', dataIndex: 'action', width: 150 },
+      {
+        title: '来源',
+        key: 'source',
+        width: 100,
+        render: (_, row) => {
+          const payload = parseAuditPayload(row.payloadJson)
+          const source = payload?.source
+          if (source === 'manual') {
+            return <Tag color='processing'>快捷交易</Tag>
+          }
+          if (source === 'rule') {
+            return <Tag color='warning'>策略计划</Tag>
+          }
+          return '-'
+        },
+      },
+      {
+        title: '交易所订单号',
+        key: 'exchangeOrderId',
+        width: 160,
+        ellipsis: true,
+        render: (_, row) => {
+          const payload = parseAuditPayload(row.payloadJson)
+          return typeof payload?.exchangeOrderId === 'string' ? payload.exchangeOrderId : '-'
+        },
+      },
+      {
+        title: '失败原因',
+        key: 'errorMessage',
+        ellipsis: true,
+        render: (_, row) => {
+          const payload = parseAuditPayload(row.payloadJson)
+          if (typeof payload?.errorMessage === 'string') {
+            return payload.errorMessage
+          }
+
+          return row.action === 'order.failed' ? row.message : '-'
+        },
+      },
+      {
+        title: '错误码',
+        key: 'errorCode',
+        width: 110,
+        render: (_, row) => {
+          const payload = parseAuditPayload(row.payloadJson)
+          return typeof payload?.errorCode === 'string' ? payload.errorCode : '-'
+        },
+      },
+      { title: '摘要', dataIndex: 'message', ellipsis: true },
       {
         title: '详情',
         dataIndex: 'payloadJson',
@@ -108,6 +198,25 @@ export function TradeLogsPage() {
                 toolBarRender={() => [
                   <Button key='reload' icon={<ReloadOutlined />} onClick={() => logActionRef.current?.reload()}>
                     刷新日志
+                  </Button>,
+                ]}
+              />
+            ),
+          },
+          {
+            key: 'audits',
+            label: '审计日志',
+            children: (
+              <ProTable<AuditLog>
+                actionRef={auditActionRef}
+                rowKey='id'
+                search={false}
+                columns={auditColumns}
+                request={async () => toTableRequestResult(await tradingApi.getAuditLogs(200, ['order.submitted', 'order.failed', 'trigger.failed', 'trigger.confirmed']))}
+                pagination={{ pageSize: 8 }}
+                toolBarRender={() => [
+                  <Button key='reload' icon={<ReloadOutlined />} onClick={() => auditActionRef.current?.reload()}>
+                    刷新审计
                   </Button>,
                 ]}
               />

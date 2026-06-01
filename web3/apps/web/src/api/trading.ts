@@ -134,8 +134,8 @@ export const tradingApi = {
     const { data } = await apiClient.post<TradeOrderPreview>('/trade/orders/preview', payload);
     return data;
   },
-  confirmTradeOrder: async (preview: TradeOrderPayload) => {
-    const { data } = await apiClient.post<OrderRecord>('/trade/orders/confirm', { preview });
+  confirmTradeOrder: async (preview: TradeOrderPayload, confirmToken?: string) => {
+    const { data } = await apiClient.post<OrderRecord>('/trade/orders/confirm', { preview, confirmToken });
     return data;
   },
   getSimulationAccounts: async () => {
@@ -173,9 +173,9 @@ export const tradingApi = {
   deleteOrder: async (id: string) => {
     await apiClient.delete(`/orders/${id}`);
   },
-  getAuditLogs: async (limit = 100) => {
+  getAuditLogs: async (limit = 100, actions?: string[]) => {
     const { data } = await apiClient.get<AuditLog[]>('/audit-logs', {
-      params: { limit }
+      params: { limit, actions: actions?.join(',') }
     });
     return data;
   },

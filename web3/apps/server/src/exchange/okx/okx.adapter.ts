@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import WebSocket from 'ws';
 import type { AccountBalance, ExchangeAdapter, InstrumentRule, MarketCandle, MarketTickerSnapshot, PlaceOrderRequest, PlaceOrderResult, TickerPrice } from '../../types/exchange.js';
 import { fetchExchangeJson } from '../http-client.js';
+import { normalizeExchangeOrderError } from '../exchange-order-error.js';
 import { toDisplaySymbol, toOkxInstId } from '../symbol.js';
 import { appConfig } from '../../config/env.js';
 import { createExchangeWebSocket } from '../ws-client.js';
@@ -45,6 +46,18 @@ type OkxBalanceResponse = {
       cashBal?: string;
       eq?: string;
     }>;
+  }>;
+};
+
+type OkxPlaceOrderResponse = {
+  code?: string;
+  msg?: string;
+  data?: Array<{
+    ordId?: string;
+    clOrdId?: string;
+    sCode?: string;
+    sMsg?: string;
+    ts?: string;
   }>;
 };
 
@@ -325,14 +338,111 @@ export class OkxAdapter implements ExchangeAdapter {
   }
 
   async placeOrder(request: PlaceOrderRequest): Promise<PlaceOrderResult> {
-    if (request.simulationMode) {
+    try {
+      if (request.simulationMode) {
+        return {
+          exchangeOrderId: `sim-okx-${nanoid(12)}`,
+          status: 'submitted',
+          clientOrderId: request.clientOrderId,
+          acceptedAt: new Date().toISOString(),
+          price: request.price,
+          baseQuantity: request.baseQuantity,
+          quoteAmount: request.quoteAmount,
+          rawMessage: `OKX 模拟下单成功，symbol=${request.symbol}, side=${request.side}, type=${request.type}`
+        };
+      }
+
+      if (!appConfig.okx.apiKey || !appConfig.okx.apiSecret || !appConfig.okx.passphrase) {
+        throw new Error('OKX API Key、Secret 或 Passphrase 未配置，无法发起真实下单');
+      }
+
+      const instId = toOkxInstId(request.symbol);
+      const timestamp = new Date().toISOString();
+      const requestPath = '/api/v5/trade/order';
+      const body = this.buildPlaceOrderBody(request, instId);
+      const bodyJson = JSON.stringify(body);
+      const signature = createHmac('sha256', appConfig.okx.apiSecret)
+        .update(`${timestamp}POST${requestPath}${bodyJson}`)
+        .digest('base64');
+      const payload = await fetchExchangeJson<OkxPlaceOrderResponse>(`https://www.okx.com${requestPath}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'OK-ACCESS-KEY': appConfig.okx.apiKey,
+          'OK-ACCESS-SIGN': signature,
+          'OK-ACCESS-TIMESTAMP': timestamp,
+          'OK-ACCESS-PASSPHRASE': appConfig.okx.passphrase,
+          'x-simulated-trading': appConfig.okx.simulated ? '1' : '0',
+        },
+        body: bodyJson,
+      });
+      const orderResult = payload.data?.[0];
+      if (!orderResult?.ordId) {
+        throw new Error(`OKX 下单返回缺少 ordId，响应=${JSON.stringify(payload)}`);
+      }
+      if (orderResult.sCode && orderResult.sCode !== '0') {
+        throw new Error(`OKX 下单失败，错误码 ${orderResult.sCode}${orderResult.sMsg ? `，${orderResult.sMsg}` : ''}`);
+      }
+
       return {
-        exchangeOrderId: `sim-okx-${nanoid(12)}`,
+        exchangeOrderId: orderResult.ordId,
         status: 'submitted',
-        rawMessage: `OKX 模拟下单成功，symbol=${request.symbol}, side=${request.side}, type=${request.type}`
+        clientOrderId: orderResult.clOrdId ?? request.clientOrderId,
+        acceptedAt: orderResult.ts ? new Date(Number(orderResult.ts)).toISOString() : timestamp,
+        price: request.price,
+        baseQuantity: request.baseQuantity,
+        quoteAmount: request.quoteAmount,
+        rawMessage: JSON.stringify({
+          code: payload.code ?? '0',
+          msg: payload.msg ?? '',
+          data: orderResult,
+        }),
       };
+    } catch (error) {
+      throw normalizeExchangeOrderError(this.code, error);
+    }
+  }
+
+  private buildPlaceOrderBody(request: PlaceOrderRequest, instId: string) {
+    const size = this.resolveOrderSize(request);
+    const body: Record<string, string> = {
+      instId,
+      tdMode: 'cash',
+      side: request.side,
+      ordType: request.type,
+      sz: size,
+      clOrdId: request.clientOrderId,
+    };
+
+    if (request.type === 'limit') {
+      if (!request.price) {
+        throw new Error('OKX 限价单缺少 price');
+      }
+
+      body.px = request.price;
+      return body;
     }
 
-    throw new Error('OKX 真实下单尚未在第一版开启，请先保持 ENABLE_REAL_TRADING=false');
+    if (request.quoteAmount) {
+      body.tgtCcy = 'quote_ccy';
+    } else if (request.baseQuantity) {
+      body.tgtCcy = 'base_ccy';
+    }
+
+    return body;
+  }
+
+  private resolveOrderSize(request: PlaceOrderRequest) {
+    if (request.type === 'limit' && !request.baseQuantity) {
+      // 真实限价单统一要求上游先提供基础币数量，避免交易所对 quoteAmount 口径差异造成拒单。
+      throw new Error('OKX 真实限价单必须提供基础币数量');
+    }
+
+    const size = request.baseQuantity ?? request.quoteAmount;
+    if (!size) {
+      throw new Error('OKX 下单缺少数量参数');
+    }
+
+    return size;
   }
 }

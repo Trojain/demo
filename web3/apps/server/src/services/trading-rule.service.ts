@@ -51,21 +51,24 @@ export class TradingRuleService {
     }
 
     if (input.baseQuantity) {
+      const quantityStep = this.resolveQuantityStep(input.exchange, input.orderType, instrumentRule)
+      const minQuantity = this.resolveMinQuantity(input.exchange, input.orderType, instrumentRule)
       this.validatePositiveDecimal(input.baseQuantity, 'baseQuantity', '基础币数量', issues)
-      this.validateStep(input.baseQuantity, instrumentRule.lotSize, 'baseQuantity', '基础币数量', issues)
-      if (new Decimal(input.baseQuantity).lessThan(instrumentRule.minSize)) {
-        issues.push({ path: 'baseQuantity', message: `基础币数量不能小于最小下单数量 ${instrumentRule.minSize}` })
+      this.validateStep(input.baseQuantity, quantityStep, 'baseQuantity', '基础币数量', issues)
+      if (new Decimal(input.baseQuantity).lessThan(minQuantity)) {
+        issues.push({ path: 'baseQuantity', message: `基础币数量不能小于最小下单数量 ${minQuantity}` })
       }
     }
 
     if (input.quoteAmount) {
+      const minQuantity = this.resolveMinQuantity(input.exchange, input.orderType, instrumentRule)
       this.validatePositiveDecimal(input.quoteAmount, 'quoteAmount', '计价币金额', issues)
       try {
         const estimatedBaseQuantity = new Decimal(input.quoteAmount).div(input.targetPrice)
-        if (estimatedBaseQuantity.lessThan(instrumentRule.minSize)) {
+        if (estimatedBaseQuantity.lessThan(minQuantity)) {
           issues.push({
             path: 'quoteAmount',
-            message: `按目标价估算的基础币数量不能小于最小下单数量 ${instrumentRule.minSize}`,
+            message: `按目标价估算的基础币数量不能小于最小下单数量 ${minQuantity}`,
           })
         }
       } catch {
@@ -145,5 +148,21 @@ export class TradingRuleService {
     }
 
     return undefined
+  }
+
+  private resolveQuantityStep(exchange: ExchangeCode, orderType: CreateRuleInput['orderType'], instrumentRule: InstrumentRule) {
+    if (exchange === 'binance' && orderType === 'market') {
+      return instrumentRule.marketLotSize ?? instrumentRule.lotSize
+    }
+
+    return instrumentRule.lotSize
+  }
+
+  private resolveMinQuantity(exchange: ExchangeCode, orderType: CreateRuleInput['orderType'], instrumentRule: InstrumentRule) {
+    if (exchange === 'binance' && orderType === 'market') {
+      return instrumentRule.marketMinSize ?? instrumentRule.minSize
+    }
+
+    return instrumentRule.minSize
   }
 }

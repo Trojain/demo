@@ -56,8 +56,12 @@ export interface InstrumentRule {
   tickSize: string;
   /** 数量最小变动单位，对应 OKX lotSz */
   lotSize: string;
+  /** 市价单数量最小变动单位，当前主要用于 Binance MARKET_LOT_SIZE */
+  marketLotSize?: string;
   /** 最小下单数量，对应 OKX minSz 或 Binance LOT_SIZE minQty */
   minSize: string;
+  /** 市价单最小下单数量，当前主要用于 Binance MARKET_LOT_SIZE minQty */
+  marketMinSize?: string;
   /** 最小成交额，对应 Binance MIN_NOTIONAL 或 NOTIONAL */
   minNotional?: string;
   /** 交易对状态，OKX live 表示可交易 */
@@ -88,6 +92,16 @@ export interface PlaceOrderResult {
   exchangeOrderId: string;
   /** 统一订单状态 */
   status: UnifiedOrderStatus;
+  /** 客户端订单号，后续幂等、防重和日志排查依赖该字段 */
+  clientOrderId?: string;
+  /** 交易所受理时间，无法获取时可为空 */
+  acceptedAt?: string;
+  /** 交易所返回的委托价格摘要 */
+  price?: string;
+  /** 交易所返回的基础币数量摘要 */
+  baseQuantity?: string;
+  /** 交易所返回的计价币金额摘要 */
+  quoteAmount?: string;
   /** 原始响应摘要 */
   rawMessage: string;
 }

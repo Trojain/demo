@@ -32,8 +32,8 @@ export class AuditLogService {
 
   constructor(private readonly auditLogRepository: AuditLogRepository) {}
 
-  list(limit?: number): AuditLog[] {
-    return this.auditLogRepository.list(limit);
+  list(limit?: number, actions?: AuditLogAction[]): AuditLog[] {
+    return this.auditLogRepository.list(limit, actions);
   }
 
   record(input: WriteAuditLogInput): AuditLog | undefined {

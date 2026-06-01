@@ -92,7 +92,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     enableRealTrading: appConfig.enableRealTrading,
   });
   const signalService = new SignalService(signalRepository, triggerRepository, auditLogService, riskService);
-  const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService);
+  const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService, auditLogService);
   const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService, tradeExecutionService);
   const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService);
   const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService, orderService);

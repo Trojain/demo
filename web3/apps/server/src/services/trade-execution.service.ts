@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js'
 import { nanoid } from 'nanoid'
+import { ExchangeOrderError } from '../exchange/exchange-order-error.js'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
 import type { TradeAccountRepository } from '../repositories/trade-account.repository.js'
@@ -20,6 +21,7 @@ import type {
   TradePositionView,
 } from '../types/domain.js'
 import type { AccountBalance, InstrumentRule, TickerPrice } from '../types/exchange.js'
+import type { AuditLogService } from './audit-log.service.js'
 import type { RiskConfigService } from './risk-config.service.js'
 import type { TradingRuleService } from './trading-rule.service.js'
 
@@ -28,11 +30,30 @@ type ValuationContext = {
   tickerPriceCache: Map<string, Promise<TickerPrice>>
 }
 
+type ConfirmTokenState = {
+  /** 预检输入摘要，确认时必须与当前请求保持一致。 */
+  payloadHash: string
+  /** 过期时间戳，避免确认令牌长期驻留内存。 */
+  expiresAt: number
+  /** 当前确认请求是否正在处理，防止重复提交。 */
+  processing: boolean
+  /** 已经成功落库的订单 ID，重复确认时直接返回该订单。 */
+  orderId?: string
+}
+
+const REAL_ORDER_CONFIRM_TOKEN_TTL_MS = 2 * 60_000
+
 export class TradeExecutionError extends Error {
   constructor(
     message: string,
     /** 下单确认前重新生成的预览，便于前端展示拒绝原因 */
     readonly preview: TradeOrderPreview,
+    /** 交易所错误码，失败审计和前端提示会使用该字段。 */
+    readonly errorCode?: string,
+    /** 标准化错误分类，便于日志聚合和后续重试策略。 */
+    readonly errorCategory?: string,
+    /** 交易所原始错误摘要，主要用于审计日志排查。 */
+    readonly rawMessage?: string,
   ) {
     super(message)
     this.name = 'TradeExecutionError'
@@ -40,12 +61,15 @@ export class TradeExecutionError extends Error {
 }
 
 export class TradeExecutionService {
+  private readonly confirmTokenStore = new Map<string, ConfirmTokenState>()
+
   constructor(
     private readonly exchangeFactory: ExchangeFactory,
     private readonly orderRepository: OrderRepository,
     private readonly tradeAccountRepository: TradeAccountRepository,
     private readonly tradingRuleService: TradingRuleService,
     private readonly riskConfigService: RiskConfigService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async preview(input: TradeOrderPreviewInput): Promise<TradeOrderPreview> {
@@ -76,7 +100,7 @@ export class TradeExecutionService {
     const nextQuoteBalance = this.calculateNextQuoteBalance(input.mode, input.side, account, realBalances, instrumentRule?.quoteCurrency ?? 'USDT', quoteAmount, feeAmount)
     const nextBaseQuantity = this.calculateNextBaseQuantity(input.side, position, baseQuantity)
 
-    return {
+    const preview: TradeOrderPreview = {
       mode: input.mode,
       exchange,
       symbol,
@@ -94,11 +118,30 @@ export class TradeExecutionService {
       checkItems,
       previewedAt: new Date().toISOString(),
     }
+    if (input.mode === 'real') {
+      preview.confirmToken = this.issueConfirmToken(input)
+    }
+
+    return preview
   }
 
-  async confirm(input: TradeOrderPreviewInput): Promise<OrderRecord> {
+  async confirm(input: TradeOrderPreviewInput, confirmToken?: string): Promise<OrderRecord> {
     const preview = await this.preview(input)
-    this.assertPreviewConfirmable(preview)
+    this.assertPreviewPassed(preview)
+    if (preview.mode === 'real') {
+      this.assertRealTradingAllowed(preview)
+      const confirmedOrder = this.consumeConfirmTokenOrGetExistingOrder(input, confirmToken)
+      if (confirmedOrder) {
+        return confirmedOrder
+      }
+
+      return this.executeRealOrder(preview, {
+        source: 'manual',
+        confirmToken,
+        rawMessage: '真实快捷交易订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+      })
+    }
+
     const account = this.findSimulationAccountOrThrow(preview)
     return this.persistSimulationOrder(account, preview, {
       // 快捷交易不经过规则和触发事件链路，这里不再伪造外键记录。
@@ -114,7 +157,22 @@ export class TradeExecutionService {
   }): Promise<OrderRecord> {
     const previewInput = this.toPreviewInput(input.rule)
     const preview = await this.preview(previewInput)
-    this.assertPreviewConfirmable(preview)
+    this.assertPreviewPassed(preview)
+    if (preview.mode === 'real') {
+      this.assertRealTradingAllowed(preview)
+      const existingOrder = this.orderRepository.findByTriggerId(input.triggerId)
+      if (existingOrder) {
+        return existingOrder
+      }
+
+      return this.executeRealOrder(preview, {
+        source: 'rule',
+        triggerId: input.triggerId,
+        ruleId: input.rule.id,
+        rawMessage: '规则触发后的真实订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+      })
+    }
+
     const account = this.findSimulationAccountOrThrow(preview)
     return this.persistSimulationOrder(account, preview, {
       triggerId: input.triggerId,
@@ -168,14 +226,17 @@ export class TradeExecutionService {
     return this.tradeAccountRepository.findAccount(mode, exchange, quoteCurrency.toUpperCase())
   }
 
-  private assertPreviewConfirmable(preview: TradeOrderPreview) {
+  private assertPreviewPassed(preview: TradeOrderPreview) {
     if (!preview.passed) {
       const reason = preview.checkItems.filter(item => !item.passed).map(item => item.message).join('；')
       throw new TradeExecutionError(`交易确认失败：${reason}`, preview)
     }
+  }
 
-    if (preview.mode === 'real') {
-      throw new TradeExecutionError('真实下单接口尚未开放，当前仅完成真实交易前余额校验', preview)
+  private assertRealTradingAllowed(preview: TradeOrderPreview) {
+    const riskConfig = this.riskConfigService.getConfig()
+    if (!appConfig.enableRealTrading || riskConfig.tradingMode !== 'allow_real') {
+      throw new TradeExecutionError('真实交易当前未开放，请检查 ENABLE_REAL_TRADING 和风控交易模式配置', preview)
     }
   }
 
@@ -186,6 +247,269 @@ export class TradeExecutionService {
     }
 
     return account
+  }
+
+  private async executeRealOrder(
+    preview: TradeOrderPreview,
+    metadata: {
+      /** 手动交易或规则交易来源，后续审计和状态同步会复用该字段。 */
+      source: 'manual' | 'rule'
+      /** 手动真实下单失败前还没有本地订单 ID，这里保留客户端订单号用于稳定标识本次确认会话。 */
+      clientOrderId?: string
+      /** 快捷交易真实确认必须携带确认令牌，用于防重复提交。 */
+      confirmToken?: string
+      /** 规则触发真实成交时保留触发事件 ID。 */
+      triggerId?: string
+      /** 规则触发真实成交时保留规则 ID。 */
+      ruleId?: string
+      /** 当前阶段先记录提交语义，后面再由订单同步链路刷新为交易所真实状态。 */
+      rawMessage: string
+    },
+  ) {
+    const adapter = this.exchangeFactory.getAdapter(preview.exchange)
+    const clientOrderId = this.buildClientOrderId(metadata.source)
+    try {
+      const exchangeResult = await adapter.placeOrder({
+        symbol: preview.symbol,
+        side: preview.side,
+        type: preview.orderType,
+        // 市价买入优先按计价币金额下单，卖出和限价单统一按基础币数量下单，减少交易所口径差异。
+        quoteAmount: preview.side === 'buy' && preview.orderType === 'market' ? preview.quoteAmount : undefined,
+        baseQuantity: preview.side === 'sell' || preview.orderType === 'limit' ? preview.baseQuantity : undefined,
+        price: preview.orderType === 'limit' ? preview.executionPrice : undefined,
+        clientOrderId,
+        simulationMode: false,
+      })
+
+      const order = this.persistRealOrder(preview, exchangeResult, {
+        triggerId: metadata.triggerId,
+        ruleId: metadata.ruleId,
+        fallbackMessage: metadata.rawMessage,
+      })
+      if (metadata.source === 'manual') {
+        this.recordManualRealOrderSubmittedAudit(preview, order, exchangeResult.rawMessage)
+      }
+      if (metadata.confirmToken) {
+        this.markConfirmTokenCompleted(metadata.confirmToken, order.id)
+      }
+
+      return order
+    } catch (error) {
+      if (metadata.confirmToken) {
+        this.releaseConfirmToken(metadata.confirmToken)
+      }
+
+      const normalizedError = error instanceof ExchangeOrderError
+        ? error
+        : new ExchangeOrderError({
+            exchange: preview.exchange,
+            category: 'unknown',
+            rawMessage: error instanceof Error ? error.message : '未知错误',
+            message: error instanceof Error ? error.message : '真实下单失败',
+          })
+      if (metadata.source === 'manual') {
+        this.recordManualRealOrderFailureAudit(preview, { ...metadata, clientOrderId }, normalizedError)
+      }
+
+      throw new TradeExecutionError(
+        normalizedError.message,
+        preview,
+        normalizedError.code,
+        normalizedError.category,
+        normalizedError.rawMessage,
+      )
+    }
+  }
+
+  private buildClientOrderId(source: 'manual' | 'rule') {
+    // OKX 和 Binance 都对客户端订单号长度有限制，这里统一使用短前缀和定长随机串。
+    return `${source}_${nanoid(18)}`
+  }
+
+  private persistRealOrder(
+    preview: TradeOrderPreview,
+    exchangeResult: Awaited<ReturnType<ReturnType<ExchangeFactory['getAdapter']>['placeOrder']>>,
+    metadata: {
+      triggerId?: string
+      ruleId?: string
+      fallbackMessage: string
+    },
+  ) {
+    return this.tradeAccountRepository.runInTransaction(() => {
+      const createdAt = exchangeResult.acceptedAt ?? new Date().toISOString()
+      return this.orderRepository.create({
+        id: nanoid(),
+        triggerId: metadata.triggerId,
+        ruleId: metadata.ruleId,
+        exchange: preview.exchange,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        baseQuantity: exchangeResult.baseQuantity ?? preview.baseQuantity,
+        quoteAmount: exchangeResult.quoteAmount ?? preview.quoteAmount,
+        price: exchangeResult.price ?? preview.executionPrice,
+        exchangeOrderId: exchangeResult.exchangeOrderId,
+        status: exchangeResult.status,
+        simulationMode: false,
+        rawMessage: exchangeResult.rawMessage || metadata.fallbackMessage,
+        createdAt,
+      })
+    })
+  }
+
+  private issueConfirmToken(input: TradeOrderPreviewInput) {
+    this.cleanupExpiredConfirmTokens()
+    const token = nanoid()
+    this.confirmTokenStore.set(token, {
+      payloadHash: this.buildPreviewPayloadHash(input),
+      expiresAt: Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS,
+      processing: false,
+    })
+    return token
+  }
+
+  private consumeConfirmTokenOrGetExistingOrder(input: TradeOrderPreviewInput, confirmToken?: string) {
+    if (!confirmToken) {
+      throw new Error('真实交易确认缺少 confirmToken，请重新预览后再确认')
+    }
+
+    this.cleanupExpiredConfirmTokens()
+    const tokenState = this.confirmTokenStore.get(confirmToken)
+    if (!tokenState || tokenState.expiresAt < Date.now()) {
+      this.confirmTokenStore.delete(confirmToken)
+      throw new Error('真实交易确认令牌已过期，请重新预览后再确认')
+    }
+
+    if (tokenState.payloadHash !== this.buildPreviewPayloadHash(input)) {
+      throw new Error('真实交易确认参数已变化，请重新预览后再确认')
+    }
+
+    if (tokenState.orderId) {
+      const existingOrder = this.orderRepository.findById(tokenState.orderId)
+      if (existingOrder) {
+        return existingOrder
+      }
+    }
+
+    if (tokenState.processing) {
+      throw new Error('真实交易确认正在处理中，请稍后刷新成交记录查看结果')
+    }
+
+    tokenState.processing = true
+    this.confirmTokenStore.set(confirmToken, tokenState)
+    return undefined
+  }
+
+  private markConfirmTokenCompleted(confirmToken: string, orderId: string) {
+    const tokenState = this.confirmTokenStore.get(confirmToken)
+    if (!tokenState) {
+      return
+    }
+
+    tokenState.processing = false
+    tokenState.orderId = orderId
+    tokenState.expiresAt = Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS
+    this.confirmTokenStore.set(confirmToken, tokenState)
+  }
+
+  private releaseConfirmToken(confirmToken: string) {
+    const tokenState = this.confirmTokenStore.get(confirmToken)
+    if (!tokenState) {
+      return
+    }
+
+    tokenState.processing = false
+    this.confirmTokenStore.set(confirmToken, tokenState)
+  }
+
+  private recordManualRealOrderSubmittedAudit(
+    preview: TradeOrderPreview,
+    order: OrderRecord,
+    exchangeRawMessage: string,
+  ) {
+    this.auditLogService.record({
+      action: 'order.submitted',
+      entityType: 'order',
+      entityId: order.id,
+      orderId: order.id,
+      message: `${preview.symbol} 真实${preview.side === 'buy' ? '买入' : '卖出'}订单已提交`,
+      payload: {
+        source: 'manual',
+        mode: preview.mode,
+        exchange: preview.exchange,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        exchangeOrderId: order.exchangeOrderId,
+        executionPrice: preview.executionPrice,
+        baseQuantity: preview.baseQuantity,
+        quoteAmount: preview.quoteAmount,
+        rawMessage: exchangeRawMessage,
+      },
+    })
+  }
+
+  private recordManualRealOrderFailureAudit(
+    preview: TradeOrderPreview,
+    metadata: {
+      source: 'manual' | 'rule'
+      clientOrderId?: string
+      confirmToken?: string
+      triggerId?: string
+      ruleId?: string
+      rawMessage: string
+    },
+    error: ExchangeOrderError,
+  ) {
+    this.auditLogService.record({
+      level: 'warning',
+      action: 'order.failed',
+      entityType: 'order',
+      entityId: metadata.clientOrderId ?? metadata.confirmToken,
+      ruleId: metadata.ruleId,
+      triggerId: metadata.triggerId,
+      message: `${preview.symbol} 真实${preview.side === 'buy' ? '买入' : '卖出'}下单失败：${error.message}`,
+      payload: {
+        source: metadata.source,
+        clientOrderId: metadata.clientOrderId,
+        confirmToken: metadata.confirmToken,
+        mode: preview.mode,
+        exchange: preview.exchange,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        errorCode: error.code,
+        errorCategory: error.category,
+        errorMessage: error.message,
+        rawMessage: error.rawMessage,
+        retriable: error.retriable,
+        executionPrice: preview.executionPrice,
+        baseQuantity: preview.baseQuantity,
+        quoteAmount: preview.quoteAmount,
+      },
+    })
+  }
+
+  private cleanupExpiredConfirmTokens() {
+    const now = Date.now()
+    for (const [token, state] of this.confirmTokenStore.entries()) {
+      if (state.expiresAt <= now) {
+        this.confirmTokenStore.delete(token)
+      }
+    }
+  }
+
+  private buildPreviewPayloadHash(input: TradeOrderPreviewInput) {
+    return JSON.stringify({
+      mode: input.mode,
+      exchange: input.exchange,
+      symbol: input.symbol.trim().toUpperCase(),
+      side: input.side,
+      orderType: input.orderType,
+      baseQuantity: input.baseQuantity ?? '',
+      quoteAmount: input.quoteAmount ?? '',
+      limitPrice: input.limitPrice ?? '',
+    })
   }
 
   private persistSimulationOrder(
@@ -249,8 +573,8 @@ export class TradeExecutionService {
     }
 
     const rawQuantity = new Decimal(input.quoteAmount ?? '0').div(executionPrice)
-    // 计价币金额换算出来的基础币数量通常会有很多小数位，需要按交易所 lotSize 向下取整后再进入预览和成交。
-    return this.floorToStep(rawQuantity, instrumentRule?.lotSize)
+    // Binance 市价单优先使用 MARKET_LOT_SIZE，其他场景继续使用常规 lotSize。
+    return this.floorToStep(rawQuantity, this.resolveQuantityStep(input, instrumentRule))
   }
 
   private floorToStep(value: Decimal, step?: string) {
@@ -284,17 +608,19 @@ export class TradeExecutionService {
     })
 
     if (instrumentRule) {
+      const quantityStep = this.resolveQuantityStep(input, instrumentRule)
+      const minQuantity = this.resolveMinQuantity(input, instrumentRule)
       items.push({
         code: 'instrument.state',
         passed: instrumentRule.state === 'live',
         message: instrumentRule.state === 'live' ? '交易对处于可交易状态' : `交易对当前状态为 ${instrumentRule.state}`,
       })
       items.push(this.checkStep('price.step', executionPrice, instrumentRule.tickSize, `价格需符合最小变动单位 ${instrumentRule.tickSize}`))
-      items.push(this.checkStep('quantity.step', baseQuantity, instrumentRule.lotSize, `数量需符合最小变动单位 ${instrumentRule.lotSize}`))
+      items.push(this.checkStep('quantity.step', baseQuantity, quantityStep, `数量需符合最小变动单位 ${quantityStep}`))
       items.push({
         code: 'quantity.min',
-        passed: baseQuantity.greaterThanOrEqualTo(instrumentRule.minSize),
-        message: `基础币数量 ${baseQuantity.toFixed()}，最小下单数量 ${instrumentRule.minSize}`,
+        passed: baseQuantity.greaterThanOrEqualTo(minQuantity),
+        message: `基础币数量 ${baseQuantity.toFixed()}，最小下单数量 ${minQuantity}`,
       })
       if (instrumentRule.minNotional) {
         items.push({
@@ -342,6 +668,30 @@ export class TradeExecutionService {
     }
 
     return items
+  }
+
+  private resolveQuantityStep(input: TradeOrderPreviewInput, instrumentRule?: InstrumentRule) {
+    if (!instrumentRule) {
+      return '0'
+    }
+
+    if (input.exchange === 'binance' && input.orderType === 'market') {
+      return instrumentRule.marketLotSize ?? instrumentRule.lotSize
+    }
+
+    return instrumentRule.lotSize
+  }
+
+  private resolveMinQuantity(input: TradeOrderPreviewInput, instrumentRule?: InstrumentRule) {
+    if (!instrumentRule) {
+      return '0'
+    }
+
+    if (input.exchange === 'binance' && input.orderType === 'market') {
+      return instrumentRule.marketMinSize ?? instrumentRule.minSize
+    }
+
+    return instrumentRule.minSize
   }
 
   private checkStep(code: string, value: Decimal, step: string, message: string): TradeOrderCheckItem {

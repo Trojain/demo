@@ -24,6 +24,7 @@ import {
   confirmOrderSchema,
   marketCandlesQuerySchema,
   listSignalsQuerySchema,
+  listAuditLogsQuerySchema,
   previewOrderSchema,
   listRiskChecksQuerySchema,
   updateRiskConfigSchema,
@@ -84,11 +85,18 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
   })
 
-  app.get('/api/audit-logs', async request => {
-    const query = request.query as { limit?: string }
-    const requestedLimit = Number(query.limit ?? 100)
-    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 100
-    return deps.auditLogService.list(limit)
+  app.get('/api/audit-logs', async (request, reply) => {
+    const parsed = listAuditLogsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '审计日志查询参数不合法', issues: parsed.error.issues })
+    }
+
+    const actions = parsed.data.actions
+      ?.split(',')
+      .map(action => action.trim())
+      .filter(Boolean) as Parameters<typeof deps.auditLogService.list>[1]
+
+    return deps.auditLogService.list(parsed.data.limit, actions && actions.length > 0 ? actions : undefined)
   })
 
   app.delete('/api/audit-logs/:id', async (request, reply) => {
@@ -288,7 +296,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
 
     try {
-      const order = await deps.tradeExecutionService.confirm(parsed.data.preview)
+      const order = await deps.tradeExecutionService.confirm(parsed.data.preview, parsed.data.confirmToken)
       return reply.status(201).send(order)
     } catch (error) {
       if (error instanceof TradeExecutionError) {

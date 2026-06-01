@@ -95,6 +95,13 @@ export const listSignalsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 })
 
+export const listAuditLogsQuerySchema = z.object({
+  /** 返回审计日志数量，限制最大值避免一次性读取过多 SQLite 记录 */
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  /** 按动作筛选，多个动作使用逗号分隔 */
+  actions: z.string().optional(),
+})
+
 export const listRiskChecksQuerySchema = z.object({
   /** 返回风控检查数量，限制最大值避免一次性读取过多 SQLite 记录 */
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -159,6 +166,8 @@ export const tradeOrderPreviewSchema = z
 export const tradeOrderConfirmSchema = z.object({
   /** 待确认的交易预览参数，后端会重新计算最终结果 */
   preview: tradeOrderPreviewSchema,
+  /** 预检阶段返回的确认令牌，用于真实下单二次确认和幂等保护 */
+  confirmToken: z.string().min(1).optional(),
 })
 
 export type TradeOrderPreviewInput = z.infer<typeof tradeOrderPreviewSchema>

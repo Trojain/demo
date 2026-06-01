@@ -357,6 +357,8 @@ export interface TradeOrderPreview {
   passed: boolean;
   /** 检查项明细 */
   checkItems: TradeOrderCheckItem[];
+  /** 预检生成的确认令牌，真实下单确认时必须回传 */
+  confirmToken?: string;
   /** 预览生成时间 */
   previewedAt: string;
 }

@@ -34,10 +34,19 @@ function mapAuditLog(row: AuditLogRow): AuditLog {
 export class AuditLogRepository {
   constructor(private readonly db: Database.Database) {}
 
-  list(limit = 100): AuditLog[] {
+  list(limit = 100, actions?: AuditLog['action'][]): AuditLog[] {
+    const conditions: string[] = []
+    const params: Array<string | number> = []
+    if (actions && actions.length > 0) {
+      conditions.push(`action IN (${actions.map(() => '?').join(', ')})`)
+      params.push(...actions)
+    }
+    params.push(limit)
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
     return this.db
-      .prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ?')
-      .all(limit)
+      .prepare(`SELECT * FROM audit_logs ${whereSql} ORDER BY created_at DESC LIMIT ?`)
+      .all(...params)
       .map(row => mapAuditLog(row as AuditLogRow))
   }
 

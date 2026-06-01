@@ -163,6 +163,11 @@ export class StrategyService {
       })
       this.notificationService.broadcast('trigger.created', event)
 
+      if (!rule.simulationMode) {
+        // 真实策略命中后保留待确认状态，当前阶段继续要求人工确认，避免后台直接自动真实下单。
+        return
+      }
+
       try {
         // 当前策略命中后直接在后台串行完成预览、最终校验和下单执行，保证审计顺序稳定一致。
         await this.orderService.confirmTrigger(event.id, { executionMode: 'auto' })

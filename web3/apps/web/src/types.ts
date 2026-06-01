@@ -489,6 +489,8 @@ export interface TradeOrderPreview {
   passed: boolean;
   /** 检查项明细 */
   checkItems: TradeOrderCheckItem[];
+  /** 预检生成的确认令牌，真实下单确认时必须回传 */
+  confirmToken?: string;
   /** 预览生成时间 */
   previewedAt: string;
 }
@@ -638,8 +640,12 @@ export interface InstrumentRule {
   tickSize: string;
   /** 数量最小变动单位 */
   lotSize: string;
+  /** 市价单数量最小变动单位 */
+  marketLotSize?: string;
   /** 最小下单数量 */
   minSize: string;
+  /** 市价单最小下单数量 */
+  marketMinSize?: string;
   /** 最小成交额 */
   minNotional?: string;
   /** 交易对状态 */
