@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DashboardSummary, MarketTickerSnapshot, MonitorRule, OrderRecord, TickerPrice, TriggerEvent } from '../types';
+import type { DashboardSummary, MonitorRule, OrderRecord, TickerPrice, TriggerEvent } from '../types';
 import { tradingApi } from '../api/trading';
 import { createMarketPriceSnapshot, shouldAcceptMarketPrice, tickerKey } from '../utils/marketPrice';
 
@@ -12,12 +12,8 @@ interface TradingState {
   triggers: TriggerEvent[];
   /** 订单记录列表 */
   orders: OrderRecord[];
-  /** 最新行情 */
-  tickers: TickerPrice[];
-  /** 总览行情快照 */
-  marketOverview: MarketTickerSnapshot[];
-  /** 最近行情曲线点 */
-  priceSeries: Array<{ time: string; symbol: string; price: number }>;
+  /** 最新行情索引，按交易所和交易对精确定位 */
+  tickerMap: Record<string, TickerPrice>;
   /** 全局加载状态 */
   loading: boolean;
   /** 规则列表加载状态 */
@@ -34,14 +30,6 @@ interface TradingState {
   prependTrigger: (trigger: TriggerEvent) => void;
 }
 
-function toPricePoint(ticker: TickerPrice) {
-  return {
-    time: ticker.eventTime,
-    symbol: ticker.symbol,
-    price: Number(ticker.price)
-  };
-}
-
 export const useTradingStore = create<TradingState>((set, get) => ({
   dashboardSummary: {
     enabledRuleCount: 0,
@@ -53,9 +41,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   rules: [],
   triggers: [],
   orders: [],
-  tickers: [],
-  marketOverview: [],
-  priceSeries: [],
+  tickerMap: {},
   loading: false,
   rulesLoading: false,
   triggersLoading: false,
@@ -97,8 +83,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
   setTicker: (ticker) => {
-    const currentTickers = get().tickers;
-    const currentTicker = currentTickers.find((item) => tickerKey(item) === tickerKey(ticker));
+    const tickerId = tickerKey(ticker);
+    const currentTicker = get().tickerMap[tickerId];
     // WebSocket 实时行情和 REST 快照都可能进入同一通道，旧 eventTime 不能覆盖新价格。
     if (!shouldAcceptMarketPrice(
       currentTicker ? createMarketPriceSnapshot(currentTicker, 'realtime') : undefined,
@@ -107,23 +93,23 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       return;
     }
 
-    const nextTickers = [ticker, ...currentTickers.filter((item) => tickerKey(item) !== tickerKey(ticker))];
-    const nextOverview = get().marketOverview.map((item) => {
-      if (tickerKey(item) !== tickerKey(ticker)) {
-        return item;
-      }
+    set((state) => {
+      const nextTickerMap = {
+        ...state.tickerMap,
+        [tickerId]: ticker,
+      };
+      const nextTickerCount = currentTicker ? state.dashboardSummary.tickerCount : state.dashboardSummary.tickerCount + 1;
 
-      return shouldAcceptMarketPrice(createMarketPriceSnapshot(item, 'rest'), createMarketPriceSnapshot(ticker, 'realtime')) ? { ...item, ...ticker } : item;
-    });
-    const nextSeries = [...get().priceSeries, toPricePoint(ticker)].slice(-80);
-    set({
-      tickers: nextTickers,
-      marketOverview: nextOverview,
-      priceSeries: nextSeries,
-      dashboardSummary: {
-        ...get().dashboardSummary,
-        tickerCount: nextTickers.length
-      }
+      return {
+        tickerMap: nextTickerMap,
+        // 只在缓存数量变化时更新总览统计，避免所有订阅 dashboardSummary 的页面跟随每一笔行情重渲染。
+        dashboardSummary: nextTickerCount === state.dashboardSummary.tickerCount
+          ? state.dashboardSummary
+          : {
+              ...state.dashboardSummary,
+              tickerCount: nextTickerCount,
+            },
+      };
     });
   },
   prependTrigger: (trigger) => {

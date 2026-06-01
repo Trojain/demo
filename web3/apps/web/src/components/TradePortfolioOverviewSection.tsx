@@ -1,24 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Button, Empty, Space, Tag } from 'antd'
 import { Line } from '@ant-design/plots'
-import { PageContainer, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components'
-import { ReloadOutlined } from '@ant-design/icons'
+import { ProCard, ProTable, StatisticCard, type ProColumns } from '@ant-design/pro-components'
+import { FileTextOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Decimal } from 'decimal.js'
 import { tradingApi } from '../api/trading'
 import { useProfitDisplay } from '../hooks/useProfitDisplay'
 import { useTickerSnapshots } from '../hooks/useTickerSnapshot'
-import type {
-  TradeAccount,
-  TradeAccountSummary,
-  TradeAccountType,
-  TradeEquityHistoryPoint,
-  TradeFill,
-  TradeOperationLog,
-  TradePosition,
-  TradePositionView,
-} from '../types'
+import type { TradeAccount, TradeAccountSummary, TradeAccountType, TradeEquityHistoryPoint, TradePosition, TradePositionView } from '../types'
 import { createMarketPriceSnapshot, mergeMarketPriceMap, tickerKey, type MarketPriceSnapshot } from '../utils/marketPrice'
-import styles from './page.module.scss'
+import styles from '../pages/page.module.scss'
 
 const ASSET_TREND_AXIS_LABEL_INTERVAL = 6
 
@@ -39,31 +31,8 @@ function renderExchange(exchange: string) {
   return exchange === 'okx' ? '欧易' : exchange === 'binance' ? '币安' : exchange.toUpperCase()
 }
 
-function renderPayload(payloadJson?: string) {
-  if (!payloadJson) {
-    return '-'
-  }
-
-  try {
-    return JSON.stringify(JSON.parse(payloadJson), null, 2)
-  } catch {
-    return payloadJson
-  }
-}
-
 function formatDateLabel(dateText: string) {
   return dateText.slice(5)
-}
-
-function buildAssetTrend(row: TradeAccountSummary, history: TradeEquityHistoryPoint[]) {
-  if (history.length === 0) {
-    return [{ date: formatDateLabel(row.calculatedAt.slice(0, 10)), value: numberValue(row.totalEquity) }]
-  }
-
-  return history.map(item => ({
-    date: formatDateLabel(item.date),
-    value: numberValue(item.totalEquity),
-  }))
 }
 
 function buildVisibleAxisLabels(trend: Array<{ date: string; value: number }>) {
@@ -88,7 +57,7 @@ function buildMarketPriceSnapshots(positionViews: TradePositionView[] = []) {
   )
 }
 
-function calculatePositionViews(positions: TradePosition[], latestPriceByKey: Record<string, MarketPriceSnapshot>): TradePositionView[] {
+function calculatePositionViews(positions: TradePosition[], latestPriceByKey: Record<string, MarketPriceSnapshot>) {
   return positions.map(position => {
     const latestSnapshot = latestPriceByKey[tickerKey(position)]
     const marketPrice = latestSnapshot?.price ?? '0'
@@ -170,16 +139,74 @@ function buildAccountHistoryMap(history: TradeEquityHistoryPoint[]) {
   }, {})
 }
 
-export function TradePositionsPage() {
+const AccountTrendChart = memo(function AccountTrendChart({
+  fallbackEquity,
+  history,
+  quoteCurrency,
+  trendColor,
+}: {
+  fallbackEquity?: string
+  history: TradeEquityHistoryPoint[]
+  quoteCurrency: string
+  trendColor: string
+}) {
+  const assetTrend = useMemo(
+    () =>
+      history.length > 0
+        ? history.map(item => ({
+            date: formatDateLabel(item.date),
+            value: numberValue(item.totalEquity),
+          }))
+        : [{ date: formatDateLabel(new Date().toISOString().slice(0, 10)), value: numberValue(fallbackEquity ?? '0') }],
+    [fallbackEquity, history],
+  )
+  const visibleAxisLabels = useMemo(() => buildVisibleAxisLabels(assetTrend), [assetTrend])
+  const firstAssetLabel = money(String(assetTrend[0]?.value ?? numberValue(fallbackEquity ?? '0')), ` ${quoteCurrency}`)
+  const lastAssetLabel = money(String(assetTrend[assetTrend.length - 1]?.value ?? numberValue(fallbackEquity ?? '0')), ` ${quoteCurrency}`)
+
+  return (
+    <div className={styles.assetTrendChart}>
+      <span className={styles.assetTrendStartLabel}>{firstAssetLabel}</span>
+      <span className={styles.assetTrendEndLabel}>{lastAssetLabel}</span>
+      <Line
+        height={132}
+        data={assetTrend}
+        xField='date'
+        yField='value'
+        padding={[20, 12, 28, 12]}
+        tooltip={{
+          title: item => item.date,
+          items: [{ channel: 'y', name: `总资产 ${quoteCurrency}` }],
+        }}
+        axis={{
+          x: {
+            tick: false,
+            title: false,
+            labelAutoRotate: false,
+            labelSpacing: 12,
+            labelFontSize: 11,
+            labelFill: '#b8bec8',
+            labelFormatter: (value: string) => (visibleAxisLabels.has(value) ? value : ''),
+          },
+          y: false,
+        }}
+        line={{ style: { stroke: trendColor, lineWidth: 2 } }}
+        point={false}
+      />
+    </div>
+  )
+})
+
+export function TradePortfolioOverviewSection() {
+  const navigate = useNavigate()
   const loadingRef = useRef(false)
   const profitDisplay = useProfitDisplay()
   const [accounts, setAccounts] = useState<TradeAccount[]>([])
   const [positions, setPositions] = useState<TradePosition[]>([])
   const [equityHistory, setEquityHistory] = useState<TradeEquityHistoryPoint[]>([])
-  const [fills, setFills] = useState<TradeFill[]>([])
-  const [operationLogs, setOperationLogs] = useState<TradeOperationLog[]>([])
   const [latestPriceByKey, setLatestPriceByKey] = useState<Record<string, MarketPriceSnapshot>>({})
   const [calculatedAt, setCalculatedAt] = useState(() => new Date().toISOString())
+  const [loading, setLoading] = useState(false)
   const positionKeys = useMemo(() => positions.map(position => tickerKey(position)), [positions])
   const realtimeTickerMap = useTickerSnapshots(positionKeys)
   const accountHistoryMap = useMemo(() => buildAccountHistoryMap(equityHistory), [equityHistory])
@@ -212,68 +239,27 @@ export function TradePositionsPage() {
     [profitDisplay],
   )
 
-  const fillColumns = useMemo<ProColumns<TradeFill>[]>(
-    () => [
-      { title: '下单模式', dataIndex: 'accountType', width: 110, render: (_, row) => renderMode(row.accountType) },
-      { title: '交易所', dataIndex: 'exchange', width: 90, render: (_, row) => <Tag>{row.exchange.toUpperCase()}</Tag> },
-      { title: '交易对', dataIndex: 'symbol', width: 120 },
-      { title: '方向', dataIndex: 'side', width: 90, render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag> },
-      { title: '成交价', dataIndex: 'price', render: (_, row) => money(row.price, ` ${row.feeCurrency}`) },
-      { title: '数量', dataIndex: 'baseQuantity' },
-      { title: '成交额', dataIndex: 'quoteAmount', render: (_, row) => money(row.quoteAmount, ` ${row.feeCurrency}`) },
-      { title: '手续费', dataIndex: 'feeAmount', render: (_, row) => `${row.feeAmount} ${row.feeCurrency}` },
-      { title: '已实现盈亏', dataIndex: 'realizedPnl', render: (_, row) => profitDisplay.renderMoney(row.realizedPnl, row.feeCurrency) },
-      { title: '成交时间', dataIndex: 'createdAt', valueType: 'dateTime' },
-    ],
-    [profitDisplay],
-  )
-
-  const logColumns = useMemo<ProColumns<TradeOperationLog>[]>(
-    () => [
-      { title: '下单模式', dataIndex: 'accountType', width: 110, render: (_, row) => renderMode(row.accountType) },
-      { title: '交易所', dataIndex: 'exchange', width: 90, render: (_, row) => <Tag>{row.exchange.toUpperCase()}</Tag> },
-      { title: '级别', dataIndex: 'level', width: 90, render: (_, row) => <Tag color={row.level === 'error' ? 'error' : row.level === 'warning' ? 'warning' : 'processing'}>{row.level}</Tag> },
-      { title: '动作', dataIndex: 'action', width: 180 },
-      { title: '消息', dataIndex: 'message', ellipsis: true },
-      {
-        title: '详情',
-        dataIndex: 'payloadJson',
-        width: 90,
-        render: (_, row) => (
-          <Tooltip title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{renderPayload(row.payloadJson)}</pre>}>
-            <Typography.Link disabled={!row.payloadJson}>查看</Typography.Link>
-          </Tooltip>
-        ),
-      },
-      { title: '时间', dataIndex: 'createdAt', valueType: 'dateTime' },
-    ],
-    [],
-  )
-
-  const loadPageData = useCallback(async () => {
+  const loadSectionData = useCallback(async () => {
     if (loadingRef.current) {
       return
     }
 
     loadingRef.current = true
+    setLoading(true)
     try {
-      const [nextAccounts, nextPositions, nextEquityHistory, nextPositionViews, nextFills, nextOperationLogs] = await Promise.all([
+      const [nextAccounts, nextEquityHistory, nextPositionViews] = await Promise.all([
         tradingApi.getTradeAccounts(),
-        tradingApi.getTradePositions(),
         tradingApi.getTradeEquityHistory(undefined, undefined, 30),
         tradingApi.getTradePositionValuations(),
-        tradingApi.getTradeFills(undefined, undefined, 200),
-        tradingApi.getTradeLogs(undefined, undefined, 200),
       ])
       setAccounts(nextAccounts)
-      setPositions(nextPositions)
+      // 估值接口已包含完整持仓字段，首屏直接复用，减少一次重复请求。
+      setPositions(nextPositionViews)
       setEquityHistory(nextEquityHistory)
-      setFills(nextFills)
-      setOperationLogs(nextOperationLogs)
       const initialSnapshots = buildMarketPriceSnapshots(nextPositionViews)
       let latestAcceptedEventTime: string | undefined
       setLatestPriceByKey(current => {
-        // 首屏和手动刷新也走统一合并规则，避免接口旧值覆盖掉已经收到的实时行情。
+        // 首屏和手动刷新也走统一合并规则，避免估值接口旧值覆盖掉已经收到的实时行情。
         const result = mergeMarketPriceMap(current, initialSnapshots)
         latestAcceptedEventTime = result.latestAcceptedEventTime
         return result.changed ? result.nextMap : current
@@ -281,12 +267,13 @@ export function TradePositionsPage() {
       setCalculatedAt(current => latestAcceptedEventTime ?? current)
     } finally {
       loadingRef.current = false
+      setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    void loadPageData()
-  }, [loadPageData])
+    void loadSectionData()
+  }, [loadSectionData])
 
   useEffect(() => {
     const matchedTickers = Object.values(realtimeTickerMap)
@@ -296,7 +283,7 @@ export function TradePositionsPage() {
 
     let latestAcceptedEventTime: string | undefined
     setLatestPriceByKey(current => {
-      // 持仓页只接收当前持仓相关的实时行情，避免其他币种的推送拖着整页重算。
+      // 持仓区块只消费当前持仓相关的实时行情，避免其他币种的推送拖着总览整页重算。
       const result = mergeMarketPriceMap(current, matchedTickers.map(ticker => createMarketPriceSnapshot(ticker, 'realtime')))
       latestAcceptedEventTime = result.latestAcceptedEventTime
       return result.changed ? result.nextMap : current
@@ -307,16 +294,28 @@ export function TradePositionsPage() {
   }, [realtimeTickerMap])
 
   return (
-    <PageContainer subTitle='查看模拟和真实交易共用的账户总资产、持仓市值、浮动盈亏和已实现盈亏'>
+    <ProCard
+      title='持仓与资产'
+      extra={
+        <Space wrap>
+          <Button icon={<FileTextOutlined />} onClick={() => navigate('/trade-logs?tab=fills')}>
+            成交记录
+          </Button>
+          <Button icon={<FileTextOutlined />} onClick={() => navigate('/trade-logs?tab=logs')}>
+            操作日志
+          </Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void loadSectionData()}>
+            刷新持仓
+          </Button>
+        </Space>
+      }
+    >
       {summaries.length > 0 ? (
         <StatisticCard.Group className={styles.tradeSummaryCards} direction='row'>
-          {summaries.map((row) => {
+          {summaries.map(row => {
             const totalPnl = numberValue(row.totalPnl)
             const trendColor = totalPnl >= 0 ? '#1677ff' : '#f5222d'
-            const assetTrend = buildAssetTrend(row, accountHistoryMap[row.accountId] ?? [])
-            const visibleAxisLabels = buildVisibleAxisLabels(assetTrend)
-            const firstAssetLabel = money(String(assetTrend[0]?.value ?? numberValue(row.totalEquity)), ` ${row.quoteCurrency}`)
-            const lastAssetLabel = money(String(assetTrend[assetTrend.length - 1]?.value ?? numberValue(row.totalEquity)), ` ${row.quoteCurrency}`)
+            const accountHistory = accountHistoryMap[row.accountId] ?? []
 
             return (
               <StatisticCard
@@ -340,35 +339,7 @@ export function TradePositionsPage() {
                     </div>
                   ),
                 }}
-                chart={
-                  <div className={styles.assetTrendChart}>
-                    <span className={styles.assetTrendStartLabel}>{firstAssetLabel}</span>
-                    <span className={styles.assetTrendEndLabel}>{lastAssetLabel}</span>
-                    <Line
-                      height={132}
-                      data={assetTrend}
-                      xField='date'
-                      yField='value'
-                      padding={[20, 12, 28, 12]}
-                      tooltip={{
-                        title: (item) => item.date,
-                        items: [{ channel: 'y', name: `总资产 ${row.quoteCurrency}` }],
-                      }}
-                      axis={{
-                        x: {
-                          tick: false,
-                          title: false,
-                          labelFontSize: 11,
-                          labelFill: '#b8bec8',
-                          labelFormatter: (value: string) => (visibleAxisLabels.has(value) ? value : ''),
-                        },
-                        y: false,
-                      }}
-                      line={{ style: { stroke: trendColor, lineWidth: 2 } }}
-                      point={false}
-                    />
-                  </div>
-                }
+                chart={<AccountTrendChart fallbackEquity={accountHistory.length === 0 ? row.totalEquity : undefined} history={accountHistory} quoteCurrency={row.quoteCurrency} trendColor={trendColor} />}
                 footer={
                   <div className={styles.tradeSummaryMetrics}>
                     <span>可用余额：{money(row.availableQuoteBalance, ` ${row.quoteCurrency}`)}</span>
@@ -392,50 +363,13 @@ export function TradePositionsPage() {
       <ProTable<TradePositionView>
         rowKey='id'
         search={false}
+        options={false}
         columns={positionColumns}
         dataSource={positionViews}
+        loading={loading}
         pagination={{ pageSize: 10 }}
-        toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => void loadPageData()}>
-            刷新持仓
-          </Button>,
-        ]}
+        toolBarRender={false}
       />
-
-      <Tabs
-        items={[
-          {
-            key: 'fills',
-            label: '成交记录',
-            children: (
-              <ProTable<TradeFill>
-                rowKey='id'
-                search={false}
-                options={false}
-                columns={fillColumns}
-                dataSource={fills}
-                pagination={{ pageSize: 8 }}
-                toolBarRender={false}
-              />
-            ),
-          },
-          {
-            key: 'logs',
-            label: '操作日志',
-            children: (
-              <ProTable<TradeOperationLog>
-                rowKey='id'
-                search={false}
-                options={false}
-                columns={logColumns}
-                dataSource={operationLogs}
-                pagination={{ pageSize: 8 }}
-                toolBarRender={false}
-              />
-            ),
-          },
-        ]}
-      />
-    </PageContainer>
+    </ProCard>
   )
 }

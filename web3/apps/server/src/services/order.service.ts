@@ -27,7 +27,14 @@ export class OrderService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async confirmTrigger(triggerId: string): Promise<OrderRecord> {
+  async confirmTrigger(
+    triggerId: string,
+    options: {
+      /** 执行来源，manual 表示人工触发，auto 表示策略命中后自动执行 */
+      executionMode?: 'manual' | 'auto'
+    } = {},
+  ): Promise<OrderRecord> {
+    const executionMode = options.executionMode ?? 'manual'
     const trigger = this.triggerRepository.findById(triggerId)
     if (!trigger) {
       throw new Error('触发事件不存在')
@@ -42,45 +49,58 @@ export class OrderService {
       throw new Error('关联监控规则不存在')
     }
 
-    const finalPreview = await this.validateBeforeSubmit(triggerId)
-    const order = await this.tradeExecutionService.confirmRuleTrigger({
-      triggerId,
-      rule,
-    })
+    try {
+      const finalPreview = await this.validateBeforeSubmit(triggerId)
+      const order = await this.tradeExecutionService.confirmRuleTrigger({
+        triggerId,
+        rule,
+      })
 
-    this.triggerRepository.markConfirmed(triggerId)
-    this.auditLogService.record({
-      action: 'trigger.confirmed',
-      entityType: 'trigger',
-      entityId: triggerId,
-      ruleId: rule.id,
-      triggerId,
-      orderId: order.id,
-      message: `已确认 ${rule.symbol} 触发事件`,
-      payload: {
-        exchange: rule.exchange,
-        symbol: rule.symbol,
-        marketPrice: trigger.marketPrice,
-        targetPrice: trigger.targetPrice,
-      },
-    })
-    this.auditLogService.record({
-      action: 'order.submitted',
-      entityType: 'order',
-      entityId: order.id,
-      ruleId: rule.id,
-      triggerId,
-      orderId: order.id,
-      message: `${rule.symbol} 订单已提交`,
-      payload: {
-        exchange: rule.exchange,
-        side: rule.side,
-        orderType: rule.orderType,
-        simulationMode: order.simulationMode,
-        exchangeOrderId: order.exchangeOrderId,
-      },
-    })
-    return order
+      this.triggerRepository.markConfirmed(triggerId)
+      this.auditLogService.record({
+        action: 'trigger.confirmed',
+        entityType: 'trigger',
+        entityId: triggerId,
+        ruleId: rule.id,
+        triggerId,
+        orderId: order.id,
+        message: executionMode === 'auto' ? `${rule.symbol} 触发后已自动执行` : `已确认 ${rule.symbol} 触发事件`,
+        payload: {
+          exchange: rule.exchange,
+          symbol: rule.symbol,
+          marketPrice: trigger.marketPrice,
+          targetPrice: trigger.targetPrice,
+          executionMode,
+          previewedAt: finalPreview.previewedAt,
+        },
+      })
+      this.auditLogService.record({
+        action: 'order.submitted',
+        entityType: 'order',
+        entityId: order.id,
+        ruleId: rule.id,
+        triggerId,
+        orderId: order.id,
+        message: executionMode === 'auto' ? `${rule.symbol} 自动下单已提交` : `${rule.symbol} 订单已提交`,
+        payload: {
+          exchange: rule.exchange,
+          side: rule.side,
+          orderType: rule.orderType,
+          simulationMode: order.simulationMode,
+          exchangeOrderId: order.exchangeOrderId,
+          executionMode,
+        },
+      })
+      return order
+    } catch (error) {
+      this.handleTriggerFailure({
+        trigger,
+        rule,
+        error,
+        executionMode,
+      })
+      throw error
+    }
   }
 
   private async validateBeforeSubmit(triggerId: string): Promise<OrderPreview> {
@@ -118,6 +138,67 @@ export class OrderService {
     })
 
     throw new FinalOrderValidationError(`下单最终校验未通过：${reason}`, preview, failedItems)
+  }
+
+  private handleTriggerFailure(input: {
+    trigger: { id: string; marketPrice: string; targetPrice: string }
+    rule: { id: string; exchange: string; symbol: string; side: string; orderType: string }
+    error: unknown
+    executionMode: 'manual' | 'auto'
+  }) {
+    const failedTrigger = this.triggerRepository.markFailed(input.trigger.id)
+    const preview =
+      input.error instanceof FinalOrderValidationError
+        ? input.error.preview
+        : input.error instanceof TradeExecutionError
+          ? input.error.preview
+          : undefined
+    const previewFailedItems =
+      preview && 'checkItems' in preview
+        ? preview.checkItems.filter(item => !item.passed)
+        : preview?.accountItems?.filter(item => !item.passed) ?? []
+    const failedItems =
+      input.error instanceof FinalOrderValidationError
+        ? input.error.failedItems
+        : previewFailedItems
+    const message = input.error instanceof Error ? input.error.message : '确认下单失败'
+
+    this.auditLogService.record({
+      level: 'warning',
+      action: 'trigger.failed',
+      entityType: 'trigger',
+      entityId: input.trigger.id,
+      ruleId: input.rule.id,
+      triggerId: input.trigger.id,
+      message: input.executionMode === 'auto' ? `${input.rule.symbol} 自动执行失败：${message}` : `${input.rule.symbol} 确认执行失败：${message}`,
+      payload: {
+        exchange: input.rule.exchange,
+        symbol: input.rule.symbol,
+        side: input.rule.side,
+        orderType: input.rule.orderType,
+        triggerStatus: failedTrigger?.status ?? 'failed',
+        marketPrice: input.trigger.marketPrice,
+        targetPrice: input.trigger.targetPrice,
+        executionMode: input.executionMode,
+        failedItems,
+      },
+    })
+    this.auditLogService.record({
+      level: 'warning',
+      action: 'order.failed',
+      entityType: 'trigger',
+      entityId: input.trigger.id,
+      ruleId: input.rule.id,
+      triggerId: input.trigger.id,
+      message,
+      payload: {
+        exchange: input.rule.exchange,
+        symbol: input.rule.symbol,
+        executionMode: input.executionMode,
+        preview,
+        failedItems,
+      },
+    })
   }
 }
 

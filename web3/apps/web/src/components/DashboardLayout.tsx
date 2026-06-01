@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Layout, Menu, Space, Tag, Typography } from 'antd'
-import { AuditOutlined, BellOutlined, DashboardOutlined, LineChartOutlined, SafetyOutlined, ThunderboltOutlined, WalletOutlined } from '@ant-design/icons'
+import { DashboardOutlined, FileTextOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import styles from './DashboardLayout.module.scss'
 
 const { Header, Content, Sider } = Layout
@@ -20,7 +20,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <ThunderboltOutlined className={styles.brandIcon} />
           <div>
             <Typography.Text className={styles.brandTitle}>Web3 Monitor</Typography.Text>
-            <Typography.Text className={styles.brandSubTitle}>半自动交易台</Typography.Text>
+            <Typography.Text className={styles.brandSubTitle}>自动交易台</Typography.Text>
           </div>
         </div>
         <Menu
@@ -28,14 +28,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           selectedKeys={[location.pathname]}
           className={styles.menu}
           items={[
-            { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>监控总览</Link> },
-            { key: '/signals', icon: <ThunderboltOutlined />, label: <Link to='/signals'>交易信号</Link> },
-            { key: '/triggers', icon: <BellOutlined />, label: <Link to='/triggers'>触发确认</Link> },
-            { key: '/trade-positions', icon: <WalletOutlined />, label: <Link to='/trade-positions'>持仓收益</Link> },
-            { key: '/trade-logs', icon: <AuditOutlined />, label: <Link to='/trade-logs'>交易日志</Link> },
-            { key: '/audit-logs', icon: <AuditOutlined />, label: <Link to='/audit-logs'>审计日志</Link> },
+            { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>总览</Link> },
+            { key: '/rules', icon: <ThunderboltOutlined />, label: <Link to='/rules'>交易计划</Link> },
+            { key: '/trade-logs', icon: <FileTextOutlined />, label: <Link to='/trade-logs'>成交与日志</Link> },
             { key: '/risk-config', icon: <SafetyOutlined />, label: <Link to='/risk-config'>风控配置</Link> },
-            { key: '/market-health', icon: <LineChartOutlined />, label: <Link to='/market-health'>行情健康</Link> },
           ]}
         />
       </Sider>

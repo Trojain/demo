@@ -57,6 +57,13 @@ export class RiskCheckRepository {
       .map((row) => mapRiskCheck(row as RiskCheckRow));
   }
 
+  listByRuleId(ruleId: string, limit = 100): RiskCheck[] {
+    return this.db
+      .prepare('SELECT * FROM risk_checks WHERE rule_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(ruleId, limit)
+      .map((row) => mapRiskCheck(row as RiskCheckRow));
+  }
+
   getPassedStatsSince(since: string): { count: number; quoteAmount: string } {
     const row = this.db
       .prepare(

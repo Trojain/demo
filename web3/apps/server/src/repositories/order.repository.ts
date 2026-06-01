@@ -49,6 +49,20 @@ export class OrderRepository {
       .map(row => mapOrder(row as OrderRow))
   }
 
+  listByRuleId(ruleId: string, limit = 100): OrderRecord[] {
+    return this.db
+      .prepare('SELECT * FROM order_records WHERE rule_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(ruleId, limit)
+      .map(row => mapOrder(row as OrderRow))
+  }
+
+  findByTriggerId(triggerId: string): OrderRecord | undefined {
+    const row = this.db
+      .prepare('SELECT * FROM order_records WHERE trigger_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(triggerId) as OrderRow | undefined
+    return row ? mapOrder(row) : undefined
+  }
+
   countAll(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS count FROM order_records').get() as { count: number }
     return row.count

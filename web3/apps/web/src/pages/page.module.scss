@@ -145,11 +145,19 @@
   border-radius: 6px;
   background: #fbfcfd;
 
-  strong {
-    color: #111827;
-    font-size: 16px;
-    text-align: center;
-  }
+}
+
+.tradePlanLivePrice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.tradePlanLivePriceIcon {
+  margin-right: 6px;
 }
 
 .tradePlanAdvancedCard {
@@ -252,10 +260,11 @@
 @media (max-width: 560px) {
   .tradePlanMarketInfo {
     grid-template-columns: 1fr;
+  }
 
-    strong {
-      text-align: left;
-    }
+  .tradePlanLivePrice {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .tradeSummaryMetrics {

@@ -41,6 +41,13 @@ export class AuditLogRepository {
       .map(row => mapAuditLog(row as AuditLogRow))
   }
 
+  listByRuleId(ruleId: string, limit = 100): AuditLog[] {
+    return this.db
+      .prepare('SELECT * FROM audit_logs WHERE rule_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(ruleId, limit)
+      .map(row => mapAuditLog(row as AuditLogRow))
+  }
+
   create(log: AuditLog): AuditLog {
     this.db
       .prepare(

@@ -55,6 +55,13 @@ export class SignalRepository {
       .map((row) => mapSignal(row as SignalRow));
   }
 
+  listByRuleId(ruleId: string, limit = 100): TradingSignal[] {
+    return this.db
+      .prepare('SELECT * FROM trading_signals WHERE rule_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(ruleId, limit)
+      .map((row) => mapSignal(row as SignalRow));
+  }
+
   findPendingByRuleId(ruleId: string): TradingSignal | undefined {
     const row = this.db
       .prepare('SELECT * FROM trading_signals WHERE rule_id = ? AND status = ? ORDER BY created_at DESC LIMIT 1')

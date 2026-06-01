@@ -147,6 +147,28 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
 
   app.get('/api/rules', async () => deps.ruleRepository.list())
 
+  app.get('/api/rules/:id/execution', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '监控规则 ID 不合法', issues: parsed.error.issues })
+    }
+
+    const rule = deps.ruleRepository.findById(parsed.data.id)
+    if (!rule) {
+      return reply.status(404).send({ message: '监控规则不存在' })
+    }
+
+    return {
+      rule,
+      signals: deps.signalRepository.listByRuleId(rule.id, 100),
+      riskChecks: deps.riskCheckRepository.listByRuleId(rule.id, 100),
+      triggers: deps.triggerRepository.listByRuleId(rule.id, 100),
+      orders: deps.orderRepository.listByRuleId(rule.id, 100),
+      auditLogs: deps.auditLogRepository.listByRuleId(rule.id, 200),
+      marketHealth: deps.marketService.getHealth(rule.exchange),
+    }
+  })
+
   app.get('/api/signals', async (request, reply) => {
     const parsed = listSignalsQuerySchema.safeParse(request.query)
     if (!parsed.success) {

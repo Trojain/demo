@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
-import { Button, Tag, Tooltip, Typography } from 'antd'
+import { useSearchParams } from 'react-router-dom'
+import { Button, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
@@ -24,9 +25,11 @@ function renderPayload(payloadJson?: string) {
 }
 
 export function TradeLogsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const fillActionRef = useRef<ActionType | undefined>(undefined)
   const logActionRef = useRef<ActionType | undefined>(undefined)
   const profitDisplay = useProfitDisplay()
+  const activeTab = searchParams.get('tab') === 'logs' ? 'logs' : 'fills'
 
   const fillColumns = useMemo<ProColumns<TradeFill>[]>(
     () => [
@@ -68,30 +71,48 @@ export function TradeLogsPage() {
 
   return (
     <PageContainer subTitle='查看模拟和真实交易共用的成交记录与操作日志'>
-      <ProTable<TradeFill>
-        actionRef={fillActionRef}
-        rowKey='id'
-        search={false}
-        columns={fillColumns}
-        request={async () => toTableRequestResult(await tradingApi.getTradeFills(undefined, undefined, 200))}
-        pagination={{ pageSize: 8 }}
-        toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => fillActionRef.current?.reload()}>
-            刷新成交
-          </Button>,
-        ]}
-      />
-      <ProTable<TradeOperationLog>
-        actionRef={logActionRef}
-        rowKey='id'
-        search={false}
-        columns={logColumns}
-        request={async () => toTableRequestResult(await tradingApi.getTradeLogs(undefined, undefined, 200))}
-        pagination={{ pageSize: 8 }}
-        toolBarRender={() => [
-          <Button key='reload' icon={<ReloadOutlined />} onClick={() => logActionRef.current?.reload()}>
-            刷新日志
-          </Button>,
+      <Tabs
+        activeKey={activeTab}
+        onChange={tab => setSearchParams({ tab })}
+        items={[
+          {
+            key: 'fills',
+            label: '成交记录',
+            children: (
+              <ProTable<TradeFill>
+                actionRef={fillActionRef}
+                rowKey='id'
+                search={false}
+                columns={fillColumns}
+                request={async () => toTableRequestResult(await tradingApi.getTradeFills(undefined, undefined, 200))}
+                pagination={{ pageSize: 8 }}
+                toolBarRender={() => [
+                  <Button key='reload' icon={<ReloadOutlined />} onClick={() => fillActionRef.current?.reload()}>
+                    刷新成交
+                  </Button>,
+                ]}
+              />
+            ),
+          },
+          {
+            key: 'logs',
+            label: '操作日志',
+            children: (
+              <ProTable<TradeOperationLog>
+                actionRef={logActionRef}
+                rowKey='id'
+                search={false}
+                columns={logColumns}
+                request={async () => toTableRequestResult(await tradingApi.getTradeLogs(undefined, undefined, 200))}
+                pagination={{ pageSize: 8 }}
+                toolBarRender={() => [
+                  <Button key='reload' icon={<ReloadOutlined />} onClick={() => logActionRef.current?.reload()}>
+                    刷新日志
+                  </Button>,
+                ]}
+              />
+            ),
+          },
         ]}
       />
     </PageContainer>

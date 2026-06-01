@@ -5,6 +5,7 @@ import type { MarketService } from './market.service.js'
 import type { NotificationService } from './notification.service.js'
 import type { AuditLogService } from './audit-log.service.js'
 import type { SignalService } from './signal.service.js'
+import type { OrderService } from './order.service.js'
 
 export class StrategyService {
   private timer?: NodeJS.Timeout
@@ -16,6 +17,7 @@ export class StrategyService {
     private readonly notificationService: NotificationService,
     private readonly auditLogService: AuditLogService,
     private readonly signalService: SignalService,
+    private readonly orderService: OrderService,
   ) {}
 
   start() {
@@ -160,6 +162,16 @@ export class StrategyService {
         lastErrorMessage: null,
       })
       this.notificationService.broadcast('trigger.created', event)
+
+      try {
+        // 当前策略命中后直接在后台串行完成预览、最终校验和下单执行，保证审计顺序稳定一致。
+        await this.orderService.confirmTrigger(event.id, { executionMode: 'auto' })
+      } catch (error) {
+        this.ruleRepository.updateRuntimeState(rule.id, {
+          runtimeStatus: 'error',
+          lastErrorMessage: error instanceof Error ? error.message : '自动执行失败',
+        })
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '策略检测失败'
       this.ruleRepository.updateRuntimeState(rule.id, {

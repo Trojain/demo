@@ -10,6 +10,15 @@ interface ProfitDisplayOptions {
   maximumFractionDigits?: number
 }
 
+interface ProfitTrendMeta {
+  /** 趋势颜色 */
+  color: string
+  /** 趋势图标，0 值时为空 */
+  Icon?: typeof ArrowUpOutlined
+  /** 是否为 0 */
+  zero: boolean
+}
+
 const PROFIT_COLOR = '#16a34a'
 const LOSS_COLOR = '#dc2626'
 const ZERO_COLOR = '#667085'
@@ -31,6 +40,23 @@ function formatAbsValue(value: Decimal, maximumFractionDigits: number) {
 
 export function useProfitDisplay() {
   return useMemo(() => {
+    const getTrendMeta = (value?: string | number): ProfitTrendMeta => {
+      const decimal = parseDecimal(value)
+      if (decimal.isZero()) {
+        return {
+          color: ZERO_COLOR,
+          zero: true,
+        }
+      }
+
+      const profitable = decimal.greaterThan(0)
+      return {
+        color: profitable ? PROFIT_COLOR : LOSS_COLOR,
+        Icon: profitable ? ArrowUpOutlined : ArrowDownOutlined,
+        zero: false,
+      }
+    }
+
     const render = (value?: string | number, options?: ProfitDisplayOptions): ReactNode => {
       const decimal = parseDecimal(value)
       const suffix = options?.suffix ? ` ${options.suffix.trim()}` : ''
@@ -45,13 +71,11 @@ export function useProfitDisplay() {
         )
       }
 
-      const profitable = decimal.greaterThan(0)
-      const color = profitable ? PROFIT_COLOR : LOSS_COLOR
-      const Icon = profitable ? ArrowUpOutlined : ArrowDownOutlined
+      const { color, Icon } = getTrendMeta(decimal.toString())
 
       return (
         <Typography.Text style={{ color, fontWeight: 600 }}>
-          <Icon style={{ marginRight: 4 }} />
+          {Icon ? <Icon style={{ marginRight: 4 }} /> : null}
           {formatAbsValue(decimal, maximumFractionDigits)}
           {suffix}
         </Typography.Text>
@@ -59,6 +83,8 @@ export function useProfitDisplay() {
     }
 
     return {
+      /** 价格或盈亏变化方向元数据，便于其他场景复用红绿和箭头规则 */
+      getTrendMeta,
       /** 盈亏金额展示，盈利为绿色向上箭头，亏损为红色向下箭头 */
       renderMoney: (value?: string | number, suffix = 'USDT') => render(value, { suffix, maximumFractionDigits: 4 }),
       /** 盈亏比例展示，盈利为绿色向上箭头，亏损为红色向下箭头 */

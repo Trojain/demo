@@ -95,7 +95,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService);
   const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService, tradeExecutionService);
   const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService);
-  const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService);
+  const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService, orderService);
 
   await registerApiRoutes(app, {
     auditLogRepository,

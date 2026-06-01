@@ -6,7 +6,7 @@ export type OrderSide = 'buy' | 'sell';
 
 export type OrderType = 'market' | 'limit';
 
-export type TriggerStatus = 'pending' | 'confirmed' | 'ignored';
+export type TriggerStatus = 'pending' | 'confirmed' | 'ignored' | 'failed';
 
 export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
 
@@ -30,6 +30,7 @@ export type AuditLogAction =
   | 'risk.rejected'
   | 'trigger.created'
   | 'trigger.confirmed'
+  | 'trigger.failed'
   | 'trigger.ignored'
   | 'order.submitted'
   | 'order.final_validation_failed'
@@ -546,6 +547,23 @@ export interface MarketHealth {
   subscribedSymbols: string[];
   /** 当前缓存行情 */
   tickers: MarketHealthTicker[];
+}
+
+export interface RuleExecutionDetail {
+  /** 监控规则详情 */
+  rule: MonitorRule;
+  /** 该规则关联的交易信号 */
+  signals: TradingSignal[];
+  /** 该规则关联的风控检查 */
+  riskChecks: RiskCheck[];
+  /** 该规则关联的触发记录 */
+  triggers: TriggerEvent[];
+  /** 该规则关联的订单记录 */
+  orders: OrderRecord[];
+  /** 该规则关联的审计日志 */
+  auditLogs: AuditLog[];
+  /** 规则所属交易所的行情健康状态 */
+  marketHealth: MarketHealth;
 }
 
 export interface OrderRecord {

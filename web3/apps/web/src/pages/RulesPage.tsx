@@ -1,11 +1,56 @@
 import { useMemo, useRef, useState, type ReactElement } from 'react'
-import { App as AntApp, Button, Popconfirm, Switch, Tag, Tooltip, Typography } from 'antd'
-import { DrawerForm, PageContainer, ProFormDependency, ProFormDigit, ProFormSelect, ProFormText, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import {
+  App as AntApp,
+  Button,
+  Col,
+  Drawer,
+  Empty,
+  Popconfirm,
+  Row,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  Timeline,
+  Tooltip,
+  Typography,
+} from 'antd'
+import {
+  DrawerForm,
+  PageContainer,
+  ProDescriptions,
+  ProFormDependency,
+  ProFormDigit,
+  ProFormSelect,
+  ProFormText,
+  ProTable,
+  StatisticCard,
+  type ActionType,
+  type ProColumns,
+  type ProDescriptionsItemProps,
+} from '@ant-design/pro-components'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
-import { RuleRuntimeStatusTag } from '../components/StatusTag'
+import { RuleRuntimeStatusTag, TriggerStatusTag } from '../components/StatusTag'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getMarketSymbolOptions } from '../constants/market'
-import type { CreateRulePayload, ExchangeCode, MonitorRule, OrderSide, OrderType, TriggerOperator, UpdateRulePayload } from '../types'
+import { useBootstrapTrading } from '../hooks/useBootstrapTrading'
+import { useTradingStore } from '../stores/tradingStore'
+import type {
+  AuditLog,
+  CreateRulePayload,
+  ExchangeCode,
+  MarketHealth,
+  MonitorRule,
+  OrderRecord,
+  OrderSide,
+  OrderType,
+  RiskCheck,
+  RuleExecutionDetail,
+  TradingSignal,
+  TriggerEvent,
+  TriggerOperator,
+  UpdateRulePayload,
+} from '../types'
 import { toTableRequestResult } from '../utils/proTable'
 
 const defaultRule: Partial<CreateRulePayload> = {
@@ -24,7 +69,7 @@ const defaultRule: Partial<CreateRulePayload> = {
   enabled: true,
 }
 
-// 表单提示语参考 OKX 与 Binance 现货下单字段，前端仅做展示说明，最终校验以后端为准。
+// 表单提示语继续对齐 OKX 和 Binance 现货下单语义，页面只做配置说明，真正计算以后端为准。
 const RULE_FIELD_TOOLTIPS = {
   exchange: '选择行情和交易规则来源，当前支持 OKX 与 Binance',
   symbol: '交易对标识，例如 BTC-USDT；会按交易所支持列表校验',
@@ -37,7 +82,7 @@ const RULE_FIELD_TOOLTIPS = {
   limitPrice: '限价单价格，市价单无需填写',
   maxSlippagePercent: '允许成交价偏离预估价的最大百分比',
   cooldownMs: '同一规则触发后的冷却时间，避免短时间重复触发',
-  maxTriggerCount: '规则生命周期内最多生成多少次触发事件',
+  maxTriggerCount: '规则生命周期内最多生成多少次执行尝试',
   simulationMode: '模拟下单只写入本地订单记录，不发送真实交易请求',
   enabled: '启用后参与策略扫描，停用后不会继续触发',
 } as const
@@ -80,13 +125,11 @@ const ORDER_TYPE_OPTIONS: Array<DescribedSelectOption<OrderType>> = [
   createDescribedOption({ title: '限价', value: 'limit', description: '按指定价格或更优价格成交' }),
 ]
 
-// 常见交易直觉：上涨到目标价更常用于卖出提醒，下跌到目标价更常用于买入提醒。
 const SUGGESTED_SIDE_BY_OPERATOR: Record<TriggerOperator, OrderSide> = {
   gte: 'sell',
   lte: 'buy',
 }
 
-// quoteAmount 对应交易所的计价币金额，表单按买卖方向换成更易理解的中文名称。
 const QUOTE_AMOUNT_LABEL_BY_SIDE: Record<OrderSide, string> = {
   buy: '投入金额',
   sell: '卖出金额',
@@ -95,6 +138,28 @@ const QUOTE_AMOUNT_LABEL_BY_SIDE: Record<OrderSide, string> = {
 const QUOTE_AMOUNT_TOOLTIP_BY_SIDE: Record<OrderSide, string> = {
   buy: '计划花费的 USDT 金额；金额和数量至少填写一个',
   sell: '按预估 USDT 价值卖出；金额和数量至少填写一个',
+}
+
+const auditLevelColorMap: Record<AuditLog['level'], string> = {
+  info: 'blue',
+  warning: 'orange',
+  error: 'red',
+}
+
+const auditActionTextMap: Record<AuditLog['action'], string> = {
+  'signal.created': '信号生成',
+  'signal.converted': '信号转换',
+  'signal.duplicated': '重复信号拦截',
+  'risk.passed': '风控通过',
+  'risk.rejected': '风控拒绝',
+  'trigger.created': '触发生成',
+  'trigger.confirmed': '触发执行',
+  'trigger.failed': '触发失败',
+  'trigger.ignored': '触发忽略',
+  'order.submitted': '订单提交',
+  'order.final_validation_failed': '最终校验失败',
+  'order.failed': '订单失败',
+  'strategy.error': '策略异常',
 }
 
 function getQuoteAmountLabel(side?: OrderSide) {
@@ -134,6 +199,31 @@ function normalizeRuleValues<T extends CreateRulePayload | UpdateRulePayload>(va
     limitPrice: values.orderType === 'limit' ? values.limitPrice?.trim() : undefined,
     targetPrice: values.targetPrice.trim(),
     maxSlippagePercent: values.maxSlippagePercent.trim(),
+  }
+}
+
+function parseJsonArray<T>(value?: string): T[] {
+  if (!value) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(value) as T[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function renderPayload(payloadJson?: string) {
+  if (!payloadJson) {
+    return '-'
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(payloadJson), null, 2)
+  } catch {
+    return payloadJson
   }
 }
 
@@ -313,9 +403,172 @@ function RuleDrawerForm<T extends CreateRulePayload | UpdateRulePayload>({
 }
 
 export function RulesPage() {
+  useBootstrapTrading()
   const { message } = AntApp.useApp()
+  const enabledRuleCount = useTradingStore(state => state.dashboardSummary.enabledRuleCount)
+  const ruleCount = useTradingStore(state => state.dashboardSummary.ruleCount)
+  const pendingTriggerCount = useTradingStore(state => state.dashboardSummary.pendingTriggerCount)
+  const orderCount = useTradingStore(state => state.dashboardSummary.orderCount)
   const actionRef = useRef<ActionType | undefined>(undefined)
   const [togglingRuleId, setTogglingRuleId] = useState('')
+  const [executionDrawerOpen, setExecutionDrawerOpen] = useState(false)
+  const [executionLoading, setExecutionLoading] = useState(false)
+  const [selectedRule, setSelectedRule] = useState<MonitorRule>()
+  const [executionDetail, setExecutionDetail] = useState<RuleExecutionDetail>()
+
+  const openExecutionDrawer = async (rule: MonitorRule) => {
+    setSelectedRule(rule)
+    setExecutionDrawerOpen(true)
+    setExecutionLoading(true)
+    try {
+      const detail = await tradingApi.getRuleExecutionDetail(rule.id)
+      setExecutionDetail(detail)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '执行详情加载失败')
+    } finally {
+      setExecutionLoading(false)
+    }
+  }
+
+  const executionRule = executionDetail?.rule ?? selectedRule
+
+  const ruleDescriptionColumns = useMemo<ProDescriptionsItemProps<MonitorRule>[]>(
+    () => [
+      { title: '交易所', dataIndex: 'exchange', render: (_, row) => <Tag>{row.exchange.toUpperCase()}</Tag> },
+      { title: '交易对', dataIndex: 'symbol' },
+      { title: '运行状态', dataIndex: 'runtimeStatus', render: (_, row) => <RuleRuntimeStatusTag status={row.runtimeStatus} /> },
+      { title: '下单模式', dataIndex: 'simulationMode', render: (_, row) => <Tag color={row.simulationMode ? 'processing' : 'error'}>{row.simulationMode ? '模拟下单' : '真实下单'}</Tag> },
+      { title: '触发条件', dataIndex: 'targetPrice', render: (_, row) => `${row.operator === 'gte' ? '>=' : '<='} ${row.targetPrice}` },
+      { title: '下单计划', dataIndex: 'side', render: (_, row) => `${row.orderType === 'limit' ? '限价' : '市价'} / ${row.side === 'buy' ? '买入' : '卖出'}` },
+      { title: '数量或金额', dataIndex: 'quoteAmount', render: (_, row) => (row.quoteAmount ? `${row.quoteAmount} USDT` : `${row.baseQuantity ?? '-'} 基础币`) },
+      { title: '冷却时间', dataIndex: 'cooldownMs', render: (_, row) => `${row.cooldownMs} ms` },
+      { title: '检测频率', dataIndex: 'checkIntervalMs', render: (_, row) => `${row.checkIntervalMs} ms` },
+      { title: '触发次数', dataIndex: 'triggeredCount', render: (_, row) => `${row.triggeredCount}/${row.maxTriggerCount}` },
+      { title: '最近检测', dataIndex: 'lastCheckedAt', valueType: 'dateTime', render: (_, row) => row.lastCheckedAt ?? '-' },
+      { title: '最近触发', dataIndex: 'lastTriggeredAt', valueType: 'dateTime', render: (_, row) => row.lastTriggeredAt ?? '-' },
+      { title: '最近错误', dataIndex: 'lastErrorMessage', span: 2, render: (_, row) => row.lastErrorMessage || '-' },
+    ],
+    [],
+  )
+
+  const marketHealthColumns = useMemo<ProDescriptionsItemProps<MarketHealth>[]>(
+    () => [
+      { title: '交易所', dataIndex: 'exchange', render: (_, row) => row.exchange.toUpperCase() },
+      {
+        title: 'REST 状态',
+        dataIndex: 'restBackoffActive',
+        render: (_, row) => <Tag color={row.restBackoffActive ? 'warning' : 'success'}>{row.restBackoffActive ? '退避中' : '正常'}</Tag>,
+      },
+      { title: '退避结束', dataIndex: 'restBackoffUntil', render: (_, row) => row.restBackoffUntil ?? '-' },
+      { title: '总览刷新', dataIndex: 'overviewRefreshedAt', render: (_, row) => row.overviewRefreshedAt ?? '-' },
+      {
+        title: '订阅交易对',
+        dataIndex: 'subscribedSymbols',
+        span: 2,
+        render: (_, row) => (
+          <Space size={4} wrap>
+            {row.subscribedSymbols.length > 0 ? row.subscribedSymbols.map(symbol => <Tag key={symbol}>{symbol}</Tag>) : <Tag>暂无订阅</Tag>}
+          </Space>
+        ),
+      },
+      { title: '最近 REST 错误', dataIndex: 'lastRestError', span: 2, render: (_, row) => row.lastRestError ?? '-' },
+    ],
+    [],
+  )
+
+  const signalColumns = useMemo<ProColumns<TradingSignal>[]>(
+    () => [
+      { title: '状态', dataIndex: 'status', width: 110, render: (_, row) => <Tag color={row.status === 'converted' ? 'success' : row.status === 'rejected' ? 'error' : 'processing'}>{row.status}</Tag> },
+      { title: '方向', dataIndex: 'side', width: 90, render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag> },
+      { title: '类型', dataIndex: 'orderType', width: 90, render: (_, row) => (row.orderType === 'limit' ? '限价' : '市价') },
+      { title: '市场价', dataIndex: 'marketPrice' },
+      { title: '目标价', dataIndex: 'targetPrice' },
+      { title: '原因', dataIndex: 'reason', ellipsis: true },
+      { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+    ],
+    [],
+  )
+
+  const riskColumns = useMemo<ProColumns<RiskCheck>[]>(
+    () => [
+      { title: '状态', dataIndex: 'status', width: 100, render: (_, row) => <Tag color={row.status === 'passed' ? 'success' : 'error'}>{row.status === 'passed' ? '通过' : '拒绝'}</Tag> },
+      { title: '风险敞口', dataIndex: 'quoteExposure', render: (_, row) => `${row.quoteExposure} USDT` },
+      { title: '市场价', dataIndex: 'marketPrice' },
+      { title: '结论', dataIndex: 'reason', ellipsis: true },
+      {
+        title: '风控明细',
+        dataIndex: 'itemsJson',
+        render: (_, row) => (
+          <Timeline
+            items={parseJsonArray<Array<{ code: string; passed: boolean; message: string }> extends never ? never : { code: string; passed: boolean; message: string }>(row.itemsJson).map(item => ({
+              color: item.passed ? 'green' : 'red',
+              children: (
+                <Space direction='vertical' size={2}>
+                  <Tag color={item.passed ? 'success' : 'error'}>{item.passed ? '通过' : '拒绝'}</Tag>
+                  <Typography.Text>{item.message}</Typography.Text>
+                  <Typography.Text type='secondary'>{item.code}</Typography.Text>
+                </Space>
+              ),
+            }))}
+          />
+        ),
+      },
+      { title: '检查时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+    ],
+    [],
+  )
+
+  const triggerColumns = useMemo<ProColumns<TriggerEvent>[]>(
+    () => [
+      { title: '状态', dataIndex: 'status', width: 100, render: (_, row) => <TriggerStatusTag status={row.status} /> },
+      { title: '市场价', dataIndex: 'marketPrice' },
+      { title: '目标价', dataIndex: 'targetPrice' },
+      { title: '触发时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+      { title: '处理时间', dataIndex: 'confirmedAt', valueType: 'dateTime', render: (_, row) => row.confirmedAt ?? '-' },
+    ],
+    [],
+  )
+
+  const orderColumns = useMemo<ProColumns<OrderRecord>[]>(
+    () => [
+      { title: '状态', dataIndex: 'status', width: 120, render: (_, row) => <Tag color={row.status === 'filled' ? 'success' : row.status === 'failed' ? 'error' : 'processing'}>{row.status}</Tag> },
+      { title: '方向', dataIndex: 'side', width: 90, render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag> },
+      { title: '订单类型', dataIndex: 'orderType', width: 90, render: (_, row) => (row.orderType === 'limit' ? '限价' : '市价') },
+      { title: '基础币数量', dataIndex: 'baseQuantity', render: (_, row) => row.baseQuantity ?? '-' },
+      { title: '计价币金额', dataIndex: 'quoteAmount', render: (_, row) => (row.quoteAmount ? `${row.quoteAmount} USDT` : '-') },
+      { title: '委托价格', dataIndex: 'price', render: (_, row) => row.price ?? '-' },
+      { title: '下单模式', dataIndex: 'simulationMode', render: (_, row) => <Tag color={row.simulationMode ? 'processing' : 'error'}>{row.simulationMode ? '模拟下单' : '真实下单'}</Tag> },
+      { title: '订单号', dataIndex: 'exchangeOrderId', ellipsis: true },
+      { title: '创建时间', dataIndex: 'createdAt', valueType: 'dateTime' },
+      { title: '摘要', dataIndex: 'rawMessage', ellipsis: true },
+    ],
+    [],
+  )
+
+  const auditTimelineItems = useMemo(
+    () =>
+      [...(executionDetail?.auditLogs ?? [])]
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .map(log => ({
+          color: auditLevelColorMap[log.level],
+          children: (
+            <Space direction='vertical' size={2}>
+              <Space size={8} wrap>
+                <Tag color={log.level === 'error' ? 'error' : log.level === 'warning' ? 'warning' : 'processing'}>{log.level}</Tag>
+                <Tag>{auditActionTextMap[log.action]}</Tag>
+                <Typography.Text type='secondary'>{new Date(log.createdAt).toLocaleString()}</Typography.Text>
+              </Space>
+              <Typography.Text>{log.message}</Typography.Text>
+              {log.payloadJson ? (
+                <Typography.Text type='secondary' style={{ whiteSpace: 'pre-wrap' }}>
+                  {renderPayload(log.payloadJson)}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ),
+        })),
+    [executionDetail?.auditLogs],
+  )
 
   const columns = useMemo<ProColumns<MonitorRule>[]>(
     () => [
@@ -358,16 +611,22 @@ export function RulesPage() {
         render: (_, row) => <RuleRuntimeStatusTag status={row.runtimeStatus} />,
       },
       {
+        title: '最近错误',
+        dataIndex: 'lastErrorMessage',
+        ellipsis: true,
+        render: (_, row) =>
+          row.lastErrorMessage ? (
+            <Tooltip title={row.lastErrorMessage}>
+              <Typography.Text type='danger'>{row.lastErrorMessage}</Typography.Text>
+            </Tooltip>
+          ) : (
+            '-'
+          ),
+      },
+      {
         title: '检测频率',
         dataIndex: 'checkIntervalMs',
         render: (_, row) => `${row.checkIntervalMs} ms`,
-      },
-      {
-        title: '最近检测',
-        dataIndex: 'lastCheckedAt',
-        width: 170,
-        valueType: 'dateTime',
-        render: (_, row) => (row.lastCheckedAt ? new Date(row.lastCheckedAt).toLocaleString() : '-'),
       },
       {
         title: '模拟',
@@ -403,8 +662,11 @@ export function RulesPage() {
         dataIndex: 'operate',
         valueType: 'option',
         fixed: 'right',
-        width: 'auto',
+        width: 320,
         render: (_, row) => [
+          <Button key='detail' type='link' onClick={() => void openExecutionDrawer(row)}>
+            执行详情
+          </Button>,
           <RuleDrawerForm<UpdateRulePayload>
             key='edit'
             title={`编辑规则 ${row.symbol}`}
@@ -420,7 +682,7 @@ export function RulesPage() {
           <Popconfirm
             key='delete'
             title='删除监控规则'
-            description='删除后不会影响已经生成的触发和订单记录'
+            description='删除后不会影响已经生成的执行记录和订单记录'
             onConfirm={async () => {
               await tradingApi.deleteRule(row.id)
               message.success('规则已删除')
@@ -431,11 +693,6 @@ export function RulesPage() {
               删除
             </Button>
           </Popconfirm>,
-          row.lastErrorMessage ? (
-            <Tooltip title={row.lastErrorMessage}>
-              <Typography.Text type='danger'>错误</Typography.Text>
-            </Tooltip>
-          ) : null,
         ],
       },
     ],
@@ -443,7 +700,19 @@ export function RulesPage() {
   )
 
   return (
-    <PageContainer subTitle='配置价格触发条件、下单计划与运行开关'>
+    <PageContainer subTitle='创建自动交易计划，查看后台信号、风控、触发、订单与审计全链路结果'>
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={8}>
+          <StatisticCard statistic={{ title: '启用规则', value: enabledRuleCount, suffix: `/ ${ruleCount}` }} />
+        </Col>
+        <Col xs={24} md={8}>
+          <StatisticCard statistic={{ title: '待处理触发', value: pendingTriggerCount }} />
+        </Col>
+        <Col xs={24} md={8}>
+          <StatisticCard statistic={{ title: '订单记录', value: orderCount }} />
+        </Col>
+      </Row>
+
       <ProTable<MonitorRule>
         actionRef={actionRef}
         rowKey='id'
@@ -458,7 +727,7 @@ export function RulesPage() {
           </Button>,
           <RuleDrawerForm<CreateRulePayload>
             key='create'
-            title='新增监控规则'
+            title='新增交易计划'
             trigger={
               <Button type='primary' icon={<PlusOutlined />}>
                 新增规则
@@ -468,12 +737,113 @@ export function RulesPage() {
             statusLabel='创建后状态'
             onSubmit={async values => {
               await tradingApi.createRule(values)
-              message.success('监控规则已创建')
+              message.success('交易计划已创建')
               actionRef.current?.reload()
             }}
           />,
         ]}
       />
+
+      <Drawer
+        title={executionRule ? `执行详情 ${executionRule.symbol}` : '执行详情'}
+        width={1320}
+        open={executionDrawerOpen}
+        onClose={() => {
+          setExecutionDrawerOpen(false)
+          setExecutionDetail(undefined)
+          setSelectedRule(undefined)
+        }}
+      >
+        {executionRule ? (
+          <Space direction='vertical' size={16} style={{ width: '100%' }}>
+            <ProDescriptions<MonitorRule> bordered loading={executionLoading} column={2} dataSource={executionRule} columns={ruleDescriptionColumns} />
+
+            {executionDetail ? (
+              <>
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  执行时间线
+                </Typography.Title>
+                {auditTimelineItems.length > 0 ? (
+                  <Timeline items={auditTimelineItems} />
+                ) : (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='暂无审计记录' />
+                )}
+
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  信号记录
+                </Typography.Title>
+                <ProTable<TradingSignal>
+                  rowKey='id'
+                  search={false}
+                  options={false}
+                  toolBarRender={false}
+                  columns={signalColumns}
+                  dataSource={executionDetail.signals}
+                  pagination={{ pageSize: 5 }}
+                />
+
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  风控记录
+                </Typography.Title>
+                <ProTable<RiskCheck>
+                  rowKey='id'
+                  search={false}
+                  options={false}
+                  toolBarRender={false}
+                  columns={riskColumns}
+                  dataSource={executionDetail.riskChecks}
+                  pagination={{ pageSize: 5 }}
+                />
+
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  触发记录
+                </Typography.Title>
+                <ProTable<TriggerEvent>
+                  rowKey='id'
+                  search={false}
+                  options={false}
+                  toolBarRender={false}
+                  columns={triggerColumns}
+                  dataSource={executionDetail.triggers}
+                  pagination={{ pageSize: 5 }}
+                />
+
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  订单记录
+                </Typography.Title>
+                <ProTable<OrderRecord>
+                  rowKey='id'
+                  search={false}
+                  options={false}
+                  toolBarRender={false}
+                  columns={orderColumns}
+                  dataSource={executionDetail.orders}
+                  pagination={{ pageSize: 5 }}
+                />
+
+                <Typography.Title level={5} style={{ marginBottom: 0 }}>
+                  行情健康
+                </Typography.Title>
+                <ProDescriptions<MarketHealth> bordered column={2} dataSource={executionDetail.marketHealth} columns={marketHealthColumns} />
+                <Table
+                  rowKey={row => `${row.exchange}-${row.symbol}`}
+                  size='small'
+                  pagination={{ pageSize: 6 }}
+                  dataSource={executionDetail.marketHealth.tickers}
+                  columns={[
+                    { title: '交易对', dataIndex: 'symbol' },
+                    { title: '价格', dataIndex: 'price' },
+                    { title: '行情时间', dataIndex: 'eventTime' },
+                    { title: '缓存年龄', dataIndex: 'ageMs', render: value => `${value} ms` },
+                  ]}
+                />
+              </>
+            ) : executionLoading ? null : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description='暂无执行详情' />
+            )}
+          </Space>
+        ) : null}
+      </Drawer>
     </PageContainer>
   )
 }

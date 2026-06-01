@@ -24,6 +24,7 @@ import type {
   TradeOperationLog,
   TradePosition,
   TradePositionView,
+  RuleExecutionDetail,
   TradingSignal,
   TriggerEvent,
   UpdateRiskConfigPayload,
@@ -37,6 +38,10 @@ export const tradingApi = {
   },
   getRules: async () => {
     const { data } = await apiClient.get<MonitorRule[]>('/rules');
+    return data;
+  },
+  getRuleExecutionDetail: async (id: string) => {
+    const { data } = await apiClient.get<RuleExecutionDetail>(`/rules/${id}/execution`);
     return data;
   },
   createRule: async (payload: CreateRulePayload) => {

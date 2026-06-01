@@ -5,13 +5,15 @@ export function TriggerStatusTag({ status }: { status: TriggerStatus }) {
   const colorMap: Record<TriggerStatus, string> = {
     pending: 'warning',
     confirmed: 'success',
-    ignored: 'default'
+    ignored: 'default',
+    failed: 'error',
   };
 
   const textMap: Record<TriggerStatus, string> = {
-    pending: '待确认',
-    confirmed: '已确认',
-    ignored: '已忽略'
+    pending: '待处理',
+    confirmed: '已执行',
+    ignored: '已忽略',
+    failed: '执行失败',
   };
 
   return <Tag color={colorMap[status]}>{textMap[status]}</Tag>;

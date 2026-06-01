@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { App as AntApp, Button, Col, Empty, Row, Segmented, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Col, Drawer, Empty, Row, Segmented, Select, Skeleton, Space, Tooltip, Typography } from 'antd'
 import { LineChartOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import {
-  DrawerForm,
   PageContainer,
   ProCard,
+  ProForm,
   ProFormDependency,
   ProFormDigit,
+  type ProFormInstance,
   ProFormSelect,
   ProFormText,
   ProTable,
-  StatisticCard,
   type ProColumns,
 } from '@ant-design/pro-components'
 import { createMarketCandleConnection } from '../api/realtime'
 import { tradingApi } from '../api/trading'
+import { TradePortfolioOverviewSection } from '../components/TradePortfolioOverviewSection'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSymbol, getMarketSymbolOptions } from '../constants/market'
-import { useBootstrapTrading } from '../hooks/useBootstrapTrading'
+import { useProfitDisplay } from '../hooks/useProfitDisplay'
+import { useTickerSnapshot } from '../hooks/useTickerSnapshot'
 import { useTradingStore } from '../stores/tradingStore'
 import type { CreateRulePayload, ExchangeCode, MarketCandle, MarketTickerSnapshot, OrderSide, OrderType, TickerPrice, TriggerOperator } from '../types'
 import { createMarketPriceSnapshot, eventTimestamp, shouldAcceptMarketPrice } from '../utils/marketPrice'
@@ -25,6 +27,7 @@ import styles from './page.module.scss'
 
 type MarketCandleBar = '1s' | '10s' | '1m' | '5m' | '15m'
 const CANDLE_REST_CALIBRATION_INTERVAL_MS = 60_000
+const OVERVIEW_CANDLE_BAR_STORAGE_KEY = 'overview.marketCandleBar'
 
 const CANDLE_BAR_OPTIONS: Array<{ label: string; value: MarketCandleBar }> = [
   { label: '1秒', value: '1s' },
@@ -55,6 +58,39 @@ const CANDLE_POINT_LIMIT_BY_BAR: Record<MarketCandleBar, number> = {
   '1m': 1440,
   '5m': 288,
   '15m': 96,
+}
+
+function isMarketCandleBar(value: string): value is MarketCandleBar {
+  return CANDLE_BAR_OPTIONS.some(option => option.value === value)
+}
+
+function getInitialMarketCandleBar() {
+  if (typeof window === 'undefined') {
+    return '10s' as MarketCandleBar
+  }
+
+  try {
+    const storedBar = window.localStorage.getItem(OVERVIEW_CANDLE_BAR_STORAGE_KEY)
+    return storedBar && isMarketCandleBar(storedBar) ? storedBar : ('10s' as MarketCandleBar)
+  } catch {
+    return '10s' as MarketCandleBar
+  }
+}
+
+function parseSortableMarketCap(value?: string) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : Number.NEGATIVE_INFINITY
+}
+
+function sortMarketRows(rows: MarketTickerSnapshot[]) {
+  return [...rows].sort((left, right) => {
+    const marketCapDiff = parseSortableMarketCap(right.marketCap) - parseSortableMarketCap(left.marketCap)
+    if (marketCapDiff !== 0) {
+      return marketCapDiff
+    }
+
+    return left.symbol.localeCompare(right.symbol)
+  })
 }
 
 function formatMoneyCompact(value?: string) {
@@ -94,11 +130,31 @@ function formatUsd(value: number) {
 }
 
 function formatTickerTime(ticker?: TickerPrice) {
-  if (!ticker?.eventTime) {
+  const timestamp = eventTimestamp(ticker?.eventTime)
+  if (timestamp === undefined) {
     return '-'
   }
 
-  return new Date(ticker.eventTime).toLocaleTimeString()
+  return new Intl.DateTimeFormat('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(timestamp)
+}
+
+function formatTickerDelay(ticker?: TickerPrice) {
+  const timestamp = eventTimestamp(ticker?.eventTime)
+  if (timestamp === undefined) {
+    return ''
+  }
+
+  const delaySeconds = Math.max(Math.floor((Date.now() - timestamp) / 1000), 0)
+  if (delaySeconds <= 0) {
+    return '延迟 0 秒'
+  }
+
+  return `延迟 ${delaySeconds} 秒`
 }
 
 function formatLivePrice(price?: string) {
@@ -116,6 +172,19 @@ function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: T
   return shouldAcceptMarketPrice(createMarketPriceSnapshot(snapshotTicker, 'rest'), createMarketPriceSnapshot(realtimeTicker, 'realtime'))
     ? realtimeTicker
     : snapshotTicker
+}
+
+function RealtimeMarketPriceCell({ row }: { row: MarketTickerSnapshot }) {
+  const realtimeTicker = useTickerSnapshot(row.exchange, row.symbol)
+  const displayTicker = useMemo(() => resolvePreferredTicker(row, realtimeTicker), [realtimeTicker, row])
+  const displayPrice = displayTicker?.price ?? row.price
+
+  return (
+    <div className={styles.marketPriceCell}>
+      <Typography.Text className={styles.marketPrice}>{displayPrice}</Typography.Text>
+      <Typography.Text className={styles.marketSubPrice}>{formatUsd(Number(displayPrice))}</Typography.Text>
+    </div>
+  )
 }
 
 function buildRulePayload(values: Partial<CreateRulePayload>, row: MarketTickerSnapshot, currentPrice?: string): CreateRulePayload {
@@ -147,173 +216,250 @@ function buildRulePayload(values: Partial<CreateRulePayload>, row: MarketTickerS
 }
 
 function TradePlanDrawer({
+  open,
   row,
-  trigger,
   onCreated,
+  onOpenChange,
 }: {
-  row: MarketTickerSnapshot
-  trigger: ReactElement
+  open: boolean
+  row?: MarketTickerSnapshot
   onCreated: () => void
+  onOpenChange: (open: boolean) => void
 }) {
   const { message } = AntApp.useApp()
-  const [selectedPlanExchange, setSelectedPlanExchange] = useState<ExchangeCode>(row.exchange)
-  const liveTicker = useTradingStore(state => state.tickers.find(ticker => ticker.exchange === selectedPlanExchange && ticker.symbol === row.symbol))
-  const snapshotTicker = selectedPlanExchange === row.exchange ? row : undefined
+  const { getTrendMeta } = useProfitDisplay()
+  const formRef = useRef<ProFormInstance<Partial<CreateRulePayload>> | undefined>(undefined)
+  const [selectedPlanExchange, setSelectedPlanExchange] = useState<ExchangeCode>(row?.exchange ?? 'okx')
+  const previousPriceRef = useRef<string | undefined>(undefined)
+  const [currentPriceDelta, setCurrentPriceDelta] = useState<string>('0')
+  const [priceTrendDirection, setPriceTrendDirection] = useState<'up' | 'down'>('up')
+  const liveTicker = useTickerSnapshot(selectedPlanExchange, row?.symbol)
+  const snapshotTicker = row && selectedPlanExchange === row.exchange ? row : undefined
   const currentTicker = resolvePreferredTicker(snapshotTicker, liveTicker)
   const currentPrice = currentTicker?.price
   const currentPriceText = formatLivePrice(currentPrice)
-  const coin = getCoinSymbol(row.symbol)
+  const coin = row ? getCoinSymbol(row.symbol) : ''
+  const numericPriceDelta = Number(currentPriceDelta)
+  const priceTrendMeta = getTrendMeta(
+    Number.isFinite(numericPriceDelta) && numericPriceDelta !== 0 ? currentPriceDelta : priceTrendDirection === 'up' ? '1' : '-1',
+  )
+  const tickerDelayText = formatTickerDelay(currentTicker)
+
+  useEffect(() => {
+    if (!open || !row || selectedPlanExchange === row.exchange) {
+      return
+    }
+
+    setSelectedPlanExchange(row.exchange)
+  }, [open, row?.exchange, selectedPlanExchange])
+
+  useEffect(() => {
+    previousPriceRef.current = undefined
+    setCurrentPriceDelta('0')
+    // 当前价不展示灰色，切换交易对或重新打开时默认先按上涨绿色展示。
+    setPriceTrendDirection('up')
+  }, [open, row?.symbol, selectedPlanExchange])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    if (!currentPrice) {
+      previousPriceRef.current = undefined
+      setCurrentPriceDelta('0')
+      return
+    }
+
+    const previousPrice = previousPriceRef.current
+    if (!previousPrice) {
+      previousPriceRef.current = currentPrice
+      setCurrentPriceDelta('0')
+      return
+    }
+
+    const nextDelta = (Number(currentPrice) - Number(previousPrice)).toFixed(8)
+    previousPriceRef.current = currentPrice
+    setCurrentPriceDelta(nextDelta)
+    if (Number(nextDelta) > 0) {
+      setPriceTrendDirection('up')
+      return
+    }
+
+    if (Number(nextDelta) < 0) {
+      setPriceTrendDirection('down')
+    }
+  }, [currentPrice, currentTicker?.eventTime, open])
+
+  if (!row) {
+    return null
+  }
+
+  const drawerFooter = (
+    <Space>
+      <Button
+        onClick={() => {
+          formRef.current?.resetFields()
+          onOpenChange(false)
+        }}
+      >
+        取消
+      </Button>
+      <Button type='primary' onClick={() => formRef.current?.submit?.()}>
+        创建交易计划
+      </Button>
+    </Space>
+  )
 
   return (
-    <DrawerForm<Partial<CreateRulePayload>>
+    <Drawer
       title={`创建 ${row.symbol} 交易计划`}
       width={520}
-      trigger={trigger}
-      drawerProps={{ destroyOnHidden: true }}
-      initialValues={{
-        exchange: row.exchange,
-        side: 'buy',
-        orderType: 'market',
-        maxSlippagePercent: '0.5',
-        cooldownMs: 60000,
-        checkIntervalMs: 3000,
-        maxTriggerCount: 1,
-        simulationMode: true,
-      }}
-      submitter={{
-        searchConfig: {
-          submitText: '创建交易计划',
-        },
-      }}
-      onFinish={async values => {
-        const orderType = (values.orderType ?? 'market') as OrderType
-        if (orderType === 'market' && !currentPrice) {
-          message.error('当前交易所还没有实时行情，暂不能创建市价计划')
-          return false
-        }
-
-        await tradingApi.createRule(buildRulePayload(values, row, currentPrice))
-        const submittedSide = values.side === 'sell' ? '卖出' : '买入'
-        message.success(`${row.symbol} ${submittedSide}计划已创建`)
-        onCreated()
-        return true
-      }}
+      open={open}
+      destroyOnHidden
+      onClose={() => onOpenChange(false)}
+      footer={drawerFooter}
     >
-      <div className={styles.tradePlanMarketInfo}>
-        <span>当前价</span>
-        <strong>{currentPriceText}</strong>
-        <span>更新时间 {formatTickerTime(currentTicker)}</span>
-      </div>
-      <ProFormSelect
-        name='exchange'
-        label='交易所'
-        options={MARKET_EXCHANGE_OPTIONS}
-        fieldProps={{
-          onChange: exchange => setSelectedPlanExchange(exchange as ExchangeCode),
+      <ProForm<Partial<CreateRulePayload>>
+        key={`${row.exchange}-${row.symbol}`}
+        formRef={formRef}
+        layout='vertical'
+        initialValues={{
+          exchange: row.exchange,
+          side: 'buy',
+          orderType: 'market',
+          maxSlippagePercent: '0.5',
+          cooldownMs: 60000,
+          checkIntervalMs: 3000,
+          maxTriggerCount: 1,
+          simulationMode: true,
         }}
-        rules={[{ required: true, message: '请选择交易所' }]}
-      />
-      <ProFormSelect
-        name='side'
-        label='交易方向'
-        options={ORDER_SIDE_OPTIONS}
-        rules={[{ required: true, message: '请选择交易方向' }]}
-      />
-      <ProFormSelect
-        name='orderType'
-        label='订单类型'
-        options={ORDER_TYPE_OPTIONS}
-        rules={[{ required: true, message: '请选择订单类型' }]}
-      />
-      <ProFormDependency name={['orderType', 'side']}>
-        {({ orderType, side }) => {
-          const dependencyIsBuy = side !== 'sell'
-          const dependencyPlanPriceLabel = dependencyIsBuy ? '计划买入价' : '计划卖出价'
-          const dependencyPlanPricePlaceholder = dependencyIsBuy
-            ? `当前市价 ${currentPriceText}，价格到达或低于该价格时触发`
-            : `当前市价 ${currentPriceText}，价格到达或高于该价格时触发`
-          return (
-          orderType === 'limit' ? (
-            <ProFormText
-              name='targetPrice'
-              label={dependencyPlanPriceLabel}
-              placeholder={dependencyPlanPricePlaceholder}
-              rules={[{ required: true, message: `请输入${dependencyPlanPriceLabel}` }]}
-            />
-          ) : null
-          )
+        submitter={false}
+        onFinish={async values => {
+          const orderType = (values.orderType ?? 'market') as OrderType
+          if (orderType === 'market' && !currentPrice) {
+            message.error('当前交易所还没有实时行情，暂不能创建市价计划')
+            return false
+          }
+
+          await tradingApi.createRule(buildRulePayload(values, row, currentPrice))
+          const submittedSide = values.side === 'sell' ? '卖出' : '买入'
+          message.success(`${row.symbol} ${submittedSide}计划已创建`)
+          formRef.current?.resetFields()
+          onCreated()
+          onOpenChange(false)
+          return true
         }}
-      </ProFormDependency>
-      <ProFormDependency name={['side']}>
-        {({ side }) => {
-          const dependencyIsBuy = side !== 'sell'
-          const dependencyAmountFieldName = dependencyIsBuy ? 'quoteAmount' : 'baseQuantity'
-          const dependencyAmountLabel = dependencyIsBuy ? '买入金额' : '卖出数量'
-          const dependencyAmountPlaceholder = dependencyIsBuy ? `当前市价 ${currentPriceText}，输入计划投入金额` : `当前市价 ${currentPriceText}，输入计划卖出数量`
-          return (
-            <ProFormText
-              name={dependencyAmountFieldName}
-              label={dependencyAmountLabel}
-              placeholder={dependencyAmountPlaceholder}
-              fieldProps={{ suffix: dependencyIsBuy ? 'USDT' : coin }}
-              rules={[{ required: true, message: `请输入${dependencyAmountLabel}` }]}
-            />
-          )
-        }}
-      </ProFormDependency>
-      <ProFormSelect
-        name='simulationMode'
-        label='下单模式'
-        options={TRADING_MODE_OPTIONS}
-        rules={[{ required: true, message: '请选择下单模式' }]}
-        extra='真实下单仍受后端总开关、风控配置和账户预检限制'
-      />
-      <ProCard title='高级策略' collapsible defaultCollapsed bordered={false} className={styles.tradePlanAdvancedCard}>
-        <ProFormText name='maxSlippagePercent' label='最大滑点百分比' fieldProps={{ suffix: '%' }} rules={[{ required: true, message: '请输入最大滑点百分比' }]} />
-        <ProFormDigit name='cooldownMs' label='冷却时间毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true, message: '请输入冷却时间' }]} />
-        <ProFormDigit name='checkIntervalMs' label='检测频率毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true, message: '请输入检测频率' }]} />
-        <ProFormDigit name='maxTriggerCount' label='最大触发次数' min={1} fieldProps={{ precision: 0 }} rules={[{ required: true, message: '请输入最大触发次数' }]} />
-      </ProCard>
-    </DrawerForm>
+      >
+        <div className={styles.tradePlanMarketInfo}>
+          <span>当前价</span>
+          <Typography.Text
+            className={styles.tradePlanLivePrice}
+            style={{ color: priceTrendMeta.color }}
+          >
+            {priceTrendMeta.Icon ? <priceTrendMeta.Icon className={styles.tradePlanLivePriceIcon} /> : null}
+            {currentPriceText}
+          </Typography.Text>
+          <span title={currentTicker?.eventTime ? new Date(currentTicker.eventTime).toLocaleString() : undefined}>
+            行情时间 {formatTickerTime(currentTicker)}
+            {tickerDelayText ? ` · ${tickerDelayText}` : ''}
+          </span>
+        </div>
+        <ProFormSelect
+          name='exchange'
+          label='交易所'
+          options={MARKET_EXCHANGE_OPTIONS}
+          fieldProps={{
+            onChange: exchange => setSelectedPlanExchange(exchange as ExchangeCode),
+          }}
+          rules={[{ required: true, message: '请选择交易所' }]}
+        />
+        <ProFormSelect name='side' label='交易方向' options={ORDER_SIDE_OPTIONS} rules={[{ required: true, message: '请选择交易方向' }]} />
+        <ProFormSelect name='orderType' label='订单类型' options={ORDER_TYPE_OPTIONS} rules={[{ required: true, message: '请选择订单类型' }]} />
+        <ProFormDependency name={['orderType', 'side']}>
+          {({ orderType, side }) => {
+            const dependencyIsBuy = side !== 'sell'
+            const dependencyPlanPriceLabel = dependencyIsBuy ? '计划买入价' : '计划卖出价'
+            const dependencyPlanPricePlaceholder = dependencyIsBuy
+              ? `当前市价 ${currentPriceText}，价格到达或低于该价格时触发`
+              : `当前市价 ${currentPriceText}，价格到达或高于该价格时触发`
+            return orderType === 'limit' ? (
+              <ProFormText
+                name='targetPrice'
+                label={dependencyPlanPriceLabel}
+                placeholder={dependencyPlanPricePlaceholder}
+                rules={[{ required: true, message: `请输入${dependencyPlanPriceLabel}` }]}
+              />
+            ) : null
+          }}
+        </ProFormDependency>
+        <ProFormDependency name={['side']}>
+          {({ side }) => {
+            const dependencyIsBuy = side !== 'sell'
+            const dependencyAmountFieldName = dependencyIsBuy ? 'quoteAmount' : 'baseQuantity'
+            const dependencyAmountLabel = dependencyIsBuy ? '买入金额' : '卖出数量'
+            const dependencyAmountPlaceholder = dependencyIsBuy
+              ? `当前市价 ${currentPriceText}，输入计划投入金额`
+              : `当前市价 ${currentPriceText}，输入计划卖出数量`
+            return (
+              <ProFormText
+                name={dependencyAmountFieldName}
+                label={dependencyAmountLabel}
+                placeholder={dependencyAmountPlaceholder}
+                fieldProps={{ suffix: dependencyIsBuy ? 'USDT' : coin }}
+                rules={[{ required: true, message: `请输入${dependencyAmountLabel}` }]}
+              />
+            )
+          }}
+        </ProFormDependency>
+        <ProFormSelect
+          name='simulationMode'
+          label='下单模式'
+          options={TRADING_MODE_OPTIONS}
+          rules={[{ required: true, message: '请选择下单模式' }]}
+          extra='真实下单仍受后端总开关、风控配置和账户预检限制'
+        />
+        <ProCard title='高级策略' collapsible defaultCollapsed bordered={false} className={styles.tradePlanAdvancedCard}>
+          <ProFormText
+            name='maxSlippagePercent'
+            label='最大滑点百分比'
+            fieldProps={{ suffix: '%' }}
+            rules={[{ required: true, message: '请输入最大滑点百分比' }]}
+          />
+          <ProFormDigit name='cooldownMs' label='冷却时间毫秒' min={1000} fieldProps={{ precision: 0 }} rules={[{ required: true, message: '请输入冷却时间' }]} />
+          <ProFormDigit
+            name='checkIntervalMs'
+            label='检测频率毫秒'
+            min={1000}
+            fieldProps={{ precision: 0 }}
+            rules={[{ required: true, message: '请输入检测频率' }]}
+          />
+          <ProFormDigit
+            name='maxTriggerCount'
+            label='最大触发次数'
+            min={1}
+            fieldProps={{ precision: 0 }}
+            rules={[{ required: true, message: '请输入最大触发次数' }]}
+          />
+        </ProCard>
+      </ProForm>
+    </Drawer>
   )
 }
 
-function MarketOverviewTable({
-  exchange,
-  onSelectSymbol,
-}: {
-  exchange: ExchangeCode
-  onSelectSymbol: (symbol: string) => void
-}) {
+function MarketOverviewTable({ exchange, onSelectSymbol }: { exchange: ExchangeCode; onSelectSymbol: (symbol: string) => void }) {
   const { message } = AntApp.useApp()
   const refreshSummary = useTradingStore(state => state.refreshSummary)
-  const realtimeTickers = useTradingStore(state => state.tickers)
-  const [rows, setRows] = useState<MarketTickerSnapshot[]>([])
+  const [overviewRows, setOverviewRows] = useState<MarketTickerSnapshot[]>([])
   const [loading, setLoading] = useState(false)
+  const [tradePlanOpen, setTradePlanOpen] = useState(false)
+  const [activePlanSymbol, setActivePlanSymbol] = useState<string>()
 
   const loadRows = useCallback(async () => {
     setLoading(true)
     try {
       const nextRows = await tradingApi.getMarketOverview(exchange)
-      const realtimeTickerMap = useTradingStore
-        .getState()
-        .tickers
-        .filter(ticker => ticker.exchange === exchange)
-        .reduce<Record<string, TickerPrice>>((acc, ticker) => {
-          acc[ticker.symbol] = ticker
-          return acc
-        }, {})
-
-      setRows(nextRows.map(row => {
-        const realtimeTicker = realtimeTickerMap[row.symbol]
-        if (!realtimeTicker) {
-          return row
-        }
-
-        return shouldAcceptMarketPrice(createMarketPriceSnapshot(row, 'rest'), createMarketPriceSnapshot(realtimeTicker, 'realtime'))
-          ? { ...row, price: realtimeTicker.price, eventTime: realtimeTicker.eventTime }
-          : row
-      }))
+      setOverviewRows(sortMarketRows(nextRows))
     } catch (error) {
       message.error(error instanceof Error ? error.message : '最新行情加载失败')
     } finally {
@@ -325,37 +471,15 @@ function MarketOverviewTable({
     void loadRows()
   }, [loadRows])
 
+  const activePlanRow = useMemo(
+    () => overviewRows.find(item => item.symbol === activePlanSymbol),
+    [activePlanSymbol, overviewRows],
+  )
+
   useEffect(() => {
-    const tickerMap = realtimeTickers
-      .filter(ticker => ticker.exchange === exchange)
-      .reduce<Record<string, TickerPrice>>((acc, ticker) => {
-        acc[ticker.symbol] = ticker
-        return acc
-      }, {})
-
-    if (Object.keys(tickerMap).length === 0) {
-      return
-    }
-
-    setRows(currentRows => {
-      let changed = false
-      const nextRows = currentRows.map(row => {
-        const ticker = tickerMap[row.symbol]
-        if (!ticker || !shouldAcceptMarketPrice(createMarketPriceSnapshot(row, 'rest'), createMarketPriceSnapshot(ticker, 'realtime'))) {
-          return row
-        }
-
-        changed = true
-        return {
-          ...row,
-          price: ticker.price,
-          eventTime: ticker.eventTime,
-        }
-      })
-
-      return changed ? nextRows : currentRows
-    })
-  }, [exchange, realtimeTickers])
+    setTradePlanOpen(false)
+    setActivePlanSymbol(undefined)
+  }, [exchange])
 
   const marketColumns = useMemo<ProColumns<MarketTickerSnapshot>[]>(
     () => [
@@ -380,12 +504,7 @@ function MarketOverviewTable({
         title: '价格',
         dataIndex: 'price',
         align: 'right',
-        render: (_, row) => (
-          <div className={styles.marketPriceCell}>
-            <Typography.Text className={styles.marketPrice}>{row.price}</Typography.Text>
-            <Typography.Text className={styles.marketSubPrice}>{formatUsd(Number(row.price))}</Typography.Text>
-          </div>
-        ),
+        render: (_, row) => <RealtimeMarketPriceCell row={row} />,
       },
       {
         title: '24小时涨跌',
@@ -420,42 +539,54 @@ function MarketOverviewTable({
         render: (_, row) => (
           <Space size={4} className={styles.marketActionGroup}>
             <Tooltip title='查看走势'>
-              <Button
-                size='small'
-                type='text'
-                icon={<LineChartOutlined />}
-                aria-label={`查看 ${row.symbol} 走势`}
-                onClick={() => onSelectSymbol(row.symbol)}
-              />
+              <Button size='small' type='text' icon={<LineChartOutlined />} aria-label={`查看 ${row.symbol} 走势`} onClick={() => onSelectSymbol(row.symbol)} />
             </Tooltip>
-            <TradePlanDrawer
-              row={row}
-              onCreated={() => void refreshSummary()}
-              trigger={
-                <Button size='small' type='text' className={styles.tradeActionButton} icon={<ThunderboltOutlined />} title='创建交易计划' aria-label={`创建 ${row.symbol} 交易计划`}>
-                  交易
-                </Button>
-              }
-            />
+            <Button
+              size='small'
+              type='text'
+              className={styles.tradeActionButton}
+              icon={<ThunderboltOutlined />}
+              title='创建交易计划'
+              aria-label={`创建 ${row.symbol} 交易计划`}
+              onClick={() => {
+                setActivePlanSymbol(row.symbol)
+                setTradePlanOpen(true)
+              }}
+            >
+              交易
+            </Button>
           </Space>
         ),
       },
     ],
-    [onSelectSymbol, refreshSummary],
+    [onSelectSymbol],
   )
 
   return (
-    <ProTable<MarketTickerSnapshot>
-      rowKey={row => `${row.exchange}-${row.symbol}`}
-      className={styles.marketTable}
-      columns={marketColumns}
-      dataSource={rows}
-      loading={loading}
-      search={false}
-      options={false}
-      pagination={false}
-      toolBarRender={false}
-    />
+    <>
+      <ProTable<MarketTickerSnapshot>
+        rowKey={row => `${row.exchange}-${row.symbol}`}
+        className={styles.marketTable}
+        columns={marketColumns}
+        dataSource={overviewRows}
+        loading={loading}
+        search={false}
+        options={false}
+        pagination={false}
+        toolBarRender={false}
+      />
+      <TradePlanDrawer
+        open={tradePlanOpen}
+        row={activePlanRow}
+        onCreated={() => void refreshSummary()}
+        onOpenChange={nextOpen => {
+          setTradePlanOpen(nextOpen)
+          if (!nextOpen) {
+            setActivePlanSymbol(undefined)
+          }
+        }}
+      />
+    </>
   )
 }
 
@@ -515,22 +646,20 @@ function mergeCalibrationCandles(currentCandles: MarketCandle[], nextCandles: Ma
     }
   })
 
-  return [...candleMap.values()]
-    .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime())
-    .slice(-CANDLE_POINT_LIMIT_BY_BAR[bar])
+  return [...candleMap.values()].sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime()).slice(-CANDLE_POINT_LIMIT_BY_BAR[bar])
 }
 
 export function OverviewPage() {
   const { message } = AntApp.useApp()
-  useBootstrapTrading()
   const candleRequestingRef = useRef(false)
   const candleRequestTokenRef = useRef(0)
+  const pendingRealtimeCandleRef = useRef<MarketCandle | undefined>(undefined)
+  const realtimeCandleFrameRef = useRef<number | undefined>(undefined)
   const [selectedExchange, setSelectedExchange] = useState<ExchangeCode>('okx')
   const [selectedSymbol, setSelectedSymbol] = useState<string>(DEFAULT_MARKET_SYMBOL)
-  const [selectedBar, setSelectedBar] = useState<MarketCandleBar>('10s')
+  const [selectedBar, setSelectedBar] = useState<MarketCandleBar>(() => getInitialMarketCandleBar())
   const [candles, setCandles] = useState<MarketCandle[]>([])
   const [candlesLoading, setCandlesLoading] = useState(false)
-  const dashboardSummary = useTradingStore(state => state.dashboardSummary)
   const [candleError, setCandleError] = useState('')
   const candleSeries = useMemo(
     () =>
@@ -567,43 +696,62 @@ export function OverviewPage() {
     setCandleError('')
   }, [])
 
-  const loadCandles = useCallback(async (options?: { silent?: boolean }) => {
-    if (options?.silent && candleRequestingRef.current) {
-      return
-    }
-
-    const requestToken = candleRequestTokenRef.current + 1
-    candleRequestTokenRef.current = requestToken
-    candleRequestingRef.current = true
-    if (!options?.silent) {
-      setCandlesLoading(true)
-    }
-    setCandleError('')
+  useEffect(() => {
     try {
-      const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, selectedBar, selectedExchange)
-      if (requestToken === candleRequestTokenRef.current) {
-        setCandles(currentCandles => (options?.silent ? mergeCalibrationCandles(currentCandles, nextCandles, selectedBar) : nextCandles))
+      window.localStorage.setItem(OVERVIEW_CANDLE_BAR_STORAGE_KEY, selectedBar)
+    } catch {
+      // 忽略本地持久化异常，不影响页面实时行情功能。
+    }
+  }, [selectedBar])
+
+  const loadCandles = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (options?.silent && candleRequestingRef.current) {
+        return
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'K 线数据加载失败'
-      if (requestToken === candleRequestTokenRef.current) {
-        setCandles([])
-        setCandleError(errorMessage)
-        message.error(`${selectedSymbol} ${selectedBar} 走势加载失败`)
+
+      const requestToken = candleRequestTokenRef.current + 1
+      candleRequestTokenRef.current = requestToken
+      candleRequestingRef.current = true
+      if (!options?.silent) {
+        setCandlesLoading(true)
       }
-    } finally {
-      if (requestToken === candleRequestTokenRef.current) {
-        candleRequestingRef.current = false
-        if (!options?.silent) {
-          setCandlesLoading(false)
+      setCandleError('')
+      try {
+        const nextCandles = await tradingApi.getMarketCandles(selectedSymbol, selectedBar, selectedExchange)
+        if (requestToken === candleRequestTokenRef.current) {
+          setCandles(currentCandles => (options?.silent ? mergeCalibrationCandles(currentCandles, nextCandles, selectedBar) : nextCandles))
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'K 线数据加载失败'
+        if (requestToken === candleRequestTokenRef.current) {
+          setCandles([])
+          setCandleError(errorMessage)
+          message.error(`${selectedSymbol} ${selectedBar} 走势加载失败`)
+        }
+      } finally {
+        if (requestToken === candleRequestTokenRef.current) {
+          candleRequestingRef.current = false
+          if (!options?.silent) {
+            setCandlesLoading(false)
+          }
         }
       }
-    }
-  }, [message, selectedBar, selectedExchange, selectedSymbol])
+    },
+    [message, selectedBar, selectedExchange, selectedSymbol],
+  )
 
   useEffect(() => {
     void loadCandles()
   }, [loadCandles])
+
+  useEffect(() => {
+    pendingRealtimeCandleRef.current = undefined
+    if (realtimeCandleFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(realtimeCandleFrameRef.current)
+      realtimeCandleFrameRef.current = undefined
+    }
+  }, [selectedBar, selectedExchange, selectedSymbol])
 
   useEffect(() => {
     return createMarketCandleConnection({
@@ -611,7 +759,22 @@ export function OverviewPage() {
       symbol: selectedSymbol,
       bar: selectedBar,
       onCandle: candle => {
-        setCandles(currentCandles => mergeRealtimeCandle(currentCandles, candle, selectedBar))
+        pendingRealtimeCandleRef.current = candle
+        if (realtimeCandleFrameRef.current !== undefined) {
+          return
+        }
+
+        // 高频推送只在浏览器下一帧统一提交一次状态，避免图表在短时间内重复重绘。
+        realtimeCandleFrameRef.current = window.requestAnimationFrame(() => {
+          realtimeCandleFrameRef.current = undefined
+          const pendingCandle = pendingRealtimeCandleRef.current
+          pendingRealtimeCandleRef.current = undefined
+          if (!pendingCandle) {
+            return
+          }
+
+          setCandles(currentCandles => mergeRealtimeCandle(currentCandles, pendingCandle, selectedBar))
+        })
       },
       onConnectionLost: () => {
         message.error('K 线推送连接异常，请检查后端服务是否启动')
@@ -619,6 +782,11 @@ export function OverviewPage() {
     })
   }, [message, selectedBar, selectedExchange, selectedSymbol])
 
+  useEffect(() => () => {
+    if (realtimeCandleFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(realtimeCandleFrameRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -740,22 +908,7 @@ export function OverviewPage() {
   )
 
   return (
-    <PageContainer subTitle='查看行情、规则、触发和订单的整体运行概况'>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} md={6}>
-          <StatisticCard statistic={{ title: '启用规则', value: dashboardSummary.enabledRuleCount, suffix: `/ ${dashboardSummary.ruleCount}` }} />
-        </Col>
-        <Col xs={24} md={6}>
-          <StatisticCard statistic={{ title: '待确认触发', value: dashboardSummary.pendingTriggerCount }} />
-        </Col>
-        <Col xs={24} md={6}>
-          <StatisticCard statistic={{ title: '订单记录', value: dashboardSummary.orderCount }} />
-        </Col>
-        <Col xs={24} md={6}>
-          <StatisticCard statistic={{ title: '行情缓存', value: dashboardSummary.tickerCount }} />
-        </Col>
-      </Row>
-
+    <PageContainer subTitle='查看行情、持仓、交易计划和执行记录的整体运行概况'>
       <Row gutter={[16, 16]} className={styles.section}>
         <Col xs={24} lg={14}>
           <ProCard
@@ -772,7 +925,7 @@ export function OverviewPage() {
               {candlesLoading ? (
                 <Skeleton active paragraph={{ rows: 8 }} />
               ) : candleSeries.length > 0 ? (
-                <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 405 }} />
+                <ReactECharts option={option} notMerge={false} lazyUpdate style={{ height: 368 }} />
               ) : (
                 <Empty description={candleError || '暂无行情数据'} />
               )}
@@ -783,6 +936,12 @@ export function OverviewPage() {
           <ProCard title='最新行情' bodyStyle={{ padding: 0 }}>
             <MarketOverviewTable exchange={selectedExchange} onSelectSymbol={handleSelectSymbol} />
           </ProCard>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} className={styles.section}>
+        <Col span={24}>
+          <TradePortfolioOverviewSection />
         </Col>
       </Row>
     </PageContainer>

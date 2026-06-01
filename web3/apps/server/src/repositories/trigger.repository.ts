@@ -37,6 +37,13 @@ export class TriggerRepository {
       .map(row => mapTrigger(row as TriggerRow))
   }
 
+  listByRuleId(ruleId: string, limit = 100): TriggerEvent[] {
+    return this.db
+      .prepare('SELECT * FROM trigger_events WHERE rule_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(ruleId, limit)
+      .map(row => mapTrigger(row as TriggerRow))
+  }
+
   countPending(): number {
     const row = this.db.prepare("SELECT COUNT(*) AS count FROM trigger_events WHERE status = 'pending'").get() as { count: number }
     return row.count
@@ -77,6 +84,11 @@ export class TriggerRepository {
 
   markIgnored(id: string): TriggerEvent | undefined {
     this.db.prepare('UPDATE trigger_events SET status = ?, confirmed_at = ? WHERE id = ?').run('ignored', new Date().toISOString(), id)
+    return this.findById(id)
+  }
+
+  markFailed(id: string): TriggerEvent | undefined {
+    this.db.prepare('UPDATE trigger_events SET status = ?, confirmed_at = ? WHERE id = ?').run('failed', new Date().toISOString(), id)
     return this.findById(id)
   }
 
