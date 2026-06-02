@@ -161,6 +161,7 @@ const auditActionTextMap: Record<AuditLog['action'], string> = {
   'order.final_validation_failed': '最终校验失败',
   'order.failed': '订单失败',
   'order.sync_failed': '同步失败',
+  'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }
 

@@ -1951,6 +1951,48 @@ pnpm --filter @web3/web typecheck
 pnpm lint
 ```
 
+## v0.4.15.1  2026-06-02
+
+### 已完成
+
+- 增加审计日志后端分页接口，支持按动作和级别筛选，通用审计页改为服务端分页取数。
+- 审计日志去重缓存改为带过期时间的按需清理机制，避免服务长时间运行后 `Map` 无界增长。
+- 新增统一交易环境标签解析工具，执行链路、同步链路、私有推送和健康接口统一复用。
+
+### 已确认决策
+
+- 通用审计页和成交与日志页的审计数据都优先依赖后端筛选，避免前端本地过滤导致历史记录截断。
+- 交易环境文案属于基础设施字段，后续新增交易所或环境模式时必须从共享工具扩展，不能再在服务中各写一份。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.4.15.2  2026-06-02
+
+### 已完成
+
+- 补齐 `/api/audit-logs/page` 后端分页接口，并打通动作 / 级别筛选。
+- 通用审计页与成交与日志页的审计标签页都改为服务端分页取数，避免固定 200 条带来的历史截断。
+- 真实交易确认链路改为内部二次校验时不再重复签发 `confirmToken`，减少无效状态写入和临时令牌堆积。
+
+### 已确认决策
+
+- `preview()` 对外接口继续保留签发 `confirmToken` 的行为，供前端真实交易二次确认使用。
+- 内部确认链路改为复用无 token 预览构建逻辑，保证业务校验一致，同时减少冗余状态。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
 ## v0.4.12a  2026-06-01
 
 ### 已完成
@@ -2165,6 +2207,29 @@ pnpm lint
 
 - Binance 主网和测试网切换后的问题，优先通过统一环境标签贯穿预检、确认、审计和同步链路排查，不再依赖人工从错误文案或域名猜环境。
 - 前端页面只展示后端已确认的环境信息，初始化占位文案不再本地猜测 OKX 或 Binance 当前环境。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.4.15  2026-06-02
+
+### 已完成
+
+- 私有推送异常从通用 `strategy.error` 中拆分为独立审计动作 `private_stream.error`，避免 Binance 环境联调时的连接、订阅和消费异常被策略扫描噪音淹没。
+- `PrivateOrderStreamService` 的订单推送消费失败、余额推送消费失败和连接异常日志现在都会写入 `tradingEnvironment`，便于直接区分 Binance 主网和测试网。
+- `/api/health` 返回的 `okxEnvironment` 与 `binanceEnvironment` 已统一为完整可读标签，避免外部调用方还需要自行拼装前缀。
+- `TradeLogsPage` 审计日志视图已纳入 `private_stream.error`，真实交易联调时可直接在“成交与日志”里看到推送异常。
+- `AuditLogsPage` 与 `RulesPage` 的动作文案已补齐“私有推送异常”，执行详情时间线和审计页展示口径保持一致。
+
+### 已确认决策
+
+- Binance 主网和测试网联调阶段，私有推送异常必须作为独立审计动作保留，后续不要继续复用 `strategy.error`。
+- 健康接口和审计日志都返回完整环境标签，前端和排障脚本不再依赖本地字符串拼接。
 
 ### 验证记录
 

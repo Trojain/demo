@@ -28,23 +28,35 @@ export interface WriteAuditLogInput {
 }
 
 export class AuditLogService {
-  private readonly recentLogAt = new Map<string, number>();
+  /**
+   * 记录去重键的过期时间戳。
+   * 使用过期时间而不是最近写入时间，便于定期清理，避免服务长时间运行后内存持续增长。
+   */
+  private readonly recentLogExpiryAt = new Map<string, number>();
+  /** 最近一次执行去重缓存清理的时间戳。 */
+  private lastPrunedAt = 0;
 
   constructor(private readonly auditLogRepository: AuditLogRepository) {}
 
-  list(limit?: number, actions?: AuditLogAction[]): AuditLog[] {
-    return this.auditLogRepository.list(limit, actions);
+  list(limit?: number, actions?: AuditLogAction[], levels?: AuditLogLevel[]): AuditLog[] {
+    return this.auditLogRepository.list(limit, actions, levels);
+  }
+
+  listPage(page: number, pageSize: number, actions?: AuditLogAction[], levels?: AuditLogLevel[]) {
+    return this.auditLogRepository.listPage(page, pageSize, actions, levels);
   }
 
   record(input: WriteAuditLogInput): AuditLog | undefined {
+    const now = Date.now();
+    this.pruneExpiredDedupeKeys(now);
+
     if (input.dedupeKey) {
-      const now = Date.now();
-      const lastLoggedAt = this.recentLogAt.get(input.dedupeKey) ?? 0;
-      if (now - lastLoggedAt < (input.dedupeMs ?? 60_000)) {
+      const expiresAt = this.recentLogExpiryAt.get(input.dedupeKey) ?? 0;
+      if (now < expiresAt) {
         return undefined;
       }
 
-      this.recentLogAt.set(input.dedupeKey, now);
+      this.recentLogExpiryAt.set(input.dedupeKey, now + (input.dedupeMs ?? 60_000));
     }
 
     return this.auditLogRepository.create({
@@ -60,5 +72,22 @@ export class AuditLogService {
       payloadJson: input.payload ? JSON.stringify(input.payload) : undefined,
       createdAt: new Date().toISOString()
     });
+  }
+
+  /**
+   * 按时间窗口清理过期的去重键。
+   * 这里使用按需清理，避免每次写日志都全量扫描，也避免常驻 Map 无界增长。
+   */
+  private pruneExpiredDedupeKeys(now: number) {
+    if (now - this.lastPrunedAt < 60_000 && this.recentLogExpiryAt.size < 2_000) {
+      return;
+    }
+
+    this.lastPrunedAt = now;
+    for (const [dedupeKey, expiresAt] of this.recentLogExpiryAt.entries()) {
+      if (expiresAt <= now) {
+        this.recentLogExpiryAt.delete(dedupeKey);
+      }
+    }
   }
 }

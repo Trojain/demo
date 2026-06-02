@@ -1,7 +1,7 @@
 import type { RuleRepository } from '../repositories/rule.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import type { OrderPreview, OrderPreviewCheckItem, OrderRecord } from '../types/domain.js'
-import { appConfig } from '../config/env.js'
+import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { AuditLogService } from './audit-log.service.js'
 import type { OrderPreviewService } from './order-preview.service.js'
 import { TradeExecutionError, type TradeExecutionService } from './trade-execution.service.js'
@@ -222,11 +222,7 @@ export class OrderService {
   }
 
   private resolveTradingEnvironmentLabel(exchange: string) {
-    if (exchange === 'binance') {
-      return `Binance ${appConfig.binance.environmentLabel}`
-    }
-
-    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
+    return resolveTradingEnvironmentLabel(exchange === 'binance' ? 'binance' : 'okx')
   }
 }
 

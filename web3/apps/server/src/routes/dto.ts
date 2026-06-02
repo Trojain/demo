@@ -103,6 +103,19 @@ export const listAuditLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
   /** 按动作筛选，多个动作使用逗号分隔 */
   actions: z.string().optional(),
+  /** 按日志级别筛选，多个级别使用逗号分隔 */
+  levels: z.string().optional(),
+})
+
+export const listAuditLogsPageQuerySchema = z.object({
+  /** 当前页码，从 1 开始 */
+  page: z.coerce.number().int().min(1).default(1),
+  /** 分页大小，限制最大值避免一次性读取过多 SQLite 记录 */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** 按动作筛选，多个动作使用逗号分隔 */
+  actions: z.string().optional(),
+  /** 按日志级别筛选，多个级别使用逗号分隔 */
+  levels: z.string().optional(),
 })
 
 export const listRiskChecksQuerySchema = z.object({

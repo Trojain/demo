@@ -2,6 +2,7 @@ import { appConfig } from '../config/env.js'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { ExchangeCode, PrivateTradeStreamHealth } from '../types/domain.js'
 import type { PrivateTradeStreamConnectionStatus } from '../types/exchange.js'
+import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { AuditLogService } from './audit-log.service.js'
 import type { RealOrderSyncService } from './real-order-sync.service.js'
 
@@ -44,7 +45,7 @@ export class PrivateOrderStreamService {
           void this.realOrderSyncService.handlePrivateOrderUpdate(update).catch(error => {
             this.auditLogService.record({
               level: 'warning',
-              action: 'strategy.error',
+              action: 'private_stream.error',
               entityType: 'private_stream',
               entityId: exchange,
               message: `${exchange.toUpperCase()} 私有订单推送消费失败：${error instanceof Error ? error.message : '未知错误'}`,
@@ -52,6 +53,7 @@ export class PrivateOrderStreamService {
               dedupeMs: 60_000,
               payload: {
                 exchange,
+                tradingEnvironment: this.resolveTradingEnvironmentLabel(exchange),
               },
             })
           })
@@ -61,7 +63,7 @@ export class PrivateOrderStreamService {
           void this.realOrderSyncService.handlePrivateBalanceUpdate(update).catch(error => {
             this.auditLogService.record({
               level: 'warning',
-              action: 'strategy.error',
+              action: 'private_stream.error',
               entityType: 'private_stream',
               entityId: exchange,
               message: `${exchange.toUpperCase()} 私有余额推送消费失败：${error instanceof Error ? error.message : '未知错误'}`,
@@ -69,6 +71,7 @@ export class PrivateOrderStreamService {
               dedupeMs: 60_000,
               payload: {
                 exchange,
+                tradingEnvironment: this.resolveTradingEnvironmentLabel(exchange),
               },
             })
           })
@@ -77,7 +80,7 @@ export class PrivateOrderStreamService {
           this.markError(exchange, error.message)
           this.auditLogService.record({
             level: 'warning',
-            action: 'strategy.error',
+            action: 'private_stream.error',
             entityType: 'private_stream',
             entityId: exchange,
             message: `${exchange.toUpperCase()} 私有推送异常：${error.message}`,
@@ -85,6 +88,7 @@ export class PrivateOrderStreamService {
             dedupeMs: 60_000,
             payload: {
               exchange,
+              tradingEnvironment: this.resolveTradingEnvironmentLabel(exchange),
             },
           })
         },
@@ -171,5 +175,10 @@ export class PrivateOrderStreamService {
       lastErrorAt: now,
       lastErrorMessage: message,
     })
+  }
+
+  /** 统一包装交易环境标签解析，保留当前服务内部调用方式，降低本轮重构改动面。 */
+  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
+    return resolveTradingEnvironmentLabel(exchange)
   }
 }

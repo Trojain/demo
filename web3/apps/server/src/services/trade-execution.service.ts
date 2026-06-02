@@ -6,6 +6,7 @@ import type { OrderRepository } from '../repositories/order.repository.js'
 import type { TradeAccountRepository } from '../repositories/trade-account.repository.js'
 import type { TradeOrderPreviewInput } from '../routes/dto.js'
 import { appConfig } from '../config/env.js'
+import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type {
   MonitorRule,
   ExchangeCode,
@@ -74,6 +75,14 @@ export class TradeExecutionService {
   ) {}
 
   async preview(input: TradeOrderPreviewInput): Promise<TradeOrderPreview> {
+    return this.buildPreview(input, true)
+  }
+
+  /**
+   * 构建交易预检结果。
+   * 内部确认链路只需要重新校验时，不再重复签发 confirmToken，避免产生冗余状态。
+   */
+  private async buildPreview(input: TradeOrderPreviewInput, issueConfirmToken: boolean): Promise<TradeOrderPreview> {
     const exchange = input.exchange
     const symbol = input.symbol.trim().toUpperCase()
     const adapter = this.exchangeFactory.getAdapter(exchange)
@@ -122,7 +131,7 @@ export class TradeExecutionService {
       checkItems,
       previewedAt: new Date().toISOString(),
     }
-    if (input.mode === 'real') {
+    if (input.mode === 'real' && issueConfirmToken) {
       preview.confirmToken = this.issueConfirmToken(input)
     }
 
@@ -130,7 +139,7 @@ export class TradeExecutionService {
   }
 
   async confirm(input: TradeOrderPreviewInput, confirmToken?: string): Promise<OrderRecord> {
-    const preview = await this.preview(input)
+    const preview = await this.buildPreview(input, false)
     this.assertPreviewPassed(preview)
     if (preview.mode === 'real') {
       this.assertRealTradingAllowed(preview)
@@ -160,7 +169,7 @@ export class TradeExecutionService {
     rule: MonitorRule
   }): Promise<OrderRecord> {
     const previewInput = this.toPreviewInput(input.rule)
-    const preview = await this.preview(previewInput)
+    const preview = await this.buildPreview(previewInput, false)
     this.assertPreviewPassed(preview)
     if (preview.mode === 'real') {
       this.assertRealTradingAllowed(preview)
@@ -718,14 +727,6 @@ export class TradeExecutionService {
     return quantityType === 'quote' && input.orderType === 'market'
   }
 
-  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
-    if (exchange === 'binance') {
-      return `Binance ${appConfig.binance.environmentLabel}`
-    }
-
-    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
-  }
-
   private resolveQuantityStep(input: TradeOrderPreviewInput, instrumentRule?: InstrumentRule) {
     if (!instrumentRule) {
       return '0'
@@ -1028,5 +1029,10 @@ export class TradeExecutionService {
     const date = new Date(year, month - 1, day)
     date.setDate(date.getDate() + offsetDays)
     return this.formatLocalDate(date)
+  }
+
+  /** 统一包装交易环境标签解析，保留当前服务内部调用方式，降低本轮重构改动面。 */
+  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
+    return resolveTradingEnvironmentLabel(exchange)
   }
 }

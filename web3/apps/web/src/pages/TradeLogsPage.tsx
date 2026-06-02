@@ -221,7 +221,19 @@ export function TradeLogsPage() {
                 rowKey='id'
                 search={false}
                 columns={auditColumns}
-                request={async () => toTableRequestResult(await tradingApi.getAuditLogs(200, ['order.submitted', 'order.synced', 'order.failed', 'order.sync_failed', 'trigger.failed', 'trigger.confirmed']))}
+                request={async params => {
+                  const pageResult = await tradingApi.getAuditLogPage(
+                    params.current ?? 1,
+                    params.pageSize ?? 8,
+                    ['order.submitted', 'order.synced', 'order.failed', 'order.sync_failed', 'private_stream.error', 'trigger.failed', 'trigger.confirmed'],
+                  )
+
+                  return {
+                    data: pageResult.items,
+                    success: true,
+                    total: pageResult.total,
+                  }
+                }}
                 pagination={{ pageSize: 8 }}
                 toolBarRender={() => [
                   <Button key='reload' icon={<ReloadOutlined />} onClick={() => auditActionRef.current?.reload()}>

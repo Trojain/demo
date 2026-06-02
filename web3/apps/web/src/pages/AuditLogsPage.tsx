@@ -4,7 +4,6 @@ import { PageContainer, ProTable, type ActionType, type ProColumns } from '@ant-
 import { ReloadOutlined } from '@ant-design/icons'
 import { tradingApi } from '../api/trading'
 import type { AuditLog, AuditLogAction, AuditLogLevel } from '../types'
-import { toTableRequestResult } from '../utils/proTable'
 
 const levelMeta: Record<AuditLogLevel, { text: string; color: string }> = {
   info: { text: '信息', color: 'processing' },
@@ -27,6 +26,7 @@ const actionMeta: Record<AuditLogAction, string> = {
   'order.final_validation_failed': '最终校验失败',
   'order.failed': '下单失败',
   'order.sync_failed': '同步失败',
+  'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }
 
@@ -53,7 +53,6 @@ export function AuditLogsPage() {
         dataIndex: 'level',
         width: 100,
         filters: Object.entries(levelMeta).map(([value, meta]) => ({ text: meta.text, value })),
-        onFilter: (value, row) => row.level === value,
         render: (_, row) => <Tag color={levelMeta[row.level].color}>{levelMeta[row.level].text}</Tag>,
       },
       {
@@ -61,7 +60,6 @@ export function AuditLogsPage() {
         dataIndex: 'action',
         width: 130,
         filters: Object.entries(actionMeta).map(([value, text]) => ({ text, value })),
-        onFilter: (value, row) => row.action === value,
         render: (_, row) => <Tag>{actionMeta[row.action]}</Tag>,
       },
       {
@@ -132,7 +130,25 @@ export function AuditLogsPage() {
         rowKey='id'
         search={false}
         columns={columns}
-        request={async () => toTableRequestResult(await tradingApi.getAuditLogs(200))}
+        request={async (params, _sort, filter) => {
+          const actions = Array.isArray(filter?.action)
+            ? filter.action.map(value => String(value))
+            : filter?.action
+              ? [String(filter.action)]
+              : undefined
+          const levels = Array.isArray(filter?.level)
+            ? filter.level.map(value => String(value))
+            : filter?.level
+              ? [String(filter.level)]
+              : undefined
+          const pageResult = await tradingApi.getAuditLogPage(params.current ?? 1, params.pageSize ?? 12, actions, levels)
+
+          return {
+            data: pageResult.items,
+            success: true,
+            total: pageResult.total,
+          }
+        }}
         onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 12 }}
         toolBarRender={() => [

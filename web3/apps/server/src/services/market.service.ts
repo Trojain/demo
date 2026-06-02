@@ -2,6 +2,7 @@ import type { ExchangeCode, MarketHealth, MonitorRule, PrivateTradeStreamHealth 
 import type { MarketCandle, MarketTickerSnapshot, TickerPrice } from '../types/exchange.js'
 import { ExchangeFactory } from '../exchange/exchange-factory.js'
 import { appConfig } from '../config/env.js'
+import { resolveBinanceTradingEnvironmentLabel, resolveOkxTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { MarketCapService } from './market-cap.service.js'
 import { Decimal } from 'decimal.js'
 
@@ -342,10 +343,10 @@ export class MarketService {
 
   private resolveTradingEnvironment(exchange: ExchangeCode) {
     if (exchange === 'okx') {
-      return appConfig.okx.simulated ? 'OKX 模拟盘' : 'OKX 实盘'
+      return resolveOkxTradingEnvironmentLabel()
     }
 
-    return `Binance ${appConfig.binance.environmentLabel}`
+    return resolveBinanceTradingEnvironmentLabel()
   }
 
   async getRecentCandles(exchange: ExchangeCode, symbol: string, bar: string) {

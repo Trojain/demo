@@ -17,6 +17,7 @@ import type { RuleRepository } from '../repositories/rule.repository.js'
 import type { SignalRepository } from '../repositories/signal.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import { appConfig } from '../config/env.js'
+import { resolveBinanceTradingEnvironmentLabel, resolveOkxTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import {
   createRuleSchema,
   updateRuleSchema,
@@ -25,6 +26,7 @@ import {
   marketCandlesQuerySchema,
   listSignalsQuerySchema,
   listAuditLogsQuerySchema,
+  listAuditLogsPageQuerySchema,
   previewOrderSchema,
   listRiskChecksQuerySchema,
   updateRiskConfigSchema,
@@ -64,8 +66,8 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     status: 'ok',
     time: new Date().toISOString(),
     realTradingEnabled: appConfig.enableRealTrading,
-    okxEnvironment: appConfig.okx.simulated ? '模拟盘' : '实盘',
-    binanceEnvironment: appConfig.binance.environmentLabel,
+    okxEnvironment: resolveOkxTradingEnvironmentLabel(),
+    binanceEnvironment: resolveBinanceTradingEnvironmentLabel(),
   }))
 
   app.get('/api/exchanges', async () => deps.exchangeFactory.listExchanges())
@@ -97,8 +99,39 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       ?.split(',')
       .map(action => action.trim())
       .filter(Boolean) as Parameters<typeof deps.auditLogService.list>[1]
+    const levels = parsed.data.levels
+      ?.split(',')
+      .map(level => level.trim())
+      .filter(Boolean) as Parameters<typeof deps.auditLogService.list>[2]
 
-    return deps.auditLogService.list(parsed.data.limit, actions && actions.length > 0 ? actions : undefined)
+    return deps.auditLogService.list(
+      parsed.data.limit,
+      actions && actions.length > 0 ? actions : undefined,
+      levels && levels.length > 0 ? levels : undefined,
+    )
+  })
+
+  app.get('/api/audit-logs/page', async (request, reply) => {
+    const parsed = listAuditLogsPageQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '审计日志分页查询参数不合法', issues: parsed.error.issues })
+    }
+
+    const actions = parsed.data.actions
+      ?.split(',')
+      .map(action => action.trim())
+      .filter(Boolean) as Parameters<typeof deps.auditLogService.listPage>[2]
+    const levels = parsed.data.levels
+      ?.split(',')
+      .map(level => level.trim())
+      .filter(Boolean) as Parameters<typeof deps.auditLogService.listPage>[3]
+
+    return deps.auditLogService.listPage(
+      parsed.data.page,
+      parsed.data.pageSize,
+      actions && actions.length > 0 ? actions : undefined,
+      levels && levels.length > 0 ? levels : undefined,
+    )
   })
 
   app.delete('/api/audit-logs/:id', async (request, reply) => {

@@ -34,20 +34,35 @@ function mapAuditLog(row: AuditLogRow): AuditLog {
 export class AuditLogRepository {
   constructor(private readonly db: Database.Database) {}
 
-  list(limit = 100, actions?: AuditLog['action'][]): AuditLog[] {
-    const conditions: string[] = []
-    const params: Array<string | number> = []
-    if (actions && actions.length > 0) {
-      conditions.push(`action IN (${actions.map(() => '?').join(', ')})`)
-      params.push(...actions)
-    }
+  list(limit = 100, actions?: AuditLog['action'][], levels?: AuditLog['level'][]): AuditLog[] {
+    const { whereSql, params } = this.buildFilterQuery(actions, levels)
     params.push(limit)
-    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
     return this.db
       .prepare(`SELECT * FROM audit_logs ${whereSql} ORDER BY created_at DESC LIMIT ?`)
       .all(...params)
       .map(row => mapAuditLog(row as AuditLogRow))
+  }
+
+  listPage(page = 1, pageSize = 20, actions?: AuditLog['action'][], levels?: AuditLog['level'][]) {
+    const safePage = Math.max(1, page)
+    const safePageSize = Math.max(1, pageSize)
+    const offset = (safePage - 1) * safePageSize
+    const { whereSql, params } = this.buildFilterQuery(actions, levels)
+    const totalRow = this.db
+      .prepare(`SELECT COUNT(1) as total FROM audit_logs ${whereSql}`)
+      .get(...params) as { total: number } | undefined
+    const items = this.db
+      .prepare(`SELECT * FROM audit_logs ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, safePageSize, offset)
+      .map(row => mapAuditLog(row as AuditLogRow))
+
+    return {
+      items,
+      total: totalRow?.total ?? 0,
+      page: safePage,
+      pageSize: safePageSize,
+    }
   }
 
   listByRuleId(ruleId: string, limit = 100): AuditLog[] {
@@ -83,5 +98,27 @@ export class AuditLogRepository {
   delete(id: string): boolean {
     const result = this.db.prepare('DELETE FROM audit_logs WHERE id = ?').run(id)
     return result.changes > 0
+  }
+
+  /**
+   * 统一拼装审计日志筛选条件，避免列表和分页查询各写一套 SQL 条件。
+   */
+  private buildFilterQuery(actions?: AuditLog['action'][], levels?: AuditLog['level'][]) {
+    const conditions: string[] = []
+    const params: Array<string | number> = []
+    if (actions && actions.length > 0) {
+      conditions.push(`action IN (${actions.map(() => '?').join(', ')})`)
+      params.push(...actions)
+    }
+    if (levels && levels.length > 0) {
+      conditions.push(`level IN (${levels.map(() => '?').join(', ')})`)
+      params.push(...levels)
+    }
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    return {
+      whereSql,
+      params,
+    }
   }
 }

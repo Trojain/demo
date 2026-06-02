@@ -4,6 +4,7 @@ import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
 import type { TradeAccountRepository } from '../repositories/trade-account.repository.js'
 import { appConfig } from '../config/env.js'
+import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type {
   ExchangeCode,
   OrderRecord,
@@ -703,14 +704,6 @@ export class RealOrderSyncService {
     return source === 'private_stream' ? '私有推送' : 'REST'
   }
 
-  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
-    if (exchange === 'binance') {
-      return `Binance ${appConfig.binance.environmentLabel}`
-    }
-
-    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
-  }
-
   private async runOrderSyncTask(orderId: string, task: () => Promise<void>) {
     const previousTask = this.orderSyncQueue.get(orderId) ?? Promise.resolve()
     let currentTask: Promise<void> | undefined
@@ -724,5 +717,10 @@ export class RealOrderSyncService {
       })
     this.orderSyncQueue.set(orderId, currentTask)
     await currentTask
+  }
+
+  /** 统一包装交易环境标签解析，保留当前服务内部调用方式，降低本轮重构改动面。 */
+  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
+    return resolveTradingEnvironmentLabel(exchange)
   }
 }

@@ -26,6 +26,7 @@ export type AuditLogAction =
   | 'order.final_validation_failed'
   | 'order.failed'
   | 'order.sync_failed'
+  | 'private_stream.error'
   | 'strategy.error';
 
 export interface MonitorRule {

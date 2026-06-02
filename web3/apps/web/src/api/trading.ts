@@ -31,6 +31,17 @@ import type {
   UpdateRulePayload
 } from '../types';
 
+export interface PagedResult<T> {
+  /** 当前页数据 */
+  items: T[];
+  /** 符合条件的总记录数 */
+  total: number;
+  /** 当前页码 */
+  page: number;
+  /** 当前分页大小 */
+  pageSize: number;
+}
+
 export const tradingApi = {
   getDashboardSummary: async () => {
     const { data } = await apiClient.get<DashboardSummary>('/dashboard/summary');
@@ -173,9 +184,15 @@ export const tradingApi = {
   deleteOrder: async (id: string) => {
     await apiClient.delete(`/orders/${id}`);
   },
-  getAuditLogs: async (limit = 100, actions?: string[]) => {
+  getAuditLogs: async (limit = 100, actions?: string[], levels?: string[]) => {
     const { data } = await apiClient.get<AuditLog[]>('/audit-logs', {
-      params: { limit, actions: actions?.join(',') }
+      params: { limit, actions: actions?.join(','), levels: levels?.join(',') }
+    });
+    return data;
+  },
+  getAuditLogPage: async (page = 1, pageSize = 20, actions?: string[], levels?: string[]) => {
+    const { data } = await apiClient.get<PagedResult<AuditLog>>('/audit-logs/page', {
+      params: { page, pageSize, actions: actions?.join(','), levels: levels?.join(',') }
     });
     return data;
   },
