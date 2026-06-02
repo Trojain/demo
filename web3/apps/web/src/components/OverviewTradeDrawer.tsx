@@ -81,6 +81,10 @@ function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: T
     : snapshotTicker
 }
 
+function extractPreviewEnvironmentMessage(checkItems: Array<{ code: string; message: string }>) {
+  return checkItems.find(item => item.code === 'real.environment')?.message
+}
+
 function buildRulePayload(values: Partial<CreateRulePayload>, row: TradeDrawerRow, currentPrice?: string): CreateRulePayload {
   const orderType = (values.orderType ?? 'market') as OrderType
   const side = (values.side ?? 'buy') as OrderSide
@@ -520,6 +524,9 @@ export function OverviewTradeDrawer({
           <Space direction='vertical' size={6}>
             <Typography.Text>模式：{quickMode === 'simulation' ? '模拟' : '真实'}</Typography.Text>
             <Typography.Text>交易所：{selectedPlanExchange === 'okx' ? '欧易' : '币安'}</Typography.Text>
+            {quickMode === 'real' ? (
+              <Typography.Text>交易环境：{extractPreviewEnvironmentMessage(preview.checkItems) ?? '等待服务返回'}</Typography.Text>
+            ) : null}
             <Typography.Text>委托类型：{quickOrderType === 'market' ? '市价' : '限价'}</Typography.Text>
             <Typography.Text>执行参考价：{formatTradeAmount(preview.executionPrice, 6)} USDT</Typography.Text>
             <Typography.Text>

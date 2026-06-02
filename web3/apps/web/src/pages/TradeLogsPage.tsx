@@ -112,6 +112,15 @@ export function TradeLogsPage() {
         },
       },
       {
+        title: '交易环境',
+        key: 'tradingEnvironment',
+        width: 130,
+        render: (_, row) => {
+          const payload = parseAuditPayload(row.payloadJson)
+          return typeof payload?.tradingEnvironment === 'string' ? payload.tradingEnvironment : '-'
+        },
+      },
+      {
         title: '交易所订单号',
         key: 'exchangeOrderId',
         width: 160,

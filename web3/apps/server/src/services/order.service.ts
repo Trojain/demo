@@ -1,6 +1,7 @@
 import type { RuleRepository } from '../repositories/rule.repository.js'
 import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import type { OrderPreview, OrderPreviewCheckItem, OrderRecord } from '../types/domain.js'
+import { appConfig } from '../config/env.js'
 import type { AuditLogService } from './audit-log.service.js'
 import type { OrderPreviewService } from './order-preview.service.js'
 import { TradeExecutionError, type TradeExecutionService } from './trade-execution.service.js'
@@ -72,6 +73,7 @@ export class OrderService {
         message: executionMode === 'auto' ? `${rule.symbol} 触发后已自动执行` : `已确认 ${rule.symbol} 触发事件`,
         payload: {
           exchange: rule.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(rule.exchange),
           symbol: rule.symbol,
           marketPrice: trigger.marketPrice,
           targetPrice: trigger.targetPrice,
@@ -90,6 +92,7 @@ export class OrderService {
         payload: {
           source: 'rule',
           exchange: rule.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(rule.exchange),
           side: rule.side,
           orderType: rule.orderType,
           simulationMode: order.simulationMode,
@@ -178,12 +181,13 @@ export class OrderService {
       ruleId: input.rule.id,
       triggerId: input.trigger.id,
       message: input.executionMode === 'auto' ? `${input.rule.symbol} 自动执行失败：${message}` : `${input.rule.symbol} 确认执行失败：${message}`,
-      payload: {
-        exchange: input.rule.exchange,
-        symbol: input.rule.symbol,
-        side: input.rule.side,
-        orderType: input.rule.orderType,
-        triggerStatus: failedTrigger?.status ?? 'failed',
+        payload: {
+          exchange: input.rule.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(input.rule.exchange),
+          symbol: input.rule.symbol,
+          side: input.rule.side,
+          orderType: input.rule.orderType,
+          triggerStatus: failedTrigger?.status ?? 'failed',
         marketPrice: input.trigger.marketPrice,
         targetPrice: input.trigger.targetPrice,
         executionMode: input.executionMode,
@@ -204,6 +208,7 @@ export class OrderService {
         source: 'rule',
         mode: preview && 'mode' in preview ? preview.mode : undefined,
         exchange: input.rule.exchange,
+        tradingEnvironment: this.resolveTradingEnvironmentLabel(input.rule.exchange),
         symbol: input.rule.symbol,
         executionMode: input.executionMode,
         errorCode: tradeExecutionError?.errorCode,
@@ -214,6 +219,14 @@ export class OrderService {
         failedItems,
       },
     })
+  }
+
+  private resolveTradingEnvironmentLabel(exchange: string) {
+    if (exchange === 'binance') {
+      return `Binance ${appConfig.binance.environmentLabel}`
+    }
+
+    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
   }
 }
 

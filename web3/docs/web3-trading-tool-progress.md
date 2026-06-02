@@ -2149,6 +2149,31 @@ pnpm --filter @web3/web typecheck
 pnpm lint
 ```
 
+## v0.4.15b  2026-06-02
+
+### 已完成
+
+- 真实下单、规则执行和真实订单同步相关审计日志补齐 `tradingEnvironment` 字段，后续排查 Binance 主网和测试网切换问题时可以直接在日志页区分环境。
+- `TradeExecutionService` 的手动真实下单提交和失败审计已补环境标签，`OrderService` 的规则执行成功和失败审计也同步补齐环境信息。
+- `RealOrderSyncService` 的 `order.synced`、`order.sync_failed`、真实成交入账操作日志和余额同步失败审计已补环境信息，方便定位“同订单不同环境”类问题。
+- `TradeLogsPage` 的审计日志页新增“交易环境”列，前端排障无需再展开 JSON 才能区分 Binance 主网和测试网。
+- `OverviewTradeDrawer` 的真实下单确认弹窗新增“交易环境”展示，确认前即可看到当前实际提交环境。
+- `MarketHealthPage` 的首屏占位环境文案改为“等待服务返回”，避免页面初始化时先展示错误环境。
+- `docs/用户使用手册.md` 已修正“真实下单仍未开放”等过期描述，并补充真实下单不可用时的排查项。
+
+### 已确认决策
+
+- Binance 主网和测试网切换后的问题，优先通过统一环境标签贯穿预检、确认、审计和同步链路排查，不再依赖人工从错误文案或域名猜环境。
+- 前端页面只展示后端已确认的环境信息，初始化占位文案不再本地猜测 OKX 或 Binance 当前环境。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
 ## v0.4.12  2026-06-01
 
 ### 已完成

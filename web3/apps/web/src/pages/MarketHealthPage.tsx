@@ -41,7 +41,8 @@ export function MarketHealthPage() {
   const [exchange, setExchange] = useState<ExchangeCode>('okx')
   const healthDataSource = health ?? ({
     exchange,
-    tradingEnvironment: exchange === 'okx' ? 'OKX 模拟盘' : 'Binance 主网',
+    // 页面首屏先显示等待服务返回，避免本地占位文案和后端真实环境不一致。
+    tradingEnvironment: '等待服务返回',
     restBackoffActive: false,
     subscribedSymbols: [],
     tickers: [],

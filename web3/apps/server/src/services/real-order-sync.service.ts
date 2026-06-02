@@ -131,6 +131,7 @@ export class RealOrderSyncService {
         dedupeMs: 60_000,
         payload: {
           exchange: order.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(order.exchange),
           exchangeOrderId: order.exchangeOrderId,
         },
       })
@@ -192,6 +193,7 @@ export class RealOrderSyncService {
           dedupeMs: 5 * 60_000,
           payload: {
             exchange: currentOrder.exchange,
+            tradingEnvironment: this.resolveTradingEnvironmentLabel(currentOrder.exchange),
             exchangeOrderId: currentOrder.exchangeOrderId,
             currentStatus: currentOrder.status,
             source: 'rest',
@@ -231,6 +233,7 @@ export class RealOrderSyncService {
         message: `${latestOrder.symbol} 真实订单状态已通过${this.getSourceLabel(source)}同步为 ${detail.status}`,
         payload: {
           exchange: latestOrder.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(latestOrder.exchange),
           exchangeOrderId: latestOrder.exchangeOrderId,
           previousStatus: latestOrder.status,
           currentStatus: detail.status,
@@ -293,6 +296,7 @@ export class RealOrderSyncService {
         dedupeMs: 60_000,
         payload: {
           source,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(order.exchange),
           cumulativeBaseQuantity: cumulativeBaseQuantity.toFixed(),
           cumulativeQuoteAmount: cumulativeQuoteAmount.toFixed(),
           cumulativeFeeAmount: cumulativeFeeAmount.toFixed(),
@@ -316,6 +320,7 @@ export class RealOrderSyncService {
         dedupeMs: 60_000,
         payload: {
           source,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(order.exchange),
           deltaBaseQuantity: deltaBaseQuantity.toFixed(),
           deltaQuoteAmount: deltaQuoteAmount.toFixed(),
           deltaFeeAmount: deltaFeeAmount.toFixed(),
@@ -357,6 +362,7 @@ export class RealOrderSyncService {
         message: `${order.symbol} 卖出订单缺少本地持仓成本基线，暂未回写真实持仓收益`,
         payload: {
           exchange: order.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(order.exchange),
           exchangeOrderId: order.exchangeOrderId,
           source,
         },
@@ -417,6 +423,7 @@ export class RealOrderSyncService {
           orderId: order.id,
           exchangeOrderId: order.exchangeOrderId,
           source,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(order.exchange),
           price: executionPrice.toFixed(),
           baseQuantity: deltaBaseQuantity.toFixed(),
           quoteAmount: deltaQuoteAmount.toFixed(),
@@ -456,6 +463,7 @@ export class RealOrderSyncService {
         message: `${input.order.symbol} 真实账户基线不足，暂未初始化本地真实账本`,
         payload: {
           exchange: input.order.exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(input.order.exchange),
           side: input.order.side,
           quoteCurrency: input.quoteCurrency,
         },
@@ -657,6 +665,7 @@ export class RealOrderSyncService {
         dedupeMs: 5 * 60_000,
         payload: {
           exchange,
+          tradingEnvironment: this.resolveTradingEnvironmentLabel(exchange),
           quoteCurrency,
         },
       })
@@ -692,6 +701,14 @@ export class RealOrderSyncService {
 
   private getSourceLabel(source: OrderSyncSource) {
     return source === 'private_stream' ? '私有推送' : 'REST'
+  }
+
+  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
+    if (exchange === 'binance') {
+      return `Binance ${appConfig.binance.environmentLabel}`
+    }
+
+    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
   }
 
   private async runOrderSyncTask(orderId: string, task: () => Promise<void>) {

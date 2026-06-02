@@ -442,6 +442,7 @@ export class TradeExecutionService {
         source: 'manual',
         mode: preview.mode,
         exchange: preview.exchange,
+        tradingEnvironment: this.resolveTradingEnvironmentLabel(preview.exchange),
         symbol: preview.symbol,
         side: preview.side,
         orderType: preview.orderType,
@@ -480,6 +481,7 @@ export class TradeExecutionService {
         confirmToken: metadata.confirmToken,
         mode: preview.mode,
         exchange: preview.exchange,
+        tradingEnvironment: this.resolveTradingEnvironmentLabel(preview.exchange),
         symbol: preview.symbol,
         side: preview.side,
         orderType: preview.orderType,
@@ -714,6 +716,14 @@ export class TradeExecutionService {
 
   private usesQuoteOrderSizing(input: TradeOrderPreviewInput, quantityType: TradeOrderQuantityType) {
     return quantityType === 'quote' && input.orderType === 'market'
+  }
+
+  private resolveTradingEnvironmentLabel(exchange: ExchangeCode) {
+    if (exchange === 'binance') {
+      return `Binance ${appConfig.binance.environmentLabel}`
+    }
+
+    return `OKX ${appConfig.okx.simulated ? '模拟盘' : '实盘'}`
   }
 
   private resolveQuantityStep(input: TradeOrderPreviewInput, instrumentRule?: InstrumentRule) {
