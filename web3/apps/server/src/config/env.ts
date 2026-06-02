@@ -34,6 +34,7 @@ const envSchema = z.object({
   OKX_SIMULATED: booleanString.default(true),
   BINANCE_API_KEY: z.string().default(''),
   BINANCE_API_SECRET: z.string().default(''),
+  BINANCE_USE_TESTNET: booleanString.default(false),
   REAL_ORDER_SYNC_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
   REAL_ORDER_SYNC_LOOKBACK_MINUTES: z.coerce.number().int().min(1).default(240),
   REAL_ORDER_SYNC_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
@@ -74,6 +75,16 @@ export const appConfig = {
     apiKey: parsedEnv.BINANCE_API_KEY,
     /** Binance API Secret，后续接入真实下单时使用 */
     apiSecret: parsedEnv.BINANCE_API_SECRET,
+    /** Binance 是否切到官方 Spot Test Network。开启后，公共行情、交易规则、真实下单、查单和私有推送都会切到测试网。 */
+    useTestnet: parsedEnv.BINANCE_USE_TESTNET,
+    /** Binance REST API 基地址，测试网与主网根据 useTestnet 自动切换。 */
+    apiBaseUrl: parsedEnv.BINANCE_USE_TESTNET ? 'https://testnet.binance.vision/api' : 'https://api.binance.com/api',
+    /** Binance 公共 WebSocket 基地址，raw stream 和 combined stream 都从该前缀拼接。 */
+    streamBaseUrl: parsedEnv.BINANCE_USE_TESTNET ? 'wss://stream.testnet.binance.vision:9443' : 'wss://stream.binance.com:9443',
+    /** Binance WebSocket API 基地址，用户数据流订阅从该地址建立连接。 */
+    wsApiBaseUrl: parsedEnv.BINANCE_USE_TESTNET ? 'wss://ws-api.testnet.binance.vision:9443/ws-api/v3' : 'wss://ws-api.binance.com:443/ws-api/v3',
+    /** Binance 当前环境标签，便于页面、日志和健康状态直接展示。 */
+    environmentLabel: parsedEnv.BINANCE_USE_TESTNET ? '测试网' : '主网',
   },
   realOrderSync: {
     /** 真实订单状态同步轮询间隔，单位毫秒，建议保持 10 秒以上降低交易所私有接口压力 */

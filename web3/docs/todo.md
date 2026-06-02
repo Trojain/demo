@@ -175,6 +175,8 @@
     - Binance WebSocket API `userDataStream.subscribe.signature` 订阅、`executionReport` 订单推送消费、`outboundAccountPosition` 余额推送消费
     - 推送优先更新本地订单状态、成交增量和真实账本
     - 真实订单 REST 状态同步继续保留为兜底
+- ✅ `v0.4.14.1` 增加私有推送健康状态聚合，规则执行详情可直接查看连接状态、重连次数和最近订单 / 余额推送时间。
+- ✅ `v0.4.15a` 增加 Binance 主网 / 测试网环境切换配置，统一收口公共行情、交易规则、真实下单、查单和私有推送地址。
 
 - ⬛️ `v0.4.15` 在 OKX 真实交易链路稳定后，再评估 Binance 测试网或真实下单。
   - 必做：

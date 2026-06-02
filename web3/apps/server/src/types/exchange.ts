@@ -169,6 +169,8 @@ export interface PrivateBalanceUpdate {
 }
 
 export interface PrivateTradeStreamHandlers {
+  /** 私有推送状态变化回调 */
+  onStatusChange?: (status: PrivateTradeStreamConnectionStatus, message?: string) => void;
   /** 订单状态推送回调 */
   onOrderUpdate: (update: PrivateOrderUpdate) => void;
   /** 余额推送回调 */
@@ -176,6 +178,15 @@ export interface PrivateTradeStreamHandlers {
   /** 推送链路错误回调 */
   onError?: (error: Error) => void;
 }
+
+export type PrivateTradeStreamConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'error'
+  | 'stopped';
 
 export interface AccountBalance {
   /** 币种，例如 USDT 或 BTC */

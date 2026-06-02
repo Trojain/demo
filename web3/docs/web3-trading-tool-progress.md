@@ -2080,6 +2080,75 @@ pnpm --filter @web3/server typecheck
 pnpm lint
 ```
 
+## v0.4.14.1  2026-06-01
+
+### 已完成
+
+- `PrivateOrderStreamService` 增加私有推送健康状态内存模型，按交易所记录：
+  - 当前连接状态
+  - 最近连接成功时间
+  - 最近断开时间
+  - 最近错误时间与错误摘要
+  - 最近订单推送时间
+  - 最近余额推送时间
+  - 累计重连次数
+- OKX 与 Binance 私有推送适配层增加状态变化回调，服务层可以感知 `connecting / connected / reconnecting / error / stopped`。
+- `MarketService.getHealth()` 已合并私有推送健康状态，`/api/market/health` 和 `/api/rules/:id/execution` 现在都会返回完整的真实推送可观测信息。
+- `RulesPage` 执行详情 Drawer 中的“行情健康”区块已补私有推送状态、重连次数、最近订单推送时间、最近余额推送时间和最近推送错误展示。
+- `MarketHealthPage` 同步兼容新的私有推送健康字段，后续如果重新开放该入口，无需再补字段。
+
+### 已确认决策
+
+- 私有推送健康状态直接并入现有 `marketHealth` 聚合，不再新增独立健康接口或独立主菜单。
+- 规则执行详情 Drawer 继续作为真实交易链路排障主入口，优先展示和该规则所属交易所相关的推送健康上下文。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.4.15a  2026-06-01
+
+### 已完成
+
+- 新增 `BINANCE_USE_TESTNET` 配置，默认关闭。
+- `appConfig.binance` 现在会按官方 Spot 文档自动推导：
+  - REST API 基地址
+  - 公共 WebSocket Streams 基地址
+  - WebSocket API 基地址
+  - 当前环境标签
+- `BinanceAdapter` 已移除写死的正式环境域名，以下能力现在都会跟随 `BINANCE_USE_TESTNET` 同步切换：
+  - 公共 ticker
+  - 24h 行情
+  - K 线 REST
+  - K 线 WebSocket
+  - 交易规则
+  - 账户余额
+  - 真实下单
+  - 订单详情同步
+  - 成交手续费聚合
+  - 私有 WebSocket 用户数据流
+- `MarketHealth` 增加 `tradingEnvironment` 字段，规则执行详情和行情健康视图可以直接看到：
+  - `OKX 模拟盘 / OKX 实盘`
+  - `Binance 测试网 / Binance 主网`
+- 真实交易预检明细新增 `real.environment` 检查项，确认前可直接看到当前真实环境。
+
+### 已确认决策
+
+- Binance 环境切换采用“整适配器统一切换”模型，不拆成“公共行情主网、私有交易测试网”这种混合模式，避免交易规则、价格、订单状态和私有推送来自不同环境。
+- 当前阶段仍以安全验证为优先，若需要验证 Binance 真实链路，优先建议使用官方 Spot Test Network。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
 ## v0.4.12  2026-06-01
 
 ### 已完成

@@ -64,6 +64,8 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     status: 'ok',
     time: new Date().toISOString(),
     realTradingEnabled: appConfig.enableRealTrading,
+    okxEnvironment: appConfig.okx.simulated ? '模拟盘' : '实盘',
+    binanceEnvironment: appConfig.binance.environmentLabel,
   }))
 
   app.get('/api/exchanges', async () => deps.exchangeFactory.listExchanges())

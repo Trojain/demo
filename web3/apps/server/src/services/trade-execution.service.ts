@@ -678,6 +678,13 @@ export class TradeExecutionService {
         passed: appConfig.enableRealTrading && riskConfig.tradingMode === 'allow_real',
         message: appConfig.enableRealTrading && riskConfig.tradingMode === 'allow_real' ? '真实交易开关允许' : '真实交易未开启或风控模式不允许',
       })
+      items.push({
+        code: 'real.environment',
+        passed: true,
+        message: input.exchange === 'binance'
+          ? `Binance 当前使用${appConfig.binance.environmentLabel}`
+          : `OKX 当前使用${appConfig.okx.simulated ? '模拟盘' : '实盘'}`,
+      })
       const balanceError = realBalances.find(balance => balance.error)?.error
       items.push({
         code: 'real.balance_query',

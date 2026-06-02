@@ -416,12 +416,14 @@ export class OkxAdapter implements ExchangeAdapter {
     this.privateTradeStopRequested = false;
     clearTimeout(this.privateTradeReconnectTimer);
     this.privateTradeWs?.close();
+    this.privateTradeHandlers.onStatusChange?.('connecting');
     this.openPrivateTradeStream();
 
     return () => {
       this.privateTradeStopRequested = true;
       clearTimeout(this.privateTradeReconnectTimer);
       this.privateTradeReconnectTimer = undefined;
+      this.privateTradeHandlers?.onStatusChange?.('stopped');
       this.privateTradeWs?.close();
       this.privateTradeWs = undefined;
     };
@@ -604,16 +606,19 @@ export class OkxAdapter implements ExchangeAdapter {
       const payload = JSON.parse(raw.toString()) as OkxPrivateOrderStreamResponse | OkxPrivateAccountStreamResponse;
       if (payload.event === 'login') {
         if (payload.code !== '0') {
+          this.privateTradeHandlers?.onStatusChange?.('error', payload.msg ?? payload.code ?? '未知错误');
           this.privateTradeHandlers?.onError?.(new Error(`OKX 私有推送登录失败：${payload.msg ?? payload.code ?? '未知错误'}`));
           this.privateTradeWs?.close();
           return;
         }
 
+        this.privateTradeHandlers?.onStatusChange?.('connected');
         this.subscribePrivateChannels();
         return;
       }
 
       if (payload.event === 'error') {
+        this.privateTradeHandlers?.onStatusChange?.('error', payload.msg ?? payload.code ?? '未知错误');
         this.privateTradeHandlers?.onError?.(new Error(`OKX 私有推送异常：${payload.msg ?? payload.code ?? '未知错误'}`));
         return;
       }
@@ -638,6 +643,7 @@ export class OkxAdapter implements ExchangeAdapter {
         return;
       }
 
+      this.privateTradeHandlers?.onStatusChange?.('reconnecting');
       clearTimeout(this.privateTradeReconnectTimer);
       this.privateTradeReconnectTimer = setTimeout(() => {
         this.openPrivateTradeStream();
@@ -645,6 +651,7 @@ export class OkxAdapter implements ExchangeAdapter {
     });
 
     this.privateTradeWs.on('error', error => {
+      this.privateTradeHandlers?.onStatusChange?.('error', error instanceof Error ? error.message : 'OKX 私有推送连接异常');
       this.privateTradeHandlers?.onError?.(error instanceof Error ? error : new Error('OKX 私有推送连接异常'));
       this.privateTradeWs?.close();
     });

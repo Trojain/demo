@@ -106,6 +106,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     batchSize: appConfig.realOrderSync.batchSize,
   });
   const privateOrderStreamService = new PrivateOrderStreamService(exchangeFactory, realOrderSyncService, auditLogService);
+  marketService.setPrivateTradeStreamHealthProvider(privateOrderStreamService);
 
   await registerApiRoutes(app, {
     auditLogRepository,

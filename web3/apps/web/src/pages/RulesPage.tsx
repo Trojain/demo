@@ -164,6 +164,26 @@ const auditActionTextMap: Record<AuditLog['action'], string> = {
   'strategy.error': '策略异常',
 }
 
+const privateStreamStatusColorMap: Record<MarketHealth['privateTradeStream']['status'], string> = {
+  idle: 'default',
+  connecting: 'processing',
+  connected: 'success',
+  reconnecting: 'warning',
+  disconnected: 'default',
+  error: 'error',
+  stopped: 'default',
+}
+
+const privateStreamStatusTextMap: Record<MarketHealth['privateTradeStream']['status'], string> = {
+  idle: '未启动',
+  connecting: '连接中',
+  connected: '已连接',
+  reconnecting: '重连中',
+  disconnected: '已断开',
+  error: '异常',
+  stopped: '已停止',
+}
+
 function getQuoteAmountLabel(side?: OrderSide) {
   return side ? QUOTE_AMOUNT_LABEL_BY_SIDE[side] : '交易金额'
 }
@@ -456,6 +476,7 @@ export function RulesPage() {
   const marketHealthColumns = useMemo<ProDescriptionsItemProps<MarketHealth>[]>(
     () => [
       { title: '交易所', dataIndex: 'exchange', render: (_, row) => row.exchange.toUpperCase() },
+      { title: '交易环境', dataIndex: 'tradingEnvironment' },
       {
         title: 'REST 状态',
         dataIndex: 'restBackoffActive',
@@ -473,7 +494,22 @@ export function RulesPage() {
           </Space>
         ),
       },
+      {
+        title: '私有推送',
+        dataIndex: ['privateTradeStream', 'status'],
+        render: (_, row) => (
+          <Tag color={privateStreamStatusColorMap[row.privateTradeStream.status]}>
+            {privateStreamStatusTextMap[row.privateTradeStream.status]}
+          </Tag>
+        ),
+      },
+      { title: '私有推送重连次数', dataIndex: ['privateTradeStream', 'reconnectCount'] },
+      { title: '最近连接成功', dataIndex: ['privateTradeStream', 'lastConnectedAt'], render: (_, row) => row.privateTradeStream.lastConnectedAt ?? '-' },
+      { title: '最近断开时间', dataIndex: ['privateTradeStream', 'lastDisconnectedAt'], render: (_, row) => row.privateTradeStream.lastDisconnectedAt ?? '-' },
+      { title: '最近订单推送', dataIndex: ['privateTradeStream', 'lastOrderUpdateAt'], render: (_, row) => row.privateTradeStream.lastOrderUpdateAt ?? '-' },
+      { title: '最近余额推送', dataIndex: ['privateTradeStream', 'lastBalanceUpdateAt'], render: (_, row) => row.privateTradeStream.lastBalanceUpdateAt ?? '-' },
       { title: '最近 REST 错误', dataIndex: 'lastRestError', span: 2, render: (_, row) => row.lastRestError ?? '-' },
+      { title: '最近推送错误', dataIndex: ['privateTradeStream', 'lastErrorMessage'], span: 2, render: (_, row) => row.privateTradeStream.lastErrorMessage ?? '-' },
     ],
     [],
   )

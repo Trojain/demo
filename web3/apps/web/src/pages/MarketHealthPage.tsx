@@ -15,11 +15,43 @@ function formatAge(ageMs: number) {
   return `${Math.round(ageMs / 1000)}s`
 }
 
+const privateStreamStatusColorMap: Record<MarketHealth['privateTradeStream']['status'], string> = {
+  idle: 'default',
+  connecting: 'processing',
+  connected: 'success',
+  reconnecting: 'warning',
+  disconnected: 'default',
+  error: 'error',
+  stopped: 'default',
+}
+
+const privateStreamStatusTextMap: Record<MarketHealth['privateTradeStream']['status'], string> = {
+  idle: '未启动',
+  connecting: '连接中',
+  connected: '已连接',
+  reconnecting: '重连中',
+  disconnected: '已断开',
+  error: '异常',
+  stopped: '已停止',
+}
+
 export function MarketHealthPage() {
   const actionRef = useRef<ActionType | undefined>(undefined)
   const [health, setHealth] = useState<MarketHealth>()
   const [exchange, setExchange] = useState<ExchangeCode>('okx')
-  const healthDataSource = health ?? ({ exchange, restBackoffActive: false, subscribedSymbols: [], tickers: [] } as MarketHealth)
+  const healthDataSource = health ?? ({
+    exchange,
+    tradingEnvironment: exchange === 'okx' ? 'OKX 模拟盘' : 'Binance 主网',
+    restBackoffActive: false,
+    subscribedSymbols: [],
+    tickers: [],
+    privateTradeStream: {
+      exchange,
+      enabled: false,
+      status: 'idle',
+      reconnectCount: 0,
+    },
+  } as MarketHealth)
 
   const columns = useMemo<ProColumns<MarketHealthTicker>[]>(
     () => [
@@ -53,6 +85,10 @@ export function MarketHealthPage() {
         render: (_, row) => row.exchange.toUpperCase(),
       },
       {
+        title: '交易环境',
+        dataIndex: 'tradingEnvironment',
+      },
+      {
         title: 'REST 状态',
         dataIndex: 'restBackoffActive',
         render: (_, row) => <Tag color={row.restBackoffActive ? 'warning' : 'success'}>{row.restBackoffActive ? '退避中' : '正常'}</Tag>,
@@ -77,6 +113,39 @@ export function MarketHealthPage() {
           </Space>
         ),
       },
+      {
+        title: '私有推送',
+        dataIndex: ['privateTradeStream', 'status'],
+        render: (_, row) => (
+          <Tag color={privateStreamStatusColorMap[row.privateTradeStream.status]}>
+            {privateStreamStatusTextMap[row.privateTradeStream.status]}
+          </Tag>
+        ),
+      },
+      {
+        title: '是否可用',
+        dataIndex: ['privateTradeStream', 'enabled'],
+        render: (_, row) => <Tag color={row.privateTradeStream.enabled ? 'success' : 'default'}>{row.privateTradeStream.enabled ? '已配置' : '未配置'}</Tag>,
+      },
+      {
+        title: '重连次数',
+        dataIndex: ['privateTradeStream', 'reconnectCount'],
+      },
+      {
+        title: '最近连接成功',
+        dataIndex: ['privateTradeStream', 'lastConnectedAt'],
+        render: (_, row) => row.privateTradeStream.lastConnectedAt ?? '-',
+      },
+      {
+        title: '最近订单推送',
+        dataIndex: ['privateTradeStream', 'lastOrderUpdateAt'],
+        render: (_, row) => row.privateTradeStream.lastOrderUpdateAt ?? '-',
+      },
+      {
+        title: '最近余额推送',
+        dataIndex: ['privateTradeStream', 'lastBalanceUpdateAt'],
+        render: (_, row) => row.privateTradeStream.lastBalanceUpdateAt ?? '-',
+      },
     ],
     [],
   )
@@ -85,6 +154,9 @@ export function MarketHealthPage() {
     <PageContainer subTitle='查看交易所行情缓存、订阅和 REST 退避状态'>
       <Space direction='vertical' size={16} style={{ width: '100%' }}>
         {health?.lastRestError ? <Alert type='warning' message='最近 REST 错误' description={health.lastRestError} showIcon /> : null}
+        {health?.privateTradeStream.lastErrorMessage ? (
+          <Alert type='error' message='最近私有推送错误' description={health.privateTradeStream.lastErrorMessage} showIcon />
+        ) : null}
         <ProDescriptions<MarketHealth> bordered size='small' column={2} dataSource={healthDataSource} columns={healthColumns} />
         <ProTable<MarketHealthTicker>
           actionRef={actionRef}

@@ -199,7 +199,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.currentTickerSignature = signature
     this.ws?.close()
     const streams = uniqueSymbols.map(symbol => `${symbol.toLowerCase()}@ticker`).join('/')
-    this.ws = createExchangeWebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`)
+    this.ws = createExchangeWebSocket(`${this.getCombinedStreamBaseUrl()}?streams=${streams}`)
 
     this.ws.on('message', raw => {
       const payload = JSON.parse(raw.toString()) as BinanceTickerStreamMessage
@@ -236,7 +236,7 @@ export class BinanceAdapter implements ExchangeAdapter {
 
   async getLatestPrice(symbol: string): Promise<TickerPrice> {
     const binanceSymbol = toBinanceSymbol(symbol)
-    const payload = await fetchExchangeJson<BinanceTickerResponse>(`https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`)
+    const payload = await fetchExchangeJson<BinanceTickerResponse>(`${this.getRestApiBaseUrl()}/v3/ticker/price?symbol=${binanceSymbol}`)
     return {
       exchange: this.code,
       symbol: toDisplaySymbol(payload.symbol),
@@ -247,7 +247,7 @@ export class BinanceAdapter implements ExchangeAdapter {
 
   async getTickerSnapshot(symbol: string): Promise<MarketTickerSnapshot> {
     const binanceSymbol = toBinanceSymbol(symbol)
-    const payload = await fetchExchangeJson<BinanceTicker24hResponse>(`https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSymbol}`)
+    const payload = await fetchExchangeJson<BinanceTicker24hResponse>(`${this.getRestApiBaseUrl()}/v3/ticker/24hr?symbol=${binanceSymbol}`)
     return this.mapTickerSnapshot(payload)
   }
 
@@ -267,7 +267,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       params.set('endTime', String(Number(after) - 1))
     }
 
-    const payload = await fetchExchangeJson<BinanceKlineResponse>(`https://api.binance.com/api/v3/klines?${params.toString()}`)
+    const payload = await fetchExchangeJson<BinanceKlineResponse>(`${this.getRestApiBaseUrl()}/v3/klines?${params.toString()}`)
 
     return payload.map(item => ({
       symbol: toDisplaySymbol(binanceSymbol),
@@ -293,7 +293,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.currentCandleSignature = signature
     clearTimeout(this.candleReconnectTimer)
     this.candleWs?.close()
-    this.candleWs = createExchangeWebSocket(`wss://stream.binance.com:9443/ws/${binanceSymbol.toLowerCase()}@kline_${bar}`)
+    this.candleWs = createExchangeWebSocket(`${this.getRawStreamBaseUrl()}/${binanceSymbol.toLowerCase()}@kline_${bar}`)
 
     this.candleWs.on('message', raw => {
       const payload = JSON.parse(raw.toString()) as BinanceKlineStreamMessage
@@ -343,7 +343,7 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   async getInstrumentRules(): Promise<InstrumentRule[]> {
-    const payload = await fetchExchangeJson<BinanceExchangeInfoResponse>('https://api.binance.com/api/v3/exchangeInfo')
+    const payload = await fetchExchangeJson<BinanceExchangeInfoResponse>(`${this.getRestApiBaseUrl()}/v3/exchangeInfo`)
 
     return payload.symbols
       .filter(item => item.quoteAsset === 'USDT')
@@ -396,7 +396,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
     const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
     params.set('signature', signature)
-    const payload = await fetchExchangeJson<BinanceAccountResponse>(`https://api.binance.com/api/v3/account?${params.toString()}`, {
+    const payload = await fetchExchangeJson<BinanceAccountResponse>(`${this.getRestApiBaseUrl()}/v3/account?${params.toString()}`, {
       method: 'GET',
       headers: {
         'X-MBX-APIKEY': appConfig.binance.apiKey,
@@ -423,12 +423,14 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.privateTradeStopRequested = false
     clearTimeout(this.privateTradeReconnectTimer)
     this.privateTradeWs?.close()
+    this.privateTradeHandlers.onStatusChange?.('connecting')
     this.openPrivateTradeStream()
 
     return () => {
       this.privateTradeStopRequested = true
       clearTimeout(this.privateTradeReconnectTimer)
       this.privateTradeReconnectTimer = undefined
+      this.privateTradeHandlers?.onStatusChange?.('stopped')
       this.privateTradeWs?.close()
       this.privateTradeWs = undefined
       this.privateOrderFeeTrackers.clear()
@@ -449,7 +451,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       })
       const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
       params.set('signature', signature)
-      const payload = await fetchExchangeJson<BinanceQueryOrderResponse>(`https://api.binance.com/api/v3/order?${params.toString()}`, {
+      const payload = await fetchExchangeJson<BinanceQueryOrderResponse>(`${this.getRestApiBaseUrl()}/v3/order?${params.toString()}`, {
         method: 'GET',
         headers: {
           'X-MBX-APIKEY': appConfig.binance.apiKey,
@@ -504,7 +506,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       const params = this.buildPlaceOrderParams(request)
       const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
       params.set('signature', signature)
-      const payload = await fetchExchangeJson<BinancePlaceOrderResponse>(`https://api.binance.com/api/v3/order?${params.toString()}`, {
+      const payload = await fetchExchangeJson<BinancePlaceOrderResponse>(`${this.getRestApiBaseUrl()}/v3/order?${params.toString()}`, {
         method: 'POST',
         headers: {
           'X-MBX-APIKEY': appConfig.binance.apiKey,
@@ -564,8 +566,24 @@ export class BinanceAdapter implements ExchangeAdapter {
     return params
   }
 
+  private getRestApiBaseUrl() {
+    return appConfig.binance.apiBaseUrl
+  }
+
+  private getCombinedStreamBaseUrl() {
+    return `${appConfig.binance.streamBaseUrl}/stream`
+  }
+
+  private getRawStreamBaseUrl() {
+    return `${appConfig.binance.streamBaseUrl}/ws`
+  }
+
+  private getWsApiBaseUrl() {
+    return appConfig.binance.wsApiBaseUrl
+  }
+
   private openPrivateTradeStream() {
-    this.privateTradeWs = createExchangeWebSocket('wss://ws-api.binance.com:443/ws-api/v3')
+    this.privateTradeWs = createExchangeWebSocket(this.getWsApiBaseUrl())
 
     this.privateTradeWs.on('open', () => {
       this.privateTradeWs?.send(JSON.stringify(this.buildPrivateSubscribePayload()))
@@ -574,14 +592,20 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.privateTradeWs.on('message', raw => {
       const payload = JSON.parse(raw.toString()) as BinanceUserDataStreamResponse
       if (payload.error) {
+        this.privateTradeHandlers?.onStatusChange?.('error', payload.error.msg ?? String(payload.error.code ?? '未知错误'))
         this.privateTradeHandlers?.onError?.(new Error(`Binance 私有推送异常：${payload.error.msg ?? payload.error.code ?? '未知错误'}`))
         return
       }
 
       if (payload.id && payload.status && payload.status >= 400) {
+        this.privateTradeHandlers?.onStatusChange?.('error', `订阅失败，状态码 ${payload.status}`)
         this.privateTradeHandlers?.onError?.(new Error(`Binance 私有推送订阅失败，状态码 ${payload.status}`))
         this.privateTradeWs?.close()
         return
+      }
+
+      if (payload.id && payload.status === 200 && payload.result?.subscriptionId) {
+        this.privateTradeHandlers?.onStatusChange?.('connected')
       }
 
       if (!payload.event?.e) {
@@ -601,6 +625,7 @@ export class BinanceAdapter implements ExchangeAdapter {
         return
       }
 
+      this.privateTradeHandlers?.onStatusChange?.('reconnecting')
       clearTimeout(this.privateTradeReconnectTimer)
       this.privateTradeReconnectTimer = setTimeout(() => {
         this.openPrivateTradeStream()
@@ -608,6 +633,7 @@ export class BinanceAdapter implements ExchangeAdapter {
     })
 
     this.privateTradeWs.on('error', error => {
+      this.privateTradeHandlers?.onStatusChange?.('error', error instanceof Error ? error.message : 'Binance 私有推送连接异常')
       this.privateTradeHandlers?.onError?.(error instanceof Error ? error : new Error('Binance 私有推送连接异常'))
       this.privateTradeWs?.close()
     })
@@ -766,7 +792,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       })
       const signature = createHmac('sha256', appConfig.binance.apiSecret).update(params.toString()).digest('hex')
       params.set('signature', signature)
-      const trades = await fetchExchangeJson<BinanceTradeFillResponse>(`https://api.binance.com/api/v3/myTrades?${params.toString()}`, {
+      const trades = await fetchExchangeJson<BinanceTradeFillResponse>(`${this.getRestApiBaseUrl()}/v3/myTrades?${params.toString()}`, {
         method: 'GET',
         headers: {
           'X-MBX-APIKEY': appConfig.binance.apiKey,

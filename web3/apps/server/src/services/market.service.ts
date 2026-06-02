@@ -1,6 +1,7 @@
-import type { ExchangeCode, MarketHealth, MonitorRule } from '../types/domain.js'
+import type { ExchangeCode, MarketHealth, MonitorRule, PrivateTradeStreamHealth } from '../types/domain.js'
 import type { MarketCandle, MarketTickerSnapshot, TickerPrice } from '../types/exchange.js'
 import { ExchangeFactory } from '../exchange/exchange-factory.js'
+import { appConfig } from '../config/env.js'
 import type { MarketCapService } from './market-cap.service.js'
 import { Decimal } from 'decimal.js'
 
@@ -32,6 +33,10 @@ interface CandleCacheItem {
   data: MarketCandle[]
 }
 
+interface PrivateTradeStreamHealthProvider {
+  getHealth(exchange: ExchangeCode): PrivateTradeStreamHealth
+}
+
 export class MarketService {
   private readonly latestTicker = new Map<string, TickerPrice>()
   private readonly overviewSnapshots = new Map<string, MarketTickerSnapshot>()
@@ -41,11 +46,16 @@ export class MarketService {
   private readonly latestTickerRestAt = new Map<string, number>()
   private readonly restBackoffUntil = new Map<ExchangeCode, number>()
   private readonly lastRestError = new Map<ExchangeCode, string>()
+  private privateTradeStreamHealthProvider?: PrivateTradeStreamHealthProvider
 
   constructor(
     private readonly exchangeFactory: ExchangeFactory,
     private readonly marketCapService?: MarketCapService,
   ) {}
+
+  setPrivateTradeStreamHealthProvider(provider: PrivateTradeStreamHealthProvider) {
+    this.privateTradeStreamHealthProvider = provider
+  }
 
   private cacheKey(exchange: ExchangeCode, symbol: string) {
     return `${exchange}:${symbol.toUpperCase()}`
@@ -303,11 +313,18 @@ export class MarketService {
 
     return {
       exchange,
+      tradingEnvironment: this.resolveTradingEnvironment(exchange),
       restBackoffActive: now < backoffUntil,
       restBackoffUntil: backoffUntil > 0 ? new Date(backoffUntil).toISOString() : undefined,
       lastRestError: this.lastRestError.get(exchange),
       overviewRefreshedAt: overviewRefreshedAt ? new Date(overviewRefreshedAt).toISOString() : undefined,
       subscribedSymbols,
+      privateTradeStream: this.privateTradeStreamHealthProvider?.getHealth(exchange) ?? {
+        exchange,
+        enabled: false,
+        status: 'idle',
+        reconnectCount: 0,
+      },
       tickers: [...this.latestTicker.values()]
         .filter(ticker => ticker.exchange === exchange)
         .map(ticker => {
@@ -321,6 +338,14 @@ export class MarketService {
           }
         }),
     }
+  }
+
+  private resolveTradingEnvironment(exchange: ExchangeCode) {
+    if (exchange === 'okx') {
+      return appConfig.okx.simulated ? 'OKX 模拟盘' : 'OKX 实盘'
+    }
+
+    return `Binance ${appConfig.binance.environmentLabel}`
   }
 
   async getRecentCandles(exchange: ExchangeCode, symbol: string, bar: string) {

@@ -540,9 +540,36 @@ export interface MarketHealthTicker {
   ageMs: number;
 }
 
+export interface PrivateTradeStreamHealth {
+  /** 交易所编码 */
+  exchange: ExchangeCode;
+  /** 是否具备启动私有推送的基础配置 */
+  enabled: boolean;
+  /** 当前连接状态 */
+  status: 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error' | 'stopped';
+  /** 自进程启动以来累计重连次数 */
+  reconnectCount: number;
+  /** 最近一次连接成功时间 */
+  lastConnectedAt?: string;
+  /** 最近一次断开时间 */
+  lastDisconnectedAt?: string;
+  /** 最近一次状态变化时间 */
+  lastStatusChangedAt?: string;
+  /** 最近一次错误时间 */
+  lastErrorAt?: string;
+  /** 最近一次错误摘要 */
+  lastErrorMessage?: string;
+  /** 最近一次订单推送时间 */
+  lastOrderUpdateAt?: string;
+  /** 最近一次余额推送时间 */
+  lastBalanceUpdateAt?: string;
+}
+
 export interface MarketHealth {
   /** 交易所编码 */
   exchange: ExchangeCode;
+  /** 交易环境标签，例如 OKX 模拟盘、OKX 实盘、Binance 测试网、Binance 主网 */
+  tradingEnvironment: string;
   /** REST 是否处于退避中 */
   restBackoffActive: boolean;
   /** REST 退避结束时间 */
@@ -555,6 +582,8 @@ export interface MarketHealth {
   subscribedSymbols: string[];
   /** 当前缓存行情 */
   tickers: MarketHealthTicker[];
+  /** 真实交易私有推送健康状态 */
+  privateTradeStream: PrivateTradeStreamHealth;
 }
 
 export interface RuleExecutionDetail {
