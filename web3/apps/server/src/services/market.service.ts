@@ -2,6 +2,7 @@ import type { ExchangeCode, MarketHealth, MonitorRule, PrivateTradeStreamHealth 
 import type { MarketCandle, MarketTickerSnapshot, TickerPrice } from '../types/exchange.js'
 import { ExchangeFactory } from '../exchange/exchange-factory.js'
 import { appConfig } from '../config/env.js'
+import { shouldAcceptTicker, tickerEventTimestamp } from '../utils/market-ticker.js'
 import { resolveBinanceTradingEnvironmentLabel, resolveOkxTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { MarketCapService } from './market-cap.service.js'
 import { Decimal } from 'decimal.js'
@@ -63,8 +64,8 @@ export class MarketService {
   }
 
   private isTickerFresh(ticker: TickerPrice, now = Date.now()) {
-    const eventTime = new Date(ticker.eventTime).getTime()
-    return Number.isFinite(eventTime) && now - eventTime <= TICKER_STALE_MS
+    const eventTime = tickerEventTimestamp(ticker.eventTime)
+    return eventTime !== undefined && now - eventTime <= TICKER_STALE_MS
   }
 
   private getBackoffMessage(exchange: ExchangeCode, now = Date.now()) {
@@ -118,7 +119,11 @@ export class MarketService {
 
       this.subscriptionSignatures.set(exchange, signature)
       this.exchangeFactory.getAdapter(exchange).connectTickerStream(symbols, ticker => {
-        this.latestTicker.set(this.cacheKey(ticker.exchange, ticker.symbol), ticker)
+        const acceptedTicker = this.updateLatestTicker(ticker)
+        if (acceptedTicker !== ticker) {
+          return
+        }
+
         onTicker(ticker)
       })
     })
@@ -150,9 +155,9 @@ export class MarketService {
     try {
       this.latestTickerRestAt.set(key, now)
       const ticker = await this.exchangeFactory.getAdapter(exchange).getLatestPrice(symbol)
-      this.latestTicker.set(key, ticker)
+      const mergedTicker = this.updateLatestTicker(ticker) ?? ticker
       this.lastRestError.delete(exchange)
-      return ticker
+      return mergedTicker
     } catch (error) {
       this.enterBackoffIfRateLimited(exchange, error)
       throw error
@@ -208,7 +213,7 @@ export class MarketService {
           marketCap: marketCaps.get(snapshot.symbol) ?? snapshot.marketCap,
         }
         this.overviewSnapshots.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshotWithMarketCap)
-        this.latestTicker.set(this.cacheKey(snapshot.exchange, snapshot.symbol), snapshotWithMarketCap)
+        this.updateLatestTicker(snapshotWithMarketCap)
       })
       this.overviewRefreshedAt.set(exchange, now)
       this.lastRestError.delete(exchange)
@@ -401,5 +406,19 @@ export class MarketService {
     })
 
     return uniqueCandles
+  }
+
+  /**
+   * 统一写入 latestTicker 缓存，确保服务端也遵循事件时间优先级。
+   */
+  private updateLatestTicker(ticker: TickerPrice) {
+    const key = this.cacheKey(ticker.exchange, ticker.symbol)
+    const currentTicker = this.latestTicker.get(key)
+    if (!shouldAcceptTicker(currentTicker, ticker)) {
+      return currentTicker
+    }
+
+    this.latestTicker.set(key, ticker)
+    return ticker
   }
 }

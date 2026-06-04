@@ -33,6 +33,24 @@ export function createMarketPriceSnapshot(ticker: TickerPrice, source: MarketPri
   }
 }
 
+/**
+ * 在 REST 快照和实时 ticker 之间选出更可信的一份行情。
+ * 页面展示统一复用这个函数，避免各处自己决定覆盖规则。
+ */
+export function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: TickerPrice) {
+  if (!snapshotTicker) {
+    return realtimeTicker
+  }
+
+  if (!realtimeTicker) {
+    return snapshotTicker
+  }
+
+  return shouldAcceptMarketPrice(createMarketPriceSnapshot(snapshotTicker, 'rest'), createMarketPriceSnapshot(realtimeTicker, 'realtime'))
+    ? realtimeTicker
+    : snapshotTicker
+}
+
 export function shouldAcceptMarketPrice(current: MarketPriceSnapshot | undefined, incoming: MarketPriceSnapshot) {
   if (!current) {
     return true

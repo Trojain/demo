@@ -1951,6 +1951,36 @@ pnpm --filter @web3/web typecheck
 pnpm lint
 ```
 
+## v0.5.0  2026-06-04
+
+### 已完成
+
+- 新增统一行情时序回归测试 `tests/market-price-regression.test.ts`，覆盖旧行情拒收、同时间戳来源优先级、缺失 `eventTime` 兜底快照拒绝覆盖、偏好实时 ticker 和多快照合并结果。
+- `resolvePreferredTicker` 收口到 [marketPrice.ts](/D:/demo/web3/apps/web/src/utils/marketPrice.ts)，总览页和交易弹框复用同一套快照优先级判断。
+- 持仓价格快照构建和持仓视图回写逻辑抽到 [tradePositionMarket.ts](/D:/demo/web3/apps/web/src/utils/tradePositionMarket.ts)，总览持仓区块和旧持仓页统一复用。
+- 持仓卖出入口打开交易弹框时，不再给缺失行情时间的持仓价格强行补当前时间，避免旧价看起来像实时价。
+- 根目录增加 `pnpm test:market-price` 脚本，使用现有 `tsx` 运行 Node 内置测试，不新增依赖。
+- K 线实时合并和 REST 校准逻辑抽到 [marketCandle.ts](/D:/demo/web3/apps/web/src/utils/marketCandle.ts)，总览页不再在页面内维护一套独立合并规则。
+- 行情时序回归测试新增 K 线用例，覆盖同桶实时更新和 REST 校准不回退最新桶。
+- 新增 [market-ticker.ts](/D:/demo/web3/apps/server/src/utils/market-ticker.ts)，服务端 `latestTicker` 更新也改为按 `eventTime` 决定是否接收。
+- 新增 `tests/market-service-regression.test.ts`，覆盖服务端总览快照、REST 单点查询和 WebSocket ticker 都不会让更旧行情回退最新缓存。
+- `MarketService` 现在只广播通过时序校验后真正写入缓存的 ticker，旧行情不会再进入前端广播链路。
+- 删除已脱离主流程的 `TradePositionsPage.tsx`，避免持仓页逻辑再次漂移。
+
+### 已确认决策
+
+- `v0.5.0` 先锁定统一行情时序规则，不急着扩更多策略输入来源。
+- 测试框架优先复用 Node 内置 `node:test` 和现有 `tsx`，避免为了首批回归用例引入新依赖。
+
+### 验证记录
+
+```bash
+pnpm test:market-price
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
 ## v0.4.15.1  2026-06-02
 
 ### 已完成

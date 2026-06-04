@@ -11,10 +11,9 @@ import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getCoinMeta, getCoinSym
 import { useTickerSnapshot } from '../hooks/useTickerSnapshot'
 import { useTradingStore } from '../stores/tradingStore'
 import type { ExchangeCode, MarketCandle, MarketTickerSnapshot, TickerPrice, TradePositionView } from '../types'
-import { createMarketPriceSnapshot, shouldAcceptMarketPrice } from '../utils/marketPrice'
+import { CANDLE_POINT_LIMIT_BY_BAR, type MarketCandleBar, mergeCalibrationCandles, mergeRealtimeCandle } from '../utils/marketCandle'
+import { resolvePreferredTicker } from '../utils/marketPrice'
 import styles from './page.module.scss'
-
-type MarketCandleBar = '1s' | '10s' | '1m' | '5m' | '15m'
 
 const CANDLE_REST_CALIBRATION_INTERVAL_MS = 60_000
 const OVERVIEW_CANDLE_BAR_STORAGE_KEY = 'overview.marketCandleBar'
@@ -26,14 +25,6 @@ const CANDLE_BAR_OPTIONS: Array<{ label: string; value: MarketCandleBar }> = [
   { label: '5分', value: '5m' },
   { label: '15分', value: '15m' },
 ]
-
-const CANDLE_POINT_LIMIT_BY_BAR: Record<MarketCandleBar, number> = {
-  '1s': 300,
-  '10s': 120,
-  '1m': 1440,
-  '5m': 288,
-  '15m': 96,
-}
 
 function isMarketCandleBar(value: string): value is MarketCandleBar {
   return CANDLE_BAR_OPTIONS.some(option => option.value === value)
@@ -102,20 +93,6 @@ function formatMoneyCompact(value?: string) {
   }
 
   return formatUsd(numberValue)
-}
-
-function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: TickerPrice) {
-  if (!snapshotTicker) {
-    return realtimeTicker
-  }
-
-  if (!realtimeTicker) {
-    return snapshotTicker
-  }
-
-  return shouldAcceptMarketPrice(createMarketPriceSnapshot(snapshotTicker, 'rest'), createMarketPriceSnapshot(realtimeTicker, 'realtime'))
-    ? realtimeTicker
-    : snapshotTicker
 }
 
 function RealtimeMarketPriceCell({ row }: { row: MarketTickerSnapshot }) {
@@ -253,66 +230,6 @@ function MarketOverviewTable({
   )
 }
 
-function mergeRealtimeCandle(candles: MarketCandle[], candle: MarketCandle, bar: MarketCandleBar) {
-  const bucketTime = new Date(candle.time).getTime()
-  if (!Number.isFinite(bucketTime)) {
-    return candles
-  }
-
-  const bucketIsoTime = new Date(bucketTime).toISOString()
-  const pointLimit = CANDLE_POINT_LIMIT_BY_BAR[bar]
-  const candleIndex = candles.findIndex(item => item.time === bucketIsoTime)
-
-  if (candleIndex >= 0) {
-    const nextCandle = { ...candle, time: bucketIsoTime }
-    const currentCandle = candles[candleIndex]
-    if (
-      currentCandle.open === nextCandle.open &&
-      currentCandle.high === nextCandle.high &&
-      currentCandle.low === nextCandle.low &&
-      currentCandle.close === nextCandle.close &&
-      currentCandle.volume === nextCandle.volume &&
-      currentCandle.volumeCurrency === nextCandle.volumeCurrency
-    ) {
-      return candles
-    }
-
-    return [...candles.slice(0, candleIndex), nextCandle, ...candles.slice(candleIndex + 1)]
-  }
-
-  return [
-    ...candles,
-    {
-      ...candle,
-      time: bucketIsoTime,
-    },
-  ]
-    .sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime())
-    .slice(-pointLimit)
-}
-
-function mergeCalibrationCandles(currentCandles: MarketCandle[], nextCandles: MarketCandle[], bar: MarketCandleBar) {
-  if (currentCandles.length === 0 || nextCandles.length === 0) {
-    return nextCandles
-  }
-
-  const latestNextTime = nextCandles.reduce((latest, candle) => {
-    const time = new Date(candle.time).getTime()
-    return Number.isFinite(time) ? Math.max(latest, time) : latest
-  }, 0)
-
-  const candleMap = new Map(nextCandles.map(candle => [candle.time, candle]))
-  currentCandles.forEach(candle => {
-    const time = new Date(candle.time).getTime()
-    if (Number.isFinite(time) && time >= latestNextTime) {
-      // 低频 REST 校准只补全旧桶，最新桶继续以 WebSocket 为准，避免曲线回退。
-      candleMap.set(candle.time, candle)
-    }
-  })
-
-  return [...candleMap.values()].sort((left, right) => new Date(left.time).getTime() - new Date(right.time).getTime()).slice(-CANDLE_POINT_LIMIT_BY_BAR[bar])
-}
-
 export function OverviewPage() {
   const { message } = AntApp.useApp()
   const refreshSummary = useTradingStore(state => state.refreshSummary)
@@ -378,7 +295,8 @@ export function OverviewPage() {
           exchange: position.exchange,
           symbol: position.symbol,
           price: position.marketPrice,
-          eventTime: position.marketEventTime ?? new Date().toISOString(),
+          // 持仓入口没有实时行情时间时保留空值，避免旧持仓价格被错误标记成当前时刻。
+          eventTime: position.marketEventTime ?? '',
         },
         {
           quickQuoteAmount: position.marketValue,

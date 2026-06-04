@@ -19,7 +19,7 @@ import type {
   TradePosition,
   TriggerOperator,
 } from '../types'
-import { createMarketPriceSnapshot, eventTimestamp, shouldAcceptMarketPrice } from '../utils/marketPrice'
+import { eventTimestamp, resolvePreferredTicker } from '../utils/marketPrice'
 import styles from '../pages/page.module.scss'
 
 const ORDER_TYPE_OPTIONS: Array<{ label: string; value: OrderType }> = [
@@ -66,19 +66,6 @@ function formatTickerDelay(ticker?: TickerPrice) {
 
 function formatLivePrice(price?: string) {
   return price ? `${price} USDT` : '等待实时行情'
-}
-
-function resolvePreferredTicker(snapshotTicker?: TickerPrice, realtimeTicker?: TickerPrice) {
-  if (!snapshotTicker) {
-    return realtimeTicker
-  }
-  if (!realtimeTicker) {
-    return snapshotTicker
-  }
-
-  return shouldAcceptMarketPrice(createMarketPriceSnapshot(snapshotTicker, 'rest'), createMarketPriceSnapshot(realtimeTicker, 'realtime'))
-    ? realtimeTicker
-    : snapshotTicker
 }
 
 function extractPreviewEnvironmentMessage(checkItems: Array<{ code: string; message: string }>) {

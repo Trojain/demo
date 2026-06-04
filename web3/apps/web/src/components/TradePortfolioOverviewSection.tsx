@@ -10,6 +10,7 @@ import { useProfitDisplay } from '../hooks/useProfitDisplay'
 import { useTickerSnapshots } from '../hooks/useTickerSnapshot'
 import type { TradeAccount, TradeAccountSummary, TradeAccountType, TradeEquityHistoryPoint, TradePosition, TradePositionView } from '../types'
 import { createMarketPriceSnapshot, mergeMarketPriceMap, tickerKey, type MarketPriceSnapshot } from '../utils/marketPrice'
+import { buildPositionMarketPriceSnapshots, calculatePositionViewsWithLatestPrices } from '../utils/tradePositionMarket'
 import styles from '../pages/page.module.scss'
 
 const ASSET_TREND_AXIS_LABEL_INTERVAL = 6
@@ -41,40 +42,6 @@ function buildVisibleAxisLabels(trend: Array<{ date: string; value: number }>) {
       .filter((_, index) => index % ASSET_TREND_AXIS_LABEL_INTERVAL === 0)
       .map(item => item.date),
   )
-}
-
-function buildMarketPriceSnapshots(positionViews: TradePositionView[] = []) {
-  return positionViews.map(position =>
-    createMarketPriceSnapshot(
-      {
-        exchange: position.exchange,
-        symbol: position.symbol,
-        price: position.marketPrice,
-        eventTime: position.marketEventTime ?? '',
-      },
-      'valuation',
-    ),
-  )
-}
-
-function calculatePositionViews(positions: TradePosition[], latestPriceByKey: Record<string, MarketPriceSnapshot>) {
-  return positions.map(position => {
-    const latestSnapshot = latestPriceByKey[tickerKey(position)]
-    const marketPrice = latestSnapshot?.price ?? '0'
-    const marketValue = new Decimal(position.quantity).mul(marketPrice)
-    const unrealizedPnl = marketValue.minus(position.costAmount)
-    const costAmount = new Decimal(position.costAmount)
-    const unrealizedPnlPercent = costAmount.isZero() ? new Decimal(0) : unrealizedPnl.div(costAmount).mul(100)
-
-    return {
-      ...position,
-      marketPrice,
-      marketEventTime: latestSnapshot?.eventTime,
-      marketValue: marketValue.toFixed(),
-      unrealizedPnl: unrealizedPnl.toFixed(),
-      unrealizedPnlPercent: unrealizedPnlPercent.toFixed(2),
-    }
-  })
 }
 
 function calculateSummaries(accounts: TradeAccount[], positionViews: TradePositionView[], calculatedAt: string): TradeAccountSummary[] {
@@ -217,7 +184,7 @@ export function TradePortfolioOverviewSection({
   const realtimeTickerMap = useTickerSnapshots(positionKeys)
   const accountHistoryMap = useMemo(() => buildAccountHistoryMap(equityHistory), [equityHistory])
 
-  const positionViews = useMemo(() => calculatePositionViews(positions, latestPriceByKey), [latestPriceByKey, positions])
+  const positionViews = useMemo(() => calculatePositionViewsWithLatestPrices(positions, latestPriceByKey), [latestPriceByKey, positions])
   const summaries = useMemo(() => calculateSummaries(accounts, positionViews, calculatedAt), [accounts, calculatedAt, positionViews])
 
   const positionColumns = useMemo<ProColumns<TradePositionView>[]>(
@@ -277,7 +244,7 @@ export function TradePortfolioOverviewSection({
       // 估值接口已包含完整持仓字段，首屏直接复用，减少一次重复请求。
       setPositions(nextPositionViews)
       setEquityHistory(nextEquityHistory)
-      const initialSnapshots = buildMarketPriceSnapshots(nextPositionViews)
+      const initialSnapshots = buildPositionMarketPriceSnapshots(nextPositionViews)
       let latestAcceptedEventTime: string | undefined
       setLatestPriceByKey(current => {
         // 首屏和手动刷新也走统一合并规则，避免估值接口旧值覆盖掉已经收到的实时行情。
