@@ -2,6 +2,7 @@ import { apiClient } from './client';
 import type {
   AuditLog,
   CreateRulePayload,
+  DailyRiskStats,
   DashboardSummary,
   ExchangeCode,
   InstrumentRule,
@@ -11,10 +12,12 @@ import type {
   MonitorRule,
   OrderPreview,
   OrderRecord,
+  OrderRecoveryRecord,
   RiskConfig,
   RiskCheck,
   TickerPrice,
   TradeAccount,
+  TradeDailyReport,
   TradeEquityHistoryPoint,
   TradeAccountSummary,
   TradeAccountType,
@@ -40,6 +43,37 @@ export interface PagedResult<T> {
   page: number;
   /** 当前分页大小 */
   pageSize: number;
+}
+
+export interface CreateExternalSignalPayload {
+  /** 关联规则 ID，外部信号沿用该规则的下单参数与风控配置。 */
+  ruleId: string;
+  /** 外部信号对应的市场价格。 */
+  marketPrice: string;
+  /** 行情事件时间，不传时由服务端回退当前时间。 */
+  marketEventTime?: string;
+  /** 外部信号原因说明。 */
+  reason: string;
+  /** 外部信号来源键，建议来自上游系统的稳定唯一值。 */
+  sourceKey?: string;
+  /** 外部信号来源标签，例如 webhook、research、manual。 */
+  sourceLabel?: string;
+  /** 外部信号附加上下文。 */
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExternalSignalResult {
+  /** 已写入的交易信号，若被重复拦截则可能为空。 */
+  signal?: TradingSignal;
+  /** 风控通过后生成的触发事件。 */
+  trigger?: TriggerEvent;
+}
+
+export interface DailyRiskStatsResult {
+  /** 今日统计摘要。 */
+  today?: DailyRiskStats;
+  /** 最近 N 天统计列表，按日期倒序。 */
+  items: DailyRiskStats[];
 }
 
 export const tradingApi = {
@@ -83,12 +117,22 @@ export const tradingApi = {
     });
     return data;
   },
+  createExternalSignal: async (payload: CreateExternalSignalPayload) => {
+    const { data } = await apiClient.post<ExternalSignalResult>('/signals/external', payload);
+    return data;
+  },
   deleteSignal: async (id: string) => {
     await apiClient.delete(`/signals/${id}`);
   },
   getRiskChecks: async (limit = 100) => {
     const { data } = await apiClient.get<RiskCheck[]>('/risk-checks', {
       params: { limit }
+    });
+    return data;
+  },
+  getDailyRiskStats: async (days = 7) => {
+    const { data } = await apiClient.get<DailyRiskStatsResult>('/risk-stats/daily', {
+      params: { days }
     });
     return data;
   },
@@ -196,6 +240,16 @@ export const tradingApi = {
     });
     return data;
   },
+  getOrderRecoveryPage: async (page = 1, pageSize = 20, statuses?: string[], stages?: string[]) => {
+    const { data } = await apiClient.get<PagedResult<OrderRecoveryRecord>>('/order-recoveries/page', {
+      params: { page, pageSize, statuses: statuses?.join(','), stages: stages?.join(',') }
+    });
+    return data;
+  },
+  retryOrderRecovery: async (id: string) => {
+    const { data } = await apiClient.post<OrderRecoveryRecord>(`/order-recoveries/${id}/retry`);
+    return data;
+  },
   deleteAuditLog: async (id: string) => {
     await apiClient.delete(`/audit-logs/${id}`);
   },
@@ -226,5 +280,11 @@ export const tradingApi = {
       params: { exchange, symbol, bar }
     });
     return data;
-  }
+  },
+  getDailyReport: async (days = 30, exchange?: ExchangeCode, mode?: 'simulation' | 'real') => {
+    const { data } = await apiClient.get<TradeDailyReport[]>('/trade/daily-report', {
+      params: { days, exchange, mode }
+    });
+    return data;
+  },
 };

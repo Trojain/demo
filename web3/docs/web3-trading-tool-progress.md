@@ -1946,10 +1946,35 @@ pnpm lint
 ### 验证记录
 
 ```bash
+pnpm test:order-recovery
 pnpm --filter @web3/server typecheck
 pnpm --filter @web3/web typecheck
 pnpm lint
 ```
+
+### 新增回归测试
+
+- 新增 `tests/order-recovery-service.test.ts`
+- 新增 `apps/server/tests/order-recovery-routes.test.ts`
+- 当前已覆盖：
+  - 交易所已接单但本地订单落库失败时的订单重建恢复
+  - 同一 `identityKey` 的恢复任务去重复用
+  - 自动恢复成功后的状态流转
+  - 自动恢复达到上限后转人工处理
+  - 人工重试私有推送恢复任务
+  - 缺少订单 ID 的订单同步恢复失败场景
+  - 恢复任务分页接口返回结构
+  - 恢复任务分页参数校验
+  - 人工重试接口成功返回
+  - 人工重试接口错误返回
+
+### 本轮补充
+
+- 新增恢复阶段 `order_submit_finalize`
+- `TradeExecutionService` 现在会在“交易所已接单，但本地订单落库失败”时：
+  - 阻断同一 `confirmToken` 的重复确认
+  - 创建 `order_submit_finalize` 恢复任务
+  - 由恢复服务在后续重建最小订单记录并继续走真实订单同步链路
 
 ## v0.5.0  2026-06-04
 
@@ -1970,6 +1995,109 @@ pnpm lint
 ### 已确认决策
 
 - `v0.5.0` 先锁定统一行情时序规则，不急着扩更多策略输入来源。
+
+## v0.5.1  2026-06-04
+
+### 已完成
+
+- 新增 `order_recovery_records` 恢复记录表，用于独立存储真实订单同步失败、私有推送异常、成交补全失败和余额刷新失败的恢复任务。
+- 新增 `OrderRecoveryRepository` 与 `OrderRecoveryService`，统一恢复状态、自动重试、人工重试和恢复审计。
+- 新增恢复状态模型：
+  - `pending_recovery`
+  - `recovering`
+  - `recovered`
+  - `manual_review_required`
+  - `recovery_failed`
+- 新增恢复阶段模型：
+  - `order_sync`
+  - `private_stream`
+  - `trade_fill_sync`
+  - `balance_refresh`
+- `RealOrderSyncService` 已接入恢复能力：
+  - 真实订单 REST 同步失败创建恢复任务
+  - 私有推送消费失败创建恢复任务
+  - 成交补全异常创建恢复任务
+  - 余额刷新失败创建恢复任务
+  - 正常恢复后自动关闭对应恢复任务
+- `PrivateOrderStreamService` 已接入恢复能力：
+  - 私有推送连接异常创建交易所级恢复任务
+  - 连接恢复后自动关闭对应恢复任务
+- 新增恢复接口：
+  - `GET /api/order-recoveries/page`
+  - `POST /api/order-recoveries/:id/retry`
+- `TradeLogsPage` 已新增“恢复任务”标签页，支持查看恢复状态和手动触发重试。
+- 审计动作新增：
+  - `recovery.created`
+  - `recovery.retry_started`
+  - `recovery.retry_succeeded`
+  - `recovery.retry_failed`
+  - `recovery.manual_review_required`
+
+### 已确认决策
+
+- 恢复链路继续以后端为主，前端只做日志页和最小人工重试入口，不新增独立恢复中心页面。
+- 恢复记录与主订单表解耦，避免后续补偿、重放和统计需求继续污染 `order_records`。
+- 自动恢复先使用轻量定时扫描和固定重试次数，当前不引入复杂调度系统。
+- `private_stream` 和 `balance_refresh` 这类交易所级异常，第一版统一回落到“按交易所重新同步近期真实订单”。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.1-alpha5  2026-06-04
+
+### 已完成
+
+- `OrderService.confirmTrigger` 在订单已经成功创建后，如果触发状态确认或审计补充失败，不再把整笔规则执行误判为失败。
+- 新增恢复阶段 `rule_trigger_finalize`，用于补齐规则确认后的触发状态和缺失审计。
+- `OrderRecoveryService` 支持 `rule_trigger_finalize` 恢复动作，会按需补齐：
+  - `trigger.confirmed`
+  - `order.submitted`
+- `SignalService` 增加外部信号接入能力，支持价格规则之外的标准化信号输入。
+- `TradingSignal` 新增：
+  - `sourceType`
+  - `sourceMetadataJson`
+- 新增外部信号接入接口：
+  - `POST /api/signals/external`
+- `SignalsPage` 新增“外部信号”入口，支持将外部信号注入统一信号、风控、触发链路。
+- 风控检查新增本地日期字段 `statDate`，日维度统计改为按本地日期聚合。
+- 新增风控日统计接口：
+  - `GET /api/risk-stats/daily`
+- `RiskConfigPage` 新增：
+  - 今日通过次数与限额展示
+  - 今日通过金额与限额展示
+  - 近 7 天风控统计表
+
+### 已确认决策
+
+- 外部信号当前继续绑定已有规则，复用规则上的交易所、交易对、方向、金额数量和风控配置，不再单独引入第二套执行参数模型。
+- 规则确认成功后的补充失败场景单独进入恢复模型，优先保证已存在订单不会因为前端重复确认产生双下单。
+- 每日风控统计统一使用服务端本地日期，不依赖浏览器时区推断。
+
+### 新增测试
+
+- `tests/order-service.test.ts`
+- `tests/signal-service.test.ts`
+- `tests/risk-service.test.ts`
+- `apps/server/tests/signal-risk-routes.test.ts`
+
+### 验证记录
+
+```bash
+pnpm test:order-service
+pnpm test:signal-service
+pnpm test:risk-service
+pnpm test:signal-risk-routes
+pnpm test:order-recovery
+pnpm test:order-recovery-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
 - 测试框架优先复用 Node 内置 `node:test` 和现有 `tsx`，避免为了首批回归用例引入新依赖。
 
 ### 验证记录

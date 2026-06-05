@@ -4,6 +4,7 @@ import type { ExchangeCode, PrivateTradeStreamHealth } from '../types/domain.js'
 import type { PrivateTradeStreamConnectionStatus } from '../types/exchange.js'
 import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { OrderRecoveryService } from './order-recovery.service.js'
 import type { RealOrderSyncService } from './real-order-sync.service.js'
 
 const SUPPORTED_PRIVATE_STREAM_EXCHANGES: ExchangeCode[] = ['okx', 'binance']
@@ -18,6 +19,7 @@ export class PrivateOrderStreamService {
     private readonly exchangeFactory: ExchangeFactory,
     private readonly realOrderSyncService: RealOrderSyncService,
     private readonly auditLogService: AuditLogService,
+    private readonly orderRecoveryService: OrderRecoveryService,
   ) {}
 
   start() {
@@ -43,6 +45,20 @@ export class PrivateOrderStreamService {
         onOrderUpdate: update => {
           this.markOrderUpdate(exchange, update.updatedAt)
           void this.realOrderSyncService.handlePrivateOrderUpdate(update).catch(error => {
+            this.orderRecoveryService.createOrRefresh({
+              identityKey: `private_stream:order:${update.exchangeOrderId}`,
+              exchangeOrderId: update.exchangeOrderId,
+              exchange,
+              source: 'system',
+              mode: 'real',
+              symbol: update.symbol,
+              failureStage: 'private_stream',
+              lastErrorMessage: error instanceof Error ? error.message : '私有订单推送消费失败',
+              payload: {
+                source: 'private_stream',
+                updateType: 'order',
+              },
+            })
             this.auditLogService.record({
               level: 'warning',
               action: 'private_stream.error',
@@ -61,6 +77,19 @@ export class PrivateOrderStreamService {
         onBalanceUpdate: update => {
           this.markBalanceUpdate(exchange, update.updatedAt)
           void this.realOrderSyncService.handlePrivateBalanceUpdate(update).catch(error => {
+            this.orderRecoveryService.createOrRefresh({
+              identityKey: `balance_refresh:${exchange}:${(update.balances[0]?.currency ?? appConfig.simulation.quoteCurrency).toUpperCase()}`,
+              exchange,
+              source: 'system',
+              mode: 'real',
+              failureStage: 'balance_refresh',
+              lastErrorMessage: error instanceof Error ? error.message : '私有余额推送消费失败',
+              payload: {
+                source: 'private_stream',
+                updateType: 'balance',
+                currencies: update.balances.map(balance => balance.currency.toUpperCase()),
+              },
+            })
             this.auditLogService.record({
               level: 'warning',
               action: 'private_stream.error',
@@ -78,6 +107,17 @@ export class PrivateOrderStreamService {
         },
         onError: error => {
           this.markError(exchange, error.message)
+          this.orderRecoveryService.createOrRefresh({
+            identityKey: `private_stream:exchange:${exchange}`,
+            exchange,
+            source: 'system',
+            mode: 'real',
+            failureStage: 'private_stream',
+            lastErrorMessage: error.message,
+            payload: {
+              scope: 'exchange',
+            },
+          })
           this.auditLogService.record({
             level: 'warning',
             action: 'private_stream.error',
@@ -143,6 +183,12 @@ export class PrivateOrderStreamService {
       lastErrorAt: status === 'error' ? now : current.lastErrorAt,
       lastErrorMessage: status === 'error' ? message : current.lastErrorMessage,
     })
+    if (status === 'connected') {
+      this.orderRecoveryService.markRecoveredByIdentityKey(
+        `private_stream:exchange:${exchange}`,
+        `${exchange.toUpperCase()} 私有推送连接已恢复`,
+      )
+    }
   }
 
   private updateStatus(exchange: ExchangeCode, status: PrivateTradeStreamConnectionStatus) {

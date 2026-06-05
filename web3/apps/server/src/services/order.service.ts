@@ -4,6 +4,7 @@ import type { OrderPreview, OrderPreviewCheckItem, OrderRecord } from '../types/
 import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { AuditLogService } from './audit-log.service.js'
 import type { OrderPreviewService } from './order-preview.service.js'
+import type { OrderRecoveryService } from './order-recovery.service.js'
 import { TradeExecutionError, type TradeExecutionService } from './trade-execution.service.js'
 
 export class FinalOrderValidationError extends Error {
@@ -26,6 +27,7 @@ export class OrderService {
     private readonly orderPreviewService: OrderPreviewService,
     private readonly tradeExecutionService: TradeExecutionService,
     private readonly auditLogService: AuditLogService,
+    private readonly orderRecoveryService: OrderRecoveryService,
   ) {}
 
   async confirmTrigger(
@@ -61,45 +63,31 @@ export class OrderService {
         triggerId,
         rule,
       })
-
-      this.triggerRepository.markConfirmed(triggerId)
-      this.auditLogService.record({
-        action: 'trigger.confirmed',
-        entityType: 'trigger',
-        entityId: triggerId,
-        ruleId: rule.id,
-        triggerId,
-        orderId: order.id,
-        message: executionMode === 'auto' ? `${rule.symbol} 触发后已自动执行` : `已确认 ${rule.symbol} 触发事件`,
-        payload: {
-          exchange: rule.exchange,
-          tradingEnvironment: this.resolveTradingEnvironmentLabel(rule.exchange),
-          symbol: rule.symbol,
-          marketPrice: trigger.marketPrice,
-          targetPrice: trigger.targetPrice,
+      try {
+        this.finalizeConfirmedTrigger({
+          triggerId,
+          rule,
+          trigger,
+          order,
           executionMode,
           previewedAt: finalPreview.previewedAt,
-        },
-      })
-      this.auditLogService.record({
-        action: 'order.submitted',
-        entityType: 'order',
-        entityId: order.id,
-        ruleId: rule.id,
-        triggerId,
-        orderId: order.id,
-        message: executionMode === 'auto' ? `${rule.symbol} 自动下单已提交` : `${rule.symbol} 订单已提交`,
-        payload: {
-          source: 'rule',
-          exchange: rule.exchange,
-          tradingEnvironment: this.resolveTradingEnvironmentLabel(rule.exchange),
-          side: rule.side,
-          orderType: rule.orderType,
-          simulationMode: order.simulationMode,
-          exchangeOrderId: order.exchangeOrderId,
-          executionMode,
-        },
-      })
+        })
+      } catch (finalizeError) {
+        // 订单已经存在时，不再把本次请求整体判定为失败，统一登记恢复任务补齐触发状态和审计收尾。
+        try {
+          this.registerRuleTriggerFinalizeRecovery({
+            triggerId,
+            rule,
+            trigger,
+            order,
+            executionMode,
+            previewedAt: finalPreview.previewedAt,
+            error: finalizeError,
+          })
+        } catch {
+          // 恢复任务登记失败时保留订单结果，后续由日志和人工排查介入。
+        }
+      }
       return order
     } catch (error) {
       this.handleTriggerFailure({
@@ -217,6 +205,94 @@ export class OrderService {
         rawMessage: tradeExecutionError?.rawMessage,
         preview,
         failedItems,
+      },
+    })
+  }
+
+  /**
+   * 规则确认成功后的收尾逻辑独立封装。
+   * 这样一旦触发状态更新或审计补充失败，可以单独进入恢复模型，而不会误判为整笔交易失败。
+   */
+  private finalizeConfirmedTrigger(input: {
+    triggerId: string
+    rule: { id: string; exchange: string; symbol: string; side: string; orderType: string }
+    trigger: { marketPrice: string; targetPrice: string }
+    order: OrderRecord
+    executionMode: 'manual' | 'auto'
+    previewedAt: string
+  }) {
+    this.triggerRepository.markConfirmed(input.triggerId)
+    this.auditLogService.record({
+      action: 'trigger.confirmed',
+      entityType: 'trigger',
+      entityId: input.triggerId,
+      ruleId: input.rule.id,
+      triggerId: input.triggerId,
+      orderId: input.order.id,
+      message: input.executionMode === 'auto' ? `${input.rule.symbol} 触发后已自动执行` : `已确认 ${input.rule.symbol} 触发事件`,
+      payload: {
+        exchange: input.rule.exchange,
+        tradingEnvironment: this.resolveTradingEnvironmentLabel(input.rule.exchange),
+        symbol: input.rule.symbol,
+        marketPrice: input.trigger.marketPrice,
+        targetPrice: input.trigger.targetPrice,
+        executionMode: input.executionMode,
+        previewedAt: input.previewedAt,
+      },
+    })
+    this.auditLogService.record({
+      action: 'order.submitted',
+      entityType: 'order',
+      entityId: input.order.id,
+      ruleId: input.rule.id,
+      triggerId: input.triggerId,
+      orderId: input.order.id,
+      message: input.executionMode === 'auto' ? `${input.rule.symbol} 自动下单已提交` : `${input.rule.symbol} 订单已提交`,
+      payload: {
+        source: 'rule',
+        exchange: input.rule.exchange,
+        tradingEnvironment: this.resolveTradingEnvironmentLabel(input.rule.exchange),
+        side: input.rule.side,
+        orderType: input.rule.orderType,
+        simulationMode: input.order.simulationMode,
+        exchangeOrderId: input.order.exchangeOrderId,
+        executionMode: input.executionMode,
+      },
+    })
+  }
+
+  /**
+   * 规则确认成功后，如果触发状态更新或审计补充失败，登记收尾恢复任务。
+   * 当前优先保证已存在的订单不被重复执行，再通过恢复任务补齐触发状态和审计记录。
+   */
+  private registerRuleTriggerFinalizeRecovery(input: {
+    triggerId: string
+    rule: { id: string; exchange: string; symbol: string; side: string; orderType: string }
+    trigger: { marketPrice: string; targetPrice: string }
+    order: OrderRecord
+    executionMode: 'manual' | 'auto'
+    previewedAt: string
+    error: unknown
+  }) {
+    this.orderRecoveryService.createOrRefresh({
+      identityKey: `rule_trigger_finalize:${input.order.exchange}:${input.order.exchangeOrderId}`,
+      orderId: input.order.id,
+      exchangeOrderId: input.order.exchangeOrderId,
+      exchange: input.order.exchange,
+      source: 'rule',
+      mode: input.order.simulationMode ? 'simulation' : 'real',
+      symbol: input.order.symbol,
+      failureStage: 'rule_trigger_finalize',
+      lastErrorCode: 'rule_finalize_failed',
+      lastErrorMessage: input.error instanceof Error ? input.error.message : '规则确认收尾失败',
+      payload: {
+        triggerId: input.triggerId,
+        ruleId: input.rule.id,
+        orderId: input.order.id,
+        executionMode: input.executionMode,
+        marketPrice: input.trigger.marketPrice,
+        targetPrice: input.trigger.targetPrice,
+        previewedAt: input.previewedAt,
       },
     })
   }

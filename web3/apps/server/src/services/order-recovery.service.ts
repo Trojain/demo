@@ -1,0 +1,477 @@
+import { nanoid } from 'nanoid'
+import type {
+  AuditLogAction,
+  ExchangeCode,
+  OrderRecoveryFailureStage,
+  OrderRecoveryRecord,
+  OrderRecoverySource,
+  OrderRecoveryStatus,
+  OrderRecord,
+  TradeAccountType,
+} from '../types/domain.js'
+import type { AuditLogService } from './audit-log.service.js'
+import type { OrderRecoveryRepository } from '../repositories/order-recovery.repository.js'
+import type { OrderRepository } from '../repositories/order.repository.js'
+import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
+import type { RealOrderSyncService } from './real-order-sync.service.js'
+import type { TriggerRepository } from '../repositories/trigger.repository.js'
+
+interface OrderRecoveryServiceOptions {
+  /** 自动恢复扫描间隔，单位毫秒。 */
+  intervalMs: number
+  /** 自动恢复最大尝试次数。 */
+  maxRetryCount: number
+  /** 单次自动恢复最多处理多少条任务。 */
+  batchSize: number
+  /** 自动恢复失败后的下一次重试间隔，单位毫秒。 */
+  retryDelayMs: number
+}
+
+export interface CreateOrderRecoveryInput {
+  /** 稳定恢复去重键，未恢复前重复异常复用同一条记录。 */
+  identityKey: string
+  /** 关联本地订单 ID，交易所级异常可为空。 */
+  orderId?: string
+  /** 关联交易所订单号。 */
+  exchangeOrderId?: string
+  /** 交易所编码。 */
+  exchange: ExchangeCode
+  /** 失败来源。 */
+  source: OrderRecoverySource
+  /** 下单模式，当前主要是 real。 */
+  mode: TradeAccountType
+  /** 统一交易对，交易所级异常可为空。 */
+  symbol?: string
+  /** 失败阶段。 */
+  failureStage: OrderRecoveryFailureStage
+  /** 最近一次错误码。 */
+  lastErrorCode?: string
+  /** 最近一次错误消息。 */
+  lastErrorMessage?: string
+  /** 结构化上下文对象。 */
+  payload?: Record<string, unknown>
+}
+
+export class OrderRecoveryService {
+  private timer?: NodeJS.Timeout
+
+  constructor(
+    private readonly orderRecoveryRepository: OrderRecoveryRepository,
+    private readonly orderRepository: OrderRepository,
+    private readonly triggerRepository: TriggerRepository,
+    private readonly auditLogService: AuditLogService,
+    private readonly realOrderSyncService: RealOrderSyncService,
+    private readonly options: OrderRecoveryServiceOptions,
+  ) {}
+
+  start() {
+    if (this.timer) {
+      return
+    }
+
+    this.timer = setInterval(() => {
+      void this.processDueRecoveries()
+    }, this.options.intervalMs)
+  }
+
+  stop() {
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = undefined
+    }
+  }
+
+  listPage(input: {
+    page: number
+    pageSize: number
+    statuses?: OrderRecoveryStatus[]
+    stages?: OrderRecoveryFailureStage[]
+  }) {
+    return this.orderRecoveryRepository.listPage(input)
+  }
+
+  createOrRefresh(input: CreateOrderRecoveryInput) {
+    const now = new Date().toISOString()
+    const payloadJson = input.payload ? JSON.stringify(input.payload) : undefined
+    const current = this.orderRecoveryRepository.findLatestActiveByIdentityKey(input.identityKey)
+    if (current) {
+      const nextStatus: OrderRecoveryStatus = current.recoveryStatus === 'manual_review_required'
+        ? 'manual_review_required'
+        : 'pending_recovery'
+      const updated = this.orderRecoveryRepository.update({
+        ...current,
+        orderId: input.orderId ?? current.orderId,
+        exchangeOrderId: input.exchangeOrderId ?? current.exchangeOrderId,
+        symbol: input.symbol ?? current.symbol,
+        source: input.source,
+        mode: input.mode,
+        failureStage: input.failureStage,
+        recoveryStatus: nextStatus,
+        lastErrorCode: input.lastErrorCode,
+        lastErrorMessage: input.lastErrorMessage,
+        payloadJson,
+        nextRetryAt: current.recoveryStatus === 'manual_review_required' ? current.nextRetryAt : now,
+        updatedAt: now,
+      })
+      return updated
+    }
+
+    const created = this.orderRecoveryRepository.create({
+      id: nanoid(),
+      identityKey: input.identityKey,
+      orderId: input.orderId,
+      exchangeOrderId: input.exchangeOrderId,
+      exchange: input.exchange,
+      source: input.source,
+      mode: input.mode,
+      symbol: input.symbol,
+      failureStage: input.failureStage,
+      recoveryStatus: 'pending_recovery',
+      retryCount: 0,
+      maxRetryCount: this.options.maxRetryCount,
+      lastErrorCode: input.lastErrorCode,
+      lastErrorMessage: input.lastErrorMessage,
+      nextRetryAt: now,
+      payloadJson,
+      createdAt: now,
+      updatedAt: now,
+    })
+    this.recordAudit('recovery.created', created, `已创建 ${this.getFailureStageLabel(created.failureStage)} 恢复任务`)
+    return created
+  }
+
+  markRecoveredByIdentityKey(identityKey: string, message?: string) {
+    const current = this.orderRecoveryRepository.findLatestActiveByIdentityKey(identityKey)
+    if (!current) {
+      return undefined
+    }
+
+    const recoveredAt = new Date().toISOString()
+    const recovered = this.orderRecoveryRepository.update({
+      ...current,
+      recoveryStatus: 'recovered',
+      updatedAt: recoveredAt,
+      resolvedAt: recoveredAt,
+      nextRetryAt: undefined,
+    })
+    this.recordAudit(
+      'recovery.retry_succeeded',
+      recovered,
+      message ?? `${this.getFailureStageLabel(recovered.failureStage)} 已通过正常链路恢复`,
+    )
+    return recovered
+  }
+
+  async retryById(id: string, reason: 'manual' | 'auto' = 'manual') {
+    const record = this.orderRecoveryRepository.findById(id)
+    if (!record) {
+      throw new Error('恢复任务不存在')
+    }
+
+    return this.retryRecord(record, reason)
+  }
+
+  async processDueRecoveries() {
+    const now = new Date().toISOString()
+    const dueRecords = this.orderRecoveryRepository.listDueForRetry(now, this.options.batchSize)
+    for (const record of dueRecords) {
+      await this.retryRecord(record, 'auto')
+    }
+  }
+
+  private async retryRecord(record: OrderRecoveryRecord, reason: 'manual' | 'auto') {
+    const current = this.orderRecoveryRepository.findById(record.id)
+    if (!current) {
+      throw new Error('恢复任务不存在')
+    }
+    if (current.recoveryStatus === 'recovering') {
+      return current
+    }
+    if (current.recoveryStatus === 'recovered') {
+      return current
+    }
+
+    const now = new Date().toISOString()
+    const recovering = this.orderRecoveryRepository.update({
+      ...current,
+      recoveryStatus: 'recovering',
+      retryCount: current.retryCount + 1,
+      nextRetryAt: undefined,
+      updatedAt: now,
+    })
+    this.recordAudit(
+      'recovery.retry_started',
+      recovering,
+      `${reason === 'manual' ? '人工' : '自动'}开始恢复 ${this.getFailureStageLabel(recovering.failureStage)}`,
+    )
+
+    try {
+      const recoveryPatch = await this.executeRecovery(recovering)
+      const recoveredAt = new Date().toISOString()
+      const recovered = this.orderRecoveryRepository.update({
+        ...recovering,
+        ...recoveryPatch,
+        recoveryStatus: 'recovered',
+        updatedAt: recoveredAt,
+        resolvedAt: recoveredAt,
+        nextRetryAt: undefined,
+      })
+      this.recordAudit('recovery.retry_succeeded', recovered, `${this.getFailureStageLabel(recovered.failureStage)} 已恢复成功`)
+      return recovered
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '恢复执行失败'
+      const reachedLimit = recovering.retryCount >= recovering.maxRetryCount
+      const failedAt = new Date().toISOString()
+      const nextRetryAt = reachedLimit ? undefined : new Date(Date.now() + this.options.retryDelayMs).toISOString()
+      const failed = this.orderRecoveryRepository.update({
+        ...recovering,
+        recoveryStatus: reachedLimit ? 'manual_review_required' : 'recovery_failed',
+        lastErrorMessage: message,
+        updatedAt: failedAt,
+        nextRetryAt,
+      })
+      this.recordAudit('recovery.retry_failed', failed, `${this.getFailureStageLabel(failed.failureStage)} 恢复失败：${message}`)
+      if (reachedLimit) {
+        this.recordAudit('recovery.manual_review_required', failed, `${this.getFailureStageLabel(failed.failureStage)} 已转人工处理`)
+      }
+      if (reason === 'manual') {
+        throw error
+      }
+      return failed
+    }
+  }
+
+  private async executeRecovery(record: OrderRecoveryRecord): Promise<Partial<OrderRecoveryRecord> | undefined> {
+    if (record.failureStage === 'order_submit_finalize') {
+      const order = this.restoreSubmittedOrderRecord(record)
+      await this.realOrderSyncService.syncOrderById(order.id)
+      return {
+        orderId: order.id,
+      }
+    }
+
+    if (record.failureStage === 'rule_trigger_finalize') {
+      await this.finalizeRuleTriggeredOrder(record)
+      return
+    }
+
+    if (record.failureStage === 'order_sync' || record.failureStage === 'trade_fill_sync') {
+      if (!record.orderId) {
+        throw new Error('缺少本地订单 ID，无法重试订单同步')
+      }
+      await this.realOrderSyncService.syncOrderById(record.orderId)
+      return
+    }
+
+    if (record.failureStage === 'private_stream' || record.failureStage === 'balance_refresh') {
+      await this.realOrderSyncService.syncPendingOrdersByExchange(record.exchange, this.options.batchSize)
+      return
+    }
+
+    throw new Error(`暂不支持的恢复阶段：${record.failureStage}`)
+  }
+
+  private recordAudit(action: AuditLogAction, record: OrderRecoveryRecord, message: string) {
+    const payload = this.parsePayload(record.payloadJson)
+    this.auditLogService.record({
+      level: action === 'recovery.retry_failed' || action === 'recovery.manual_review_required' ? 'warning' : 'info',
+      action,
+      entityType: 'recovery',
+      entityId: record.id,
+      orderId: record.orderId,
+      message,
+      payload: {
+        recoveryId: record.id,
+        identityKey: record.identityKey,
+        exchange: record.exchange,
+        tradingEnvironment: resolveTradingEnvironmentLabel(record.exchange),
+        source: record.source,
+        mode: record.mode,
+        symbol: record.symbol,
+        failureStage: record.failureStage,
+        recoveryStatus: record.recoveryStatus,
+        retryCount: record.retryCount,
+        maxRetryCount: record.maxRetryCount,
+        lastErrorCode: record.lastErrorCode,
+        lastErrorMessage: record.lastErrorMessage,
+        nextRetryAt: record.nextRetryAt,
+        exchangeOrderId: record.exchangeOrderId,
+        ...payload,
+      },
+    })
+  }
+
+  private parsePayload(payloadJson?: string) {
+    if (!payloadJson) {
+      return {}
+    }
+
+    try {
+      return JSON.parse(payloadJson) as Record<string, unknown>
+    } catch {
+      return {
+        rawPayloadJson: payloadJson,
+      }
+    }
+  }
+
+  private getFailureStageLabel(stage: OrderRecoveryFailureStage) {
+    switch (stage) {
+      case 'order_submit_finalize':
+        return '订单提交落库'
+      case 'rule_trigger_finalize':
+        return '规则确认收尾'
+      case 'order_sync':
+        return '订单状态同步'
+      case 'private_stream':
+        return '私有推送'
+      case 'trade_fill_sync':
+        return '成交补全'
+      case 'balance_refresh':
+        return '账户余额刷新'
+      default:
+        return stage
+    }
+  }
+
+  /**
+   * 交易所已成功接单，但本地订单落库失败时，通过恢复任务重建最小订单记录，
+   * 然后再交给真实订单同步链路补齐最终状态和真实账本。
+   */
+  private restoreSubmittedOrderRecord(record: OrderRecoveryRecord) {
+    if (record.orderId) {
+      const existingOrder = this.orderRepository.findById(record.orderId)
+      if (existingOrder) {
+        return existingOrder
+      }
+    }
+
+    if (record.exchangeOrderId) {
+      const existingExchangeOrder = this.orderRepository.findByExchangeOrderId(record.exchange, record.exchangeOrderId)
+      if (existingExchangeOrder) {
+        return existingExchangeOrder
+      }
+    }
+
+    const payload = this.parsePayload(record.payloadJson)
+    const symbol = typeof payload.symbol === 'string' ? payload.symbol : record.symbol
+    const side = typeof payload.side === 'string' ? payload.side : undefined
+    const orderType = typeof payload.orderType === 'string' ? payload.orderType : undefined
+    const exchangeOrderId = typeof payload.exchangeOrderId === 'string' ? payload.exchangeOrderId : record.exchangeOrderId
+    const status = typeof payload.status === 'string' ? payload.status : 'submitted'
+    const missingFields: string[] = []
+    if (!symbol) missingFields.push('symbol')
+    if (!side) missingFields.push('side')
+    if (!orderType) missingFields.push('orderType')
+    if (!exchangeOrderId) missingFields.push('exchangeOrderId')
+    if (missingFields.length > 0) {
+      throw new Error(`恢复任务缺少订单重建上下文，缺少字段：${missingFields.join('、')}`)
+    }
+
+    // 经过上方 missingFields 校验后，4 个字段必然非空，使用非空断言消除 TS 类型窄化限制。
+    return this.orderRepository.create({
+      id: record.orderId ?? nanoid(),
+      triggerId: typeof payload.triggerId === 'string' ? payload.triggerId : undefined,
+      ruleId: typeof payload.ruleId === 'string' ? payload.ruleId : undefined,
+      exchange: record.exchange,
+      symbol: symbol!,
+      side: side! as 'buy' | 'sell',
+      orderType: orderType! as 'market' | 'limit',
+      baseQuantity: typeof payload.baseQuantity === 'string' ? payload.baseQuantity : undefined,
+      quoteAmount: typeof payload.quoteAmount === 'string' ? payload.quoteAmount : undefined,
+      price: typeof payload.price === 'string' ? payload.price : undefined,
+      exchangeOrderId: exchangeOrderId!,
+      status: status as OrderRecord['status'],
+      simulationMode: false,
+      rawMessage: typeof payload.rawMessage === 'string' ? payload.rawMessage : '恢复任务重建真实订单记录',
+      createdAt: typeof payload.acceptedAt === 'string' ? payload.acceptedAt : record.createdAt,
+    })
+  }
+
+  /**
+   * 规则触发真实订单已经存在，但触发确认状态或审计补充失败时，
+   * 恢复任务负责补齐触发状态和缺失的审计记录。
+   */
+  private async finalizeRuleTriggeredOrder(record: OrderRecoveryRecord) {
+    const payload = this.parsePayload(record.payloadJson)
+    const triggerId = typeof payload.triggerId === 'string' ? payload.triggerId : undefined
+    const orderId = record.orderId ?? (typeof payload.orderId === 'string' ? payload.orderId : undefined)
+    const ruleId = typeof payload.ruleId === 'string' ? payload.ruleId : undefined
+    // triggerId / orderId 分别给出具体提示，方便排查是 payload 还是 record 字段缺失。
+    if (!triggerId) {
+      throw new Error('规则确认收尾恢复缺少 triggerId，请检查 payload.triggerId 是否完整')
+    }
+    if (!orderId) {
+      throw new Error('规则确认收尾恢复缺少 orderId，请检查 record.orderId 或 payload.orderId 是否完整')
+    }
+
+    const trigger = this.triggerRepository.findById(triggerId)
+    if (!trigger) {
+      throw new Error('规则确认收尾恢复对应触发事件不存在')
+    }
+
+    const order = this.orderRepository.findById(orderId)
+    if (!order) {
+      throw new Error('规则确认收尾恢复对应订单不存在')
+    }
+
+    if (trigger.status === 'pending') {
+      this.triggerRepository.markConfirmed(triggerId)
+    }
+
+    if (!this.auditLogService.existsByActionAndEntity({
+      action: 'trigger.confirmed',
+      entityType: 'trigger',
+      entityId: triggerId,
+      orderId,
+      triggerId,
+    })) {
+      this.auditLogService.record({
+        action: 'trigger.confirmed',
+        entityType: 'trigger',
+        entityId: triggerId,
+        ruleId,
+        triggerId,
+        orderId,
+        message: `${order.symbol} 触发事件已通过恢复任务补齐确认记录`,
+        payload: {
+          exchange: order.exchange,
+          tradingEnvironment: resolveTradingEnvironmentLabel(order.exchange),
+          symbol: order.symbol,
+          executionMode: payload.executionMode,
+          recoveredBy: 'order_recovery',
+          recoveryStage: record.failureStage,
+        },
+      })
+    }
+
+    if (!this.auditLogService.existsByActionAndEntity({
+      action: 'order.submitted',
+      entityType: 'order',
+      entityId: orderId,
+      orderId,
+      triggerId,
+    })) {
+      this.auditLogService.record({
+        action: 'order.submitted',
+        entityType: 'order',
+        entityId: orderId,
+        ruleId,
+        triggerId,
+        orderId,
+        message: `${order.symbol} 订单已通过恢复任务补齐提交记录`,
+        payload: {
+          source: 'rule',
+          exchange: order.exchange,
+          tradingEnvironment: resolveTradingEnvironmentLabel(order.exchange),
+          side: order.side,
+          orderType: order.orderType,
+          simulationMode: order.simulationMode,
+          exchangeOrderId: order.exchangeOrderId,
+          recoveredBy: 'order_recovery',
+          recoveryStage: record.failureStage,
+        },
+      })
+    }
+  }
+}

@@ -135,6 +135,7 @@ export class OkxAdapter implements ExchangeAdapter {
   private reconnectTimer?: NodeJS.Timeout;
   private candleReconnectTimer?: NodeJS.Timeout;
   private privateTradeReconnectTimer?: NodeJS.Timeout;
+  private privatePingTimer?: NodeJS.Timeout;
   private currentTickerSignature = '';
   private currentCandleSignature = '';
   private tickerHandler?: (ticker: TickerPrice) => void;
@@ -423,6 +424,9 @@ export class OkxAdapter implements ExchangeAdapter {
       this.privateTradeStopRequested = true;
       clearTimeout(this.privateTradeReconnectTimer);
       this.privateTradeReconnectTimer = undefined;
+      // 停止时同步清理心跳定时器，避免向已关闭的 WS 发送 ping。
+      clearInterval(this.privatePingTimer);
+      this.privatePingTimer = undefined;
       this.privateTradeHandlers?.onStatusChange?.('stopped');
       this.privateTradeWs?.close();
       this.privateTradeWs = undefined;
@@ -614,6 +618,13 @@ export class OkxAdapter implements ExchangeAdapter {
 
         this.privateTradeHandlers?.onStatusChange?.('connected');
         this.subscribePrivateChannels();
+        // OKX WS 30 秒无消息会断连，按官方要求每 25 秒发送 "ping" 字符串保活。
+        clearInterval(this.privatePingTimer);
+        this.privatePingTimer = setInterval(() => {
+          if (this.privateTradeWs?.readyState === WebSocket.OPEN) {
+            this.privateTradeWs.send('ping');
+          }
+        }, 25_000);
         return;
       }
 
@@ -639,6 +650,9 @@ export class OkxAdapter implements ExchangeAdapter {
 
     this.privateTradeWs.on('close', () => {
       this.privateTradeWs = undefined;
+      // 连接关闭时清理心跳定时器，重连后由登录成功回调重新启动。
+      clearInterval(this.privatePingTimer);
+      this.privatePingTimer = undefined;
       if (this.privateTradeStopRequested) {
         return;
       }

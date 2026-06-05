@@ -358,6 +358,71 @@ export class TradeAccountRepository {
     return fill
   }
 
+  /**
+   * 按本地日期聊合成交统计，包括成交额、手续费、盈亏和买卖笔数。
+   * 使用 date(created_at, 'localtime') 与订单统计口径保持一致。
+   */
+  listDailyFillSummary(input: {
+    fromDate: string
+    toDate: string
+    exchange?: string
+    mode?: 'simulation' | 'real'
+  }): Array<{
+    date: string
+    totalQuoteAmount: string
+    totalFeeAmount: string
+    totalRealizedPnl: string
+    buyCount: number
+    sellCount: number
+  }> {
+    const conditions = [
+      `date(created_at, 'localtime') >= ?`,
+      `date(created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.exchange) {
+      conditions.push('exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.mode !== undefined) {
+      conditions.push('account_type = ?')
+      params.push(input.mode)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return (
+      this.db
+        .prepare(
+          `SELECT
+             date(created_at, 'localtime') AS date,
+             COALESCE(SUM(CAST(quote_amount AS REAL)), 0) AS total_quote_amount,
+             COALESCE(SUM(CAST(fee_amount AS REAL)), 0) AS total_fee_amount,
+             COALESCE(SUM(CAST(realized_pnl AS REAL)), 0) AS total_realized_pnl,
+             SUM(CASE WHEN side = 'buy' THEN 1 ELSE 0 END) AS buy_count,
+             SUM(CASE WHEN side = 'sell' THEN 1 ELSE 0 END) AS sell_count
+           FROM trade_fills
+           ${where}
+           GROUP BY date(created_at, 'localtime')
+           ORDER BY date DESC`,
+        )
+        .all(...params) as Array<{
+        date: string
+        total_quote_amount: number
+        total_fee_amount: number
+        total_realized_pnl: number
+        buy_count: number
+        sell_count: number
+      }>
+    ).map(row => ({
+      date: row.date,
+      totalQuoteAmount: String(row.total_quote_amount),
+      totalFeeAmount: String(row.total_fee_amount),
+      totalRealizedPnl: String(row.total_realized_pnl),
+      buyCount: row.buy_count,
+      sellCount: row.sell_count,
+    }))
+  }
+
   findFillByOrderId(orderId: string): TradeFill | undefined {
     const row = this.db
       .prepare('SELECT * FROM trade_fills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1')

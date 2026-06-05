@@ -46,6 +46,16 @@ export class AuditLogService {
     return this.auditLogRepository.listPage(page, pageSize, actions, levels);
   }
 
+  existsByActionAndEntity(input: {
+    action: AuditLogAction;
+    entityType: string;
+    entityId?: string;
+    orderId?: string;
+    triggerId?: string;
+  }) {
+    return this.auditLogRepository.existsByActionAndEntity(input);
+  }
+
   record(input: WriteAuditLogInput): AuditLog | undefined {
     const now = Date.now();
     this.pruneExpiredDedupeKeys(now);

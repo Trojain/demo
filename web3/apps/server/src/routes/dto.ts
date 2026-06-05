@@ -98,6 +98,23 @@ export const listSignalsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 })
 
+export const createExternalSignalSchema = z.object({
+  /** 关联规则 ID，外部信号沿用规则上的交易参数与风控配置。 */
+  ruleId: z.string().min(1),
+  /** 外部信号对应的市场价格。 */
+  marketPrice: positiveDecimalString,
+  /** 行情事件时间，不传时由服务端回退当前时间。 */
+  marketEventTime: z.string().datetime().optional(),
+  /** 外部信号原因说明。 */
+  reason: z.string().min(1),
+  /** 外部信号来源键，建议由上游系统提供稳定值。 */
+  sourceKey: z.string().min(1).optional(),
+  /** 外部信号来源标签，例如 webhook、research、manual。 */
+  sourceLabel: z.string().min(1).optional(),
+  /** 外部信号附加上下文。 */
+  metadata: z.record(z.string(), z.unknown()).optional(),
+})
+
 export const listAuditLogsQuerySchema = z.object({
   /** 返回审计日志数量，限制最大值避免一次性读取过多 SQLite 记录 */
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -118,9 +135,25 @@ export const listAuditLogsPageQuerySchema = z.object({
   levels: z.string().optional(),
 })
 
+export const listOrderRecoveriesPageQuerySchema = z.object({
+  /** 当前页码，从 1 开始 */
+  page: z.coerce.number().int().min(1).default(1),
+  /** 分页大小 */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** 按恢复状态筛选，多个状态使用逗号分隔 */
+  statuses: z.string().optional(),
+  /** 按失败阶段筛选，多个阶段使用逗号分隔 */
+  stages: z.string().optional(),
+})
+
 export const listRiskChecksQuerySchema = z.object({
   /** 返回风控检查数量，限制最大值避免一次性读取过多 SQLite 记录 */
   limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+
+export const listDailyRiskStatsQuerySchema = z.object({
+  /** 返回最近多少天的日维度统计。 */
+  days: z.coerce.number().int().min(1).max(90).default(7),
 })
 
 export const tradeAccountQuerySchema = z.object({
@@ -215,3 +248,13 @@ export const updateRiskConfigSchema = z.object({
   /** 交易模式 */
   tradingMode: z.enum(['simulation_only', 'allow_real']),
 })
+
+export const listDailyReportQuerySchema = z.object({
+  /** 返回最近多少天的日报表，默认 30 天 */
+  days: z.coerce.number().int().min(1).max(90).default(30),
+  /** 交易所编码，不传时返回全部交易所数据 */
+  exchange: z.enum(['okx', 'binance']).optional(),
+  /** 下单模式，不传时返回模拟和真实数据合并结果 */
+  mode: z.enum(['simulation', 'real']).optional(),
+})
+

@@ -100,9 +100,165 @@ export class OrderRepository {
       .map(row => mapOrder(row as OrderRow))
   }
 
+  listPendingRealOrdersByExchange(input: {
+    /** 只同步该时间之后创建的真实订单。 */
+    createdAfter: string
+    /** 交易所编码。 */
+    exchange: OrderRecord['exchange']
+    /** 单次同步最多处理多少条记录。 */
+    limit: number
+  }): OrderRecord[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM order_records
+         WHERE simulation_mode = 0
+           AND exchange = ?
+           AND created_at >= ?
+           AND status IN ('submitted', 'partially_filled')
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(input.exchange, input.createdAfter, input.limit)
+      .map(row => mapOrder(row as OrderRow))
+  }
+
   countAll(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS count FROM order_records').get() as { count: number }
     return row.count
+  }
+
+  /**
+   * 按本地日期纴度聊合订单统计。
+   * 使用 SQLite date(created_at, 'localtime') 与风控日期口径保持一致。
+   */
+  listDailySummary(input: {
+    fromDate: string
+    toDate: string
+    exchange?: string
+    mode?: 'simulation' | 'real'
+  }): Array<{
+    date: string
+    orderCount: number
+    filledOrderCount: number
+    failedOrderCount: number
+  }> {
+    const conditions = [
+      `date(created_at, 'localtime') >= ?`,
+      `date(created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.exchange) {
+      conditions.push('exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.mode !== undefined) {
+      conditions.push('simulation_mode = ?')
+      params.push(input.mode === 'simulation' ? 1 : 0)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return (
+      this.db
+        .prepare(
+          `SELECT
+             date(created_at, 'localtime') AS date,
+             COUNT(*) AS order_count,
+             SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) AS filled_order_count,
+             SUM(CASE WHEN status IN ('rejected','failed','cancelled') THEN 1 ELSE 0 END) AS failed_order_count
+           FROM order_records
+           ${where}
+           GROUP BY date(created_at, 'localtime')
+           ORDER BY date DESC`,
+        )
+        .all(...params) as Array<{
+        date: string
+        order_count: number
+        filled_order_count: number
+        failed_order_count: number
+      }>
+    ).map(row => ({
+      date: row.date,
+      orderCount: row.order_count,
+      filledOrderCount: row.filled_order_count,
+      failedOrderCount: row.failed_order_count,
+    }))
+  }
+
+  listAnalysisRecords(input: {
+    fromDate: string
+    toDate: string
+    exchange?: string
+    mode?: 'simulation' | 'real'
+  }): Array<{
+    id: string
+    exchange: string
+    symbol: string
+    side: 'buy' | 'sell'
+    status: string
+    orderCreatedTime: string
+    triggerCreatedTime: string | null
+    triggerMarketPrice: string | null
+    maxFillCreatedTime: string | null
+    fillAvgPrice: number | null
+  }> {
+    const conditions = [
+      `date(o.created_at, 'localtime') >= ?`,
+      `date(o.created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.exchange) {
+      conditions.push('o.exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.mode !== undefined) {
+      conditions.push('o.simulation_mode = ?')
+      params.push(input.mode === 'simulation' ? 1 : 0)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return (
+      this.db
+        .prepare(
+          `SELECT
+             o.id,
+             o.exchange,
+             o.symbol,
+             o.side,
+             o.status,
+             o.created_at AS order_created_time,
+             tr.created_at AS trigger_created_time,
+             tr.market_price AS trigger_market_price,
+             (SELECT MAX(created_at) FROM trade_fills WHERE order_id = o.id) AS max_fill_created_time,
+             (SELECT SUM(CAST(quote_amount AS REAL)) / SUM(CAST(base_quantity AS REAL)) FROM trade_fills WHERE order_id = o.id) AS fill_avg_price
+           FROM order_records o
+           LEFT JOIN trigger_events tr ON o.trigger_id = tr.id
+           ${where}
+           ORDER BY o.created_at DESC`,
+        )
+        .all(...params) as Array<{
+        id: string
+        exchange: string
+        symbol: string
+        side: 'buy' | 'sell'
+        status: string
+        order_created_time: string
+        trigger_created_time: string | null
+        trigger_market_price: string | null
+        max_fill_created_time: string | null
+        fill_avg_price: number | null
+      }>
+    ).map(row => ({
+      id: row.id,
+      exchange: row.exchange,
+      symbol: row.symbol,
+      side: row.side,
+      status: row.status,
+      orderCreatedTime: row.order_created_time,
+      triggerCreatedTime: row.trigger_created_time,
+      triggerMarketPrice: row.trigger_market_price,
+      maxFillCreatedTime: row.max_fill_created_time,
+      fillAvgPrice: row.fill_avg_price,
+    }))
   }
 
   create(order: OrderRecord): OrderRecord {

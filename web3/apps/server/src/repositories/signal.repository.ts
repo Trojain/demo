@@ -8,6 +8,7 @@ type SignalRow = {
   symbol: string;
   market_price: string;
   market_event_time: string;
+  source_type: TradingSignal['sourceType'];
   target_price: string;
   operator: TradingSignal['operator'];
   side: TradingSignal['side'];
@@ -18,6 +19,7 @@ type SignalRow = {
   simulation_mode: number;
   status: TradingSignal['status'];
   reason: string;
+  source_metadata_json?: string | null;
   created_at: string;
   converted_at?: string | null;
 };
@@ -30,6 +32,7 @@ function mapSignal(row: SignalRow): TradingSignal {
     symbol: row.symbol,
     marketPrice: row.market_price,
     marketEventTime: row.market_event_time,
+    sourceType: row.source_type,
     targetPrice: row.target_price,
     operator: row.operator,
     side: row.side,
@@ -40,6 +43,7 @@ function mapSignal(row: SignalRow): TradingSignal {
     simulationMode: Boolean(row.simulation_mode),
     status: row.status,
     reason: row.reason,
+    sourceMetadataJson: row.source_metadata_json ?? undefined,
     createdAt: row.created_at,
     convertedAt: row.converted_at ?? undefined
   };
@@ -81,12 +85,12 @@ export class SignalRepository {
       .prepare(
         `INSERT INTO trading_signals (
           id, rule_id, exchange, symbol, market_price, target_price, operator,
-          market_event_time, side, order_type, base_quantity, quote_amount, limit_price, simulation_mode,
-          status, reason, created_at, converted_at
+          market_event_time, source_type, side, order_type, base_quantity, quote_amount, limit_price, simulation_mode,
+          status, reason, source_metadata_json, created_at, converted_at
         ) VALUES (
           @id, @ruleId, @exchange, @symbol, @marketPrice, @targetPrice, @operator,
-          @marketEventTime, @side, @orderType, @baseQuantity, @quoteAmount, @limitPrice, @simulationMode,
-          @status, @reason, @createdAt, @convertedAt
+          @marketEventTime, @sourceType, @side, @orderType, @baseQuantity, @quoteAmount, @limitPrice, @simulationMode,
+          @status, @reason, @sourceMetadataJson, @createdAt, @convertedAt
         )`
       )
       .run({
@@ -95,6 +99,7 @@ export class SignalRepository {
         quoteAmount: signal.quoteAmount ?? null,
         limitPrice: signal.limitPrice ?? null,
         simulationMode: signal.simulationMode ? 1 : 0,
+        sourceMetadataJson: signal.sourceMetadataJson ?? null,
         convertedAt: signal.convertedAt ?? null
       });
 
@@ -117,6 +122,45 @@ export class SignalRepository {
 
     const row = this.db.prepare('SELECT * FROM trading_signals WHERE id = ?').get(id) as SignalRow | undefined;
     return row ? mapSignal(row) : undefined;
+  }
+
+  /**
+   * 按本地日期统计信号数量，与订单和成交统计日期口径保持一致。
+   */
+  listDailySignalCount(input: {
+    fromDate: string
+    toDate: string
+    exchange?: string
+    mode?: 'simulation' | 'real'
+  }): Array<{ date: string; signalCount: number }> {
+    const conditions = [
+      `date(created_at, 'localtime') >= ?`,
+      `date(created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.exchange) {
+      conditions.push('exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.mode !== undefined) {
+      conditions.push('simulation_mode = ?')
+      params.push(input.mode === 'simulation' ? 1 : 0)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return (
+      this.db
+        .prepare(
+          `SELECT
+             date(created_at, 'localtime') AS date,
+             COUNT(*) AS signal_count
+           FROM trading_signals
+           ${where}
+           GROUP BY date(created_at, 'localtime')
+           ORDER BY date DESC`,
+        )
+        .all(...params) as Array<{ date: string; signal_count: number }>
+    ).map(row => ({ date: row.date, signalCount: row.signal_count }))
   }
 
   delete(id: string): boolean {

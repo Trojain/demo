@@ -148,6 +148,7 @@ const auditLevelColorMap: Record<AuditLog['level'], string> = {
 
 const auditActionTextMap: Record<AuditLog['action'], string> = {
   'signal.created': '信号生成',
+  'signal.ingested': '外部信号接入',
   'signal.converted': '信号转换',
   'signal.duplicated': '重复信号拦截',
   'risk.passed': '风控通过',
@@ -161,6 +162,11 @@ const auditActionTextMap: Record<AuditLog['action'], string> = {
   'order.final_validation_failed': '最终校验失败',
   'order.failed': '订单失败',
   'order.sync_failed': '同步失败',
+  'recovery.created': '恢复任务创建',
+  'recovery.retry_started': '恢复开始',
+  'recovery.retry_succeeded': '恢复成功',
+  'recovery.retry_failed': '恢复失败',
+  'recovery.manual_review_required': '转人工处理',
   'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }
@@ -518,6 +524,7 @@ export function RulesPage() {
   const signalColumns = useMemo<ProColumns<TradingSignal>[]>(
     () => [
       { title: '状态', dataIndex: 'status', width: 110, render: (_, row) => <Tag color={row.status === 'converted' ? 'success' : row.status === 'rejected' ? 'error' : 'processing'}>{row.status}</Tag> },
+      { title: '来源', dataIndex: 'sourceType', width: 120, render: (_, row) => <Tag color={row.sourceType === 'external_input' ? 'purple' : 'blue'}>{row.sourceType === 'external_input' ? '外部信号' : '价格规则'}</Tag> },
       { title: '方向', dataIndex: 'side', width: 90, render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag> },
       { title: '类型', dataIndex: 'orderType', width: 90, render: (_, row) => (row.orderType === 'limit' ? '限价' : '市价') },
       { title: '市场价', dataIndex: 'marketPrice' },

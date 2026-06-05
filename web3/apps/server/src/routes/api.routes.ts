@@ -2,10 +2,13 @@ import { nanoid } from 'nanoid'
 import type { FastifyInstance } from 'fastify'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
+import type { DailyReportService } from '../services/daily-report.service.js'
 import type { MarketService } from '../services/market.service.js'
+import type { OrderRecoveryService } from '../services/order-recovery.service.js'
 import type { OrderPreviewService } from '../services/order-preview.service.js'
 import { FinalOrderValidationError, TradeExecutionError, type OrderService } from '../services/order.service.js'
 import type { RiskConfigService } from '../services/risk-config.service.js'
+import type { RiskService } from '../services/risk.service.js'
 import type { SignalService } from '../services/signal.service.js'
 import type { TradeAccountService } from '../services/trade-account.service.js'
 import type { TradeExecutionService } from '../services/trade-execution.service.js'
@@ -25,10 +28,14 @@ import {
   confirmOrderSchema,
   marketCandlesQuerySchema,
   listSignalsQuerySchema,
+  createExternalSignalSchema,
   listAuditLogsQuerySchema,
   listAuditLogsPageQuerySchema,
+  listOrderRecoveriesPageQuerySchema,
+  listDailyReportQuerySchema,
   previewOrderSchema,
   listRiskChecksQuerySchema,
+  listDailyRiskStatsQuerySchema,
   updateRiskConfigSchema,
   idParamSchema,
   simulationExchangeQuerySchema,
@@ -45,13 +52,16 @@ import { OVERVIEW_SYMBOLS_BY_EXCHANGE } from '../services/market.service.js'
 export interface ApiRouteDeps {
   auditLogRepository: AuditLogRepository
   auditLogService: AuditLogService
+  dailyReportService: DailyReportService
   exchangeFactory: ExchangeFactory
   marketService: MarketService
+  orderRecoveryService: OrderRecoveryService
   orderPreviewService: OrderPreviewService
   orderService: OrderService
   orderRepository: OrderRepository
   riskCheckRepository: RiskCheckRepository
   riskConfigService: RiskConfigService
+  riskService: RiskService
   ruleRepository: RuleRepository
   signalRepository: SignalRepository
   signalService: SignalService
@@ -132,6 +142,42 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       actions && actions.length > 0 ? actions : undefined,
       levels && levels.length > 0 ? levels : undefined,
     )
+  })
+
+  app.get('/api/order-recoveries/page', async (request, reply) => {
+    const parsed = listOrderRecoveriesPageQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '恢复任务分页查询参数不合法', issues: parsed.error.issues })
+    }
+
+    const statuses = parsed.data.statuses
+      ?.split(',')
+      .map(status => status.trim())
+      .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['statuses']
+    const stages = parsed.data.stages
+      ?.split(',')
+      .map(stage => stage.trim())
+      .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['stages']
+
+    return deps.orderRecoveryService.listPage({
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+      statuses: statuses && statuses.length > 0 ? statuses : undefined,
+      stages: stages && stages.length > 0 ? stages : undefined,
+    })
+  })
+
+  app.post('/api/order-recoveries/:id/retry', async (request, reply) => {
+    const parsed = idParamSchema.safeParse(request.params)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '恢复任务 ID 不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      return await deps.orderRecoveryService.retryById(parsed.data.id, 'manual')
+    } catch (error) {
+      return reply.status(400).send({ message: error instanceof Error ? error.message : '恢复任务重试失败' })
+    }
   })
 
   app.delete('/api/audit-logs/:id', async (request, reply) => {
@@ -221,6 +267,19 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     return deps.signalService.list(parsed.data.limit)
   })
 
+  app.post('/api/signals/external', async (request, reply) => {
+    const parsed = createExternalSignalSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '外部信号参数不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      return deps.signalService.createExternalSignal(parsed.data)
+    } catch (error) {
+      return reply.status(400).send({ message: error instanceof Error ? error.message : '外部信号接入失败' })
+    }
+  })
+
   app.delete('/api/signals/:id', async (request, reply) => {
     const parsed = idParamSchema.safeParse(request.params)
     if (!parsed.success) {
@@ -238,6 +297,19 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
 
     return deps.riskCheckRepository.list(parsed.data.limit)
+  })
+
+  app.get('/api/risk-stats/daily', async (request, reply) => {
+    const parsed = listDailyRiskStatsQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '风控日统计查询参数不合法', issues: parsed.error.issues })
+    }
+
+    const items = deps.riskService.listDailyStats(parsed.data.days)
+    return {
+      today: items[0],
+      items,
+    }
   })
 
   app.delete('/api/risk-checks/:id', async (request, reply) => {
@@ -590,4 +662,15 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       })
     }
   })
+
+  // 交易日报表：按本地日期聚合订单、成交、信号和风控统计，每天补全一行
+  app.get('/api/trade/daily-report', async (request, reply) => {
+    const parsed = listDailyReportQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '日报查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.dailyReportService.getDailyReport(parsed.data)
+  })
 }
+

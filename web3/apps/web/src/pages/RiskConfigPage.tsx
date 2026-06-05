@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
-import { App as AntApp, Button, Space, Tag } from 'antd'
-import { PageContainer, ProCard, ProForm, ProFormDigit, ProFormSelect, ProFormText, type ProFormInstance } from '@ant-design/pro-components'
+import { useEffect, useRef, useState } from 'react'
+import { App as AntApp, Button, Space, Table, Tag } from 'antd'
+import { PageContainer, ProCard, ProForm, ProFormDigit, ProFormSelect, ProFormText, StatisticCard, type ProFormInstance } from '@ant-design/pro-components'
 import { ReloadOutlined, SaveOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { tradingApi } from '../api/trading'
-import type { UpdateRiskConfigPayload } from '../types'
+import type { DailyRiskStats, UpdateRiskConfigPayload } from '../types'
 
 export function RiskConfigPage() {
   const { message } = AntApp.useApp()
@@ -12,6 +12,8 @@ export function RiskConfigPage() {
   const [reloadKey, setReloadKey] = useState(0)
   const [saving, setSaving] = useState(false)
   const [updatedAt, setUpdatedAt] = useState('')
+  const [dailyStats, setDailyStats] = useState<DailyRiskStats[]>([])
+  const [configSnapshot, setConfigSnapshot] = useState<UpdateRiskConfigPayload>()
 
   const getErrorMessage = (error: unknown) => {
     if (axios.isAxiosError<{ message?: string }>(error)) {
@@ -26,6 +28,13 @@ export function RiskConfigPage() {
     try {
       const config = await tradingApi.updateRiskConfig(values)
       setUpdatedAt(config.updatedAt)
+      setConfigSnapshot({
+        maxQuoteAmount: config.maxQuoteAmount,
+        maxMarketAgeMs: config.maxMarketAgeMs,
+        dailyMaxTriggerCount: config.dailyMaxTriggerCount,
+        dailyMaxQuoteAmount: config.dailyMaxQuoteAmount,
+        tradingMode: config.tradingMode,
+      })
       message.success('风控配置已保存')
       setReloadKey(value => value + 1)
       return true
@@ -49,8 +58,61 @@ export function RiskConfigPage() {
     setReloadKey(value => value + 1)
   }
 
+  useEffect(() => {
+    void (async () => {
+      try {
+        const result = await tradingApi.getDailyRiskStats(7)
+        setDailyStats(result.items)
+      } catch (error) {
+        message.error(getErrorMessage(error))
+      }
+    })()
+  }, [message, reloadKey])
+
+  const todayStats = dailyStats[0]
+
   return (
     <PageContainer subTitle='配置交易金额、行情时效、日内次数和交易模式限制'>
+      <ProCard title='日维度风控统计' style={{ marginBottom: 16 }}>
+        <Space direction='vertical' size={16} style={{ width: '100%' }}>
+          <Space size={16} wrap style={{ width: '100%' }}>
+            <StatisticCard
+              statistic={{
+                title: '今日已通过次数',
+                value: todayStats?.passedCount ?? 0,
+                suffix: ` / ${configSnapshot?.dailyMaxTriggerCount ?? '-'}`
+              }}
+            />
+            <StatisticCard
+              statistic={{
+                title: '今日已通过金额',
+                value: todayStats?.passedQuoteAmount ?? '0',
+                suffix: ` / ${configSnapshot?.dailyMaxQuoteAmount ?? '-'} USDT`
+              }}
+            />
+            <StatisticCard
+              statistic={{
+                title: '今日拒绝次数',
+                value: todayStats?.rejectedCount ?? 0
+              }}
+            />
+          </Space>
+          <Table<DailyRiskStats>
+            rowKey='statDate'
+            size='small'
+            pagination={false}
+            dataSource={dailyStats}
+            columns={[
+              { title: '日期', dataIndex: 'statDate' },
+              { title: '通过次数', dataIndex: 'passedCount' },
+              { title: '通过金额', dataIndex: 'passedQuoteAmount', render: value => `${value} USDT` },
+              { title: '拒绝次数', dataIndex: 'rejectedCount' },
+              { title: '拒绝金额', dataIndex: 'rejectedQuoteAmount', render: value => `${value} USDT` },
+              { title: '总次数', dataIndex: 'totalCount' },
+            ]}
+          />
+        </Space>
+      </ProCard>
       <ProCard
         title='风控配置'
         extra={
@@ -71,6 +133,13 @@ export function RiskConfigPage() {
           request={async () => {
             const config = await tradingApi.getRiskConfig()
             setUpdatedAt(config.updatedAt)
+            setConfigSnapshot({
+              maxQuoteAmount: config.maxQuoteAmount,
+              maxMarketAgeMs: config.maxMarketAgeMs,
+              dailyMaxTriggerCount: config.dailyMaxTriggerCount,
+              dailyMaxQuoteAmount: config.dailyMaxQuoteAmount,
+              tradingMode: config.tradingMode,
+            })
 
             return {
               maxQuoteAmount: config.maxQuoteAmount,

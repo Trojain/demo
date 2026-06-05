@@ -252,7 +252,19 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   async getTickerSnapshots(symbols: string[]): Promise<MarketTickerSnapshot[]> {
-    return Promise.all(symbols.map(symbol => this.getTickerSnapshot(symbol)))
+    if (symbols.length === 0) {
+      return []
+    }
+    if (symbols.length === 1) {
+      return [await this.getTickerSnapshot(symbols[0])]
+    }
+    // Binance 官方支持批量查询：?symbols=["BTCUSDT","ETHUSDT"]，避免 N 次串行请求触发限频。
+    const binanceSymbols = symbols.map(toBinanceSymbol)
+    const symbolsParam = encodeURIComponent(JSON.stringify(binanceSymbols))
+    const payload = await fetchExchangeJson<BinanceTicker24hResponse[]>(
+      `${this.getRestApiBaseUrl()}/v3/ticker/24hr?symbols=${symbolsParam}`
+    )
+    return (Array.isArray(payload) ? payload : []).map(item => this.mapTickerSnapshot(item))
   }
 
   async getCandles(symbol: string, bar: string, limit: number, after?: string): Promise<MarketCandle[]> {
@@ -657,11 +669,12 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   private signPrivateStreamParams(params: Record<string, string | number>) {
-    const payload = Object.entries(params)
-      .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-      .map(([key, value]) => `${key}=${value}`)
-      .join('&')
-    return createHmac('sha256', appConfig.binance.apiSecret).update(payload).digest('hex')
+    // Binance WS API 签名方式与 REST 一致：按参数插入顺序拼接 query string 后 HMAC-SHA256。
+    // 无需字母排序，官方文档未要求排序，与 REST 签名口径统一。
+    const queryString = new URLSearchParams(
+      Object.entries(params).map(([k, v]) => [k, String(v)])
+    ).toString()
+    return createHmac('sha256', appConfig.binance.apiSecret).update(queryString).digest('hex')
   }
 
   private handlePrivateStreamEvent(payload: BinanceUserDataStreamResponse) {

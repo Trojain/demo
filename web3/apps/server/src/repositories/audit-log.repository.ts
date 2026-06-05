@@ -72,6 +72,36 @@ export class AuditLogRepository {
       .map(row => mapAuditLog(row as AuditLogRow))
   }
 
+  existsByActionAndEntity(input: {
+    action: AuditLog['action']
+    entityType: string
+    entityId?: string
+    orderId?: string
+    triggerId?: string
+  }) {
+    const conditions = ['action = ?', 'entity_type = ?']
+    const params: Array<string> = [input.action, input.entityType]
+
+    if (input.entityId) {
+      conditions.push('entity_id = ?')
+      params.push(input.entityId)
+    }
+    if (input.orderId) {
+      conditions.push('order_id = ?')
+      params.push(input.orderId)
+    }
+    if (input.triggerId) {
+      conditions.push('trigger_id = ?')
+      params.push(input.triggerId)
+    }
+
+    const row = this.db
+      .prepare(`SELECT 1 AS exists_flag FROM audit_logs WHERE ${conditions.join(' AND ')} LIMIT 1`)
+      .get(...params) as { exists_flag: number } | undefined
+
+    return Boolean(row)
+  }
+
   create(log: AuditLog): AuditLog {
     this.db
       .prepare(

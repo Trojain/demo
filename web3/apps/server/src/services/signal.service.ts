@@ -4,6 +4,7 @@ import type { SignalRepository } from '../repositories/signal.repository.js';
 import type { TriggerRepository } from '../repositories/trigger.repository.js';
 import type { AuditLogService } from './audit-log.service.js';
 import type { RiskService } from './risk.service.js';
+import type { RuleRepository } from '../repositories/rule.repository.js';
 
 interface CreateSignalInput {
   /** 命中的监控规则 */
@@ -18,9 +19,27 @@ interface CreateSignalInput {
   createdAt: string;
 }
 
+export interface CreateExternalSignalInput {
+  /** 关联规则 ID，外部信号仍沿用现有规则的下单参数与风控配置。 */
+  ruleId: string;
+  /** 外部信号携带的市场价格。 */
+  marketPrice: string;
+  /** 行情事件时间，不传时回退为当前时间。 */
+  marketEventTime?: string;
+  /** 外部信号原因说明。 */
+  reason: string;
+  /** 外部信号的稳定来源键，用于排查和上游幂等。 */
+  sourceKey?: string;
+  /** 外部信号来源标签，例如 webhook、research、manual。 */
+  sourceLabel?: string;
+  /** 外部信号附加上下文。 */
+  metadata?: Record<string, unknown>;
+}
+
 export class SignalService {
   constructor(
     private readonly signalRepository: SignalRepository,
+    private readonly ruleRepository: RuleRepository,
     private readonly triggerRepository: TriggerRepository,
     private readonly auditLogService: AuditLogService,
     private readonly riskService: RiskService
@@ -31,6 +50,70 @@ export class SignalService {
   }
 
   createSignal(input: CreateSignalInput): TradingSignal | undefined {
+    return this.createSignalInternal({
+      rule: input.rule,
+      marketPrice: input.marketPrice,
+      marketEventTime: input.marketEventTime,
+      reason: input.reason,
+      createdAt: input.createdAt,
+      sourceType: 'price_rule',
+    });
+  }
+
+  createExternalSignal(input: CreateExternalSignalInput): { signal?: TradingSignal; trigger?: TriggerEvent } {
+    const rule = this.ruleRepository.findById(input.ruleId);
+    if (!rule) {
+      throw new Error('外部信号关联规则不存在');
+    }
+    if (!rule.enabled) {
+      throw new Error('外部信号关联规则未启用');
+    }
+
+    // 外部信号为用户主动输入，pending trigger/signal 时明确拒绝而非静默失败。
+    const pendingTrigger = this.triggerRepository.findPendingByRuleId(rule.id);
+    if (pendingTrigger) {
+      throw new Error('当前规则已有待确认触发事件，外部信号暂不接受');
+    }
+    const pendingSignal = this.signalRepository.findPendingByRuleId(rule.id);
+    if (pendingSignal) {
+      throw new Error('当前规则已有待处理信号，外部信号暂不接受');
+    }
+
+    const nowIso = new Date().toISOString();
+    const signal = this.createSignalInternal({
+      rule,
+      marketPrice: input.marketPrice,
+      marketEventTime: input.marketEventTime ?? nowIso,
+      reason: input.reason,
+      createdAt: nowIso,
+      sourceType: 'external_input',
+      // 外部信号为用户主动输入，跳过风控拒绝后的冷却期过滤，避免用户意图被静默阻断。
+      skipRejectedCooldown: true,
+      sourceMetadataJson: JSON.stringify({
+        sourceKey: input.sourceKey,
+        sourceLabel: input.sourceLabel,
+        ...(input.metadata ?? {}),
+      }),
+    });
+    if (!signal) {
+      return {};
+    }
+
+    const trigger = this.convertToTrigger(signal, rule);
+    return {
+      signal,
+      trigger,
+    };
+  }
+
+  private createSignalInternal(input: CreateSignalInput & {
+    /** 信号来源类型，统一收口价格扫描与外部信号输入。 */
+    sourceType: TradingSignal['sourceType'];
+    /** 外部信号附加上下文，价格规则信号保持空值。 */
+    sourceMetadataJson?: string;
+    /** 外部信号跳过风控拒绝冷却期检查，避免用户主动输入被价格规则冷却期阻断。 */
+    skipRejectedCooldown?: boolean;
+  }): TradingSignal | undefined {
     const pendingEvent = this.triggerRepository.findPendingByRuleId(input.rule.id);
     if (pendingEvent) {
       this.auditLogService.record({
@@ -76,7 +159,12 @@ export class SignalService {
 
     const latestSignal = this.signalRepository.findLatestByRuleId(input.rule.id);
     const latestSignalAt = latestSignal ? new Date(latestSignal.createdAt).getTime() : 0;
-    if (latestSignal?.status === 'rejected' && Number.isFinite(latestSignalAt) && Date.now() - latestSignalAt < input.rule.cooldownMs) {
+    if (
+      !input.skipRejectedCooldown &&
+      latestSignal?.status === 'rejected' &&
+      Number.isFinite(latestSignalAt) &&
+      Date.now() - latestSignalAt < input.rule.cooldownMs
+    ) {
       this.auditLogService.record({
         level: 'warning',
         action: 'signal.duplicated',
@@ -103,6 +191,7 @@ export class SignalService {
       symbol: input.rule.symbol,
       marketPrice: input.marketPrice,
       marketEventTime: input.marketEventTime,
+      sourceType: input.sourceType,
       targetPrice: input.rule.targetPrice,
       operator: input.rule.operator,
       side: input.rule.side,
@@ -113,21 +202,24 @@ export class SignalService {
       simulationMode: input.rule.simulationMode,
       status: 'pending',
       reason: input.reason,
+      sourceMetadataJson: input.sourceMetadataJson,
       createdAt: input.createdAt
     });
 
     this.auditLogService.record({
-      action: 'signal.created',
+      action: input.sourceType === 'external_input' ? 'signal.ingested' : 'signal.created',
       entityType: 'signal',
       entityId: signal.id,
       ruleId: signal.ruleId,
-      message: `${signal.symbol} 已生成交易信号`,
+      message: input.sourceType === 'external_input' ? `${signal.symbol} 已接收外部信号` : `${signal.symbol} 已生成交易信号`,
       payload: {
         exchange: signal.exchange,
         symbol: signal.symbol,
         marketPrice: signal.marketPrice,
         targetPrice: signal.targetPrice,
-        operator: signal.operator
+        operator: signal.operator,
+        sourceType: signal.sourceType,
+        sourceMetadataJson: signal.sourceMetadataJson,
       }
     });
 
@@ -172,7 +264,8 @@ export class SignalService {
         operator: signal.operator,
         marketPrice: signal.marketPrice,
         targetPrice: signal.targetPrice,
-        signalId: signal.id
+        signalId: signal.id,
+        sourceType: signal.sourceType,
       }
     });
 
@@ -186,7 +279,8 @@ export class SignalService {
       message: `${signal.symbol} 信号已转换为触发事件`,
       payload: {
         signalId: signal.id,
-        triggerId: event.id
+        triggerId: event.id,
+        sourceType: signal.sourceType,
       }
     });
 

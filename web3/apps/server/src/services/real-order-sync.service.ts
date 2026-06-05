@@ -18,6 +18,7 @@ import type {
   PrivateOrderUpdate,
 } from '../types/exchange.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { OrderRecoveryService } from './order-recovery.service.js'
 
 interface RealOrderSyncServiceOptions {
   /** 定时同步间隔，单位毫秒。 */
@@ -42,6 +43,7 @@ export class RealOrderSyncService {
   private syncing = false
   private readonly privateQuoteBalanceSnapshots = new Map<string, QuoteBalanceSnapshot>()
   private readonly orderSyncQueue = new Map<string, Promise<void>>()
+  private orderRecoveryService?: OrderRecoveryService
 
   constructor(
     private readonly exchangeFactory: ExchangeFactory,
@@ -68,6 +70,10 @@ export class RealOrderSyncService {
     }
   }
 
+  setOrderRecoveryService(orderRecoveryService: OrderRecoveryService) {
+    this.orderRecoveryService = orderRecoveryService
+  }
+
   async syncPendingOrders() {
     if (this.syncing) {
       return
@@ -89,6 +95,28 @@ export class RealOrderSyncService {
       }
     } finally {
       this.syncing = false
+    }
+  }
+
+  async syncOrderById(orderId: string) {
+    const order = this.orderRepository.findById(orderId)
+    if (!order || order.simulationMode) {
+      return
+    }
+
+    const quoteBalanceCache = new Map<string, Promise<QuoteBalanceSnapshot | undefined>>()
+    await this.syncSingleOrder(order, quoteBalanceCache)
+  }
+
+  async syncPendingOrdersByExchange(exchange: ExchangeCode, limit = this.options.batchSize) {
+    const orders = this.orderRepository.listPendingRealOrdersByExchange({
+      createdAfter: new Date(Date.now() - this.options.lookbackMinutes * 60_000).toISOString(),
+      exchange,
+      limit,
+    })
+    const quoteBalanceCache = new Map<string, Promise<QuoteBalanceSnapshot | undefined>>()
+    for (const order of orders) {
+      await this.syncSingleOrder(order, quoteBalanceCache)
     }
   }
 
@@ -119,6 +147,21 @@ export class RealOrderSyncService {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : '私有推送处理失败'
+      this.orderRecoveryService?.createOrRefresh({
+        identityKey: `private_stream:order:${order.id}`,
+        orderId: order.id,
+        exchangeOrderId: order.exchangeOrderId,
+        exchange: order.exchange,
+        source: order.ruleId ? 'rule' : 'manual',
+        mode: 'real',
+        symbol: order.symbol,
+        failureStage: 'private_stream',
+        lastErrorMessage: message,
+        payload: {
+          source: 'private_stream',
+          exchangeOrderId: order.exchangeOrderId,
+        },
+      })
       this.auditLogService.record({
         level: 'warning',
         action: 'order.sync_failed',
@@ -141,8 +184,16 @@ export class RealOrderSyncService {
 
   async handlePrivateBalanceUpdate(update: PrivateBalanceUpdate) {
     const now = update.updatedAt ?? new Date().toISOString()
+    this.orderRecoveryService?.markRecoveredByIdentityKey(
+      `balance_refresh:${update.exchange}:${(update.balances[0]?.currency ?? appConfig.simulation.quoteCurrency).toUpperCase()}`,
+      `${update.exchange.toUpperCase()} 私有余额推送已恢复`,
+    )
     update.balances.forEach(balance => {
       const currency = balance.currency.toUpperCase()
+      this.orderRecoveryService?.markRecoveredByIdentityKey(
+        `balance_refresh:${update.exchange}:${currency}`,
+        `${update.exchange.toUpperCase()} ${currency} 余额刷新已恢复`,
+      )
       this.privateQuoteBalanceSnapshots.set(this.buildQuoteBalanceCacheKey(update.exchange, currency), {
         available: balance.available,
         locked: balance.locked,
@@ -181,6 +232,21 @@ export class RealOrderSyncService {
         await this.applyOrderDetail(currentOrder, detail, 'rest', quoteBalanceCache)
       } catch (error) {
         const message = error instanceof Error ? error.message : '真实订单状态同步失败'
+        this.orderRecoveryService?.createOrRefresh({
+          identityKey: `order_sync:${currentOrder.id}`,
+          orderId: currentOrder.id,
+          exchangeOrderId: currentOrder.exchangeOrderId,
+          exchange: currentOrder.exchange,
+          source: currentOrder.ruleId ? 'rule' : 'manual',
+          mode: 'real',
+          symbol: currentOrder.symbol,
+          failureStage: 'order_sync',
+          lastErrorMessage: message,
+          payload: {
+            currentStatus: currentOrder.status,
+            source: 'rest',
+          },
+        })
         this.auditLogService.record({
           level: 'warning',
           action: 'order.sync_failed',
@@ -211,6 +277,16 @@ export class RealOrderSyncService {
     quoteBalanceCache: Map<string, Promise<QuoteBalanceSnapshot | undefined>>,
   ) {
     const latestOrder = this.orderRepository.findById(order.id) ?? order
+    if (source === 'private_stream') {
+      this.orderRecoveryService?.markRecoveredByIdentityKey(
+        `private_stream:order:${latestOrder.id}`,
+        `${latestOrder.symbol} 私有推送消费已恢复`,
+      )
+    }
+    this.orderRecoveryService?.markRecoveredByIdentityKey(
+      `order_sync:${latestOrder.id}`,
+      `${latestOrder.symbol} 订单状态同步已恢复`,
+    )
     const changed = this.hasOrderChanged(latestOrder, detail)
     const syncedOrder = changed
       ? this.orderRepository.updateSyncSnapshot({
@@ -284,6 +360,24 @@ export class RealOrderSyncService {
     }
 
     if (deltaBaseQuantity.lessThan(0) || deltaQuoteAmount.lessThan(0) || deltaFeeAmount.lessThan(0)) {
+      this.orderRecoveryService?.createOrRefresh({
+        identityKey: `trade_fill_sync:${order.id}`,
+        orderId: order.id,
+        exchangeOrderId: order.exchangeOrderId,
+        exchange: order.exchange,
+        source: order.ruleId ? 'rule' : 'manual',
+        mode: 'real',
+        symbol: order.symbol,
+        failureStage: 'trade_fill_sync',
+        lastErrorMessage: '真实订单累计成交回退，已跳过本次账本同步',
+        payload: {
+          source,
+          cumulativeBaseQuantity: cumulativeBaseQuantity.toFixed(),
+          cumulativeQuoteAmount: cumulativeQuoteAmount.toFixed(),
+          cumulativeFeeAmount: cumulativeFeeAmount.toFixed(),
+          handledTotals,
+        },
+      })
       this.auditLogService.record({
         level: 'warning',
         action: 'order.sync_failed',
@@ -308,6 +402,24 @@ export class RealOrderSyncService {
     }
 
     if (!deltaBaseQuantity.greaterThan(0) || !deltaQuoteAmount.greaterThan(0)) {
+      this.orderRecoveryService?.createOrRefresh({
+        identityKey: `trade_fill_sync:${order.id}`,
+        orderId: order.id,
+        exchangeOrderId: order.exchangeOrderId,
+        exchange: order.exchange,
+        source: order.ruleId ? 'rule' : 'manual',
+        mode: 'real',
+        symbol: order.symbol,
+        failureStage: 'trade_fill_sync',
+        lastErrorMessage: '真实订单成交增量不完整，暂未回写本地账本',
+        payload: {
+          source,
+          deltaBaseQuantity: deltaBaseQuantity.toFixed(),
+          deltaQuoteAmount: deltaQuoteAmount.toFixed(),
+          deltaFeeAmount: deltaFeeAmount.toFixed(),
+          rawMessage: detail.rawMessage,
+        },
+      })
       this.auditLogService.record({
         level: 'warning',
         action: 'order.sync_failed',
@@ -352,6 +464,21 @@ export class RealOrderSyncService {
     const currentPosition = this.tradeAccountRepository.findPosition(account.id, order.symbol)
     if (order.side === 'sell' && !currentPosition) {
       this.tradeAccountRepository.updateAccountBalance(nextAccount)
+      this.orderRecoveryService?.createOrRefresh({
+        identityKey: `trade_fill_sync:${order.id}`,
+        orderId: order.id,
+        exchangeOrderId: order.exchangeOrderId,
+        exchange: order.exchange,
+        source: order.ruleId ? 'rule' : 'manual',
+        mode: 'real',
+        symbol: order.symbol,
+        failureStage: 'trade_fill_sync',
+        lastErrorMessage: '卖出订单缺少本地持仓成本基线，暂未回写真实持仓收益',
+        payload: {
+          source,
+          reason: 'missing_local_position_baseline',
+        },
+      })
       this.auditLogService.record({
         level: 'warning',
         action: 'order.sync_failed',
@@ -436,6 +563,10 @@ export class RealOrderSyncService {
         createdAt: now,
       })
     })
+    this.orderRecoveryService?.markRecoveredByIdentityKey(
+      `trade_fill_sync:${order.id}`,
+      `${order.symbol} 成交补全已恢复`,
+    )
   }
 
   private findOrCreateRealAccount(input: {
@@ -654,8 +785,23 @@ export class RealOrderSyncService {
         locked: balance.locked,
       }
       this.privateQuoteBalanceSnapshots.set(this.buildQuoteBalanceCacheKey(exchange, quoteCurrency), snapshot)
+      this.orderRecoveryService?.markRecoveredByIdentityKey(
+        `balance_refresh:${exchange}:${quoteCurrency.toUpperCase()}`,
+        `${exchange.toUpperCase()} ${quoteCurrency.toUpperCase()} 余额刷新已恢复`,
+      )
       return snapshot
     } catch (error) {
+      this.orderRecoveryService?.createOrRefresh({
+        identityKey: `balance_refresh:${exchange}:${quoteCurrency.toUpperCase()}`,
+        exchange,
+        source: 'system',
+        mode: 'real',
+        failureStage: 'balance_refresh',
+        lastErrorMessage: error instanceof Error ? error.message : '真实账户余额同步失败',
+        payload: {
+          quoteCurrency,
+        },
+      })
       this.auditLogService.record({
         level: 'warning',
         action: 'order.sync_failed',

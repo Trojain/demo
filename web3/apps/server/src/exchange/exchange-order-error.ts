@@ -85,6 +85,27 @@ function normalizeOkxOrderError(rawMessage: string, errorCode?: string) {
     })
   }
 
+  if (errorCode === '50013') {
+    return new ExchangeOrderError({
+      exchange: 'okx',
+      category: 'exchange',
+      code: errorCode,
+      rawMessage,
+      message: 'OKX 系统维护中，请稍后重试',
+    })
+  }
+
+  if (errorCode === '50014') {
+    return new ExchangeOrderError({
+      exchange: 'okx',
+      category: 'exchange',
+      code: errorCode,
+      rawMessage,
+      retriable: true,
+      message: 'OKX 系统繁忙，请稍后重试',
+    })
+  }
+
   if (errorCode === '51008') {
     return new ExchangeOrderError({
       exchange: 'okx',
@@ -177,7 +198,7 @@ function normalizeBinanceOrderError(rawMessage: string, errorCode?: string) {
     })
   }
 
-  if (errorCode === '-1111' || errorCode === '-1102' || errorCode === '-1121' || errorCode === '-1130') {
+  if (errorCode === '-1100' || errorCode === '-1111' || errorCode === '-1102' || errorCode === '-1121' || errorCode === '-1130') {
     return new ExchangeOrderError({
       exchange: 'binance',
       category: 'validation',
@@ -204,6 +225,16 @@ function normalizeBinanceOrderError(rawMessage: string, errorCode?: string) {
       code: errorCode,
       rawMessage,
       message: 'Binance 撮合引擎拒绝本次订单，请检查交易对状态、余额和订单参数',
+    })
+  }
+
+  if (errorCode === '-2011') {
+    return new ExchangeOrderError({
+      exchange: 'binance',
+      category: 'validation',
+      code: errorCode,
+      rawMessage,
+      message: 'Binance 撤单失败，目标订单不存在或已完成',
     })
   }
 

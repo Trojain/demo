@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js'
-import { nanoid } from 'nanoid'
+import { nanoid, customAlphabet } from 'nanoid'
 import { ExchangeOrderError } from '../exchange/exchange-order-error.js'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
@@ -11,6 +11,7 @@ import type {
   MonitorRule,
   ExchangeCode,
   OrderRecord,
+  OrderRecoverySource,
   TradeAccount,
   TradeEquityHistoryPoint,
   TradeEquitySnapshot,
@@ -24,6 +25,7 @@ import type {
 } from '../types/domain.js'
 import type { AccountBalance, InstrumentRule, TickerPrice } from '../types/exchange.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { OrderRecoveryService } from './order-recovery.service.js'
 import type { RiskConfigService } from './risk-config.service.js'
 import type { TradingRuleService } from './trading-rule.service.js'
 
@@ -41,6 +43,10 @@ type ConfirmTokenState = {
   processing: boolean
   /** 已经成功落库的订单 ID，重复确认时直接返回该订单。 */
   orderId?: string
+  /** 交易所已接单但本地仍待恢复时阻断重复确认。 */
+  blockedAfterExchangeSubmit?: boolean
+  /** 阻断重复确认时返回给前端的明确提示语。 */
+  blockedReason?: string
 }
 
 const REAL_ORDER_CONFIRM_TOKEN_TTL_MS = 2 * 60_000
@@ -72,6 +78,7 @@ export class TradeExecutionService {
     private readonly tradingRuleService: TradingRuleService,
     private readonly riskConfigService: RiskConfigService,
     private readonly auditLogService: AuditLogService,
+    private readonly orderRecoveryService: OrderRecoveryService,
   ) {}
 
   async preview(input: TradeOrderPreviewInput): Promise<TradeOrderPreview> {
@@ -280,9 +287,10 @@ export class TradeExecutionService {
     },
   ) {
     const adapter = this.exchangeFactory.getAdapter(preview.exchange)
-    const clientOrderId = this.buildClientOrderId(metadata.source)
+    const clientOrderId = this.buildClientOrderId(metadata.source, preview.exchange)
+    let exchangeResult: Awaited<ReturnType<ReturnType<ExchangeFactory['getAdapter']>['placeOrder']>>
     try {
-      const exchangeResult = await adapter.placeOrder({
+      exchangeResult = await adapter.placeOrder({
         symbol: preview.symbol,
         side: preview.side,
         type: preview.orderType,
@@ -293,20 +301,6 @@ export class TradeExecutionService {
         clientOrderId,
         simulationMode: false,
       })
-
-      const order = this.persistRealOrder(preview, exchangeResult, {
-        triggerId: metadata.triggerId,
-        ruleId: metadata.ruleId,
-        fallbackMessage: metadata.rawMessage,
-      })
-      if (metadata.source === 'manual') {
-        this.recordManualRealOrderSubmittedAudit(preview, order, exchangeResult.rawMessage)
-      }
-      if (metadata.confirmToken) {
-        this.markConfirmTokenCompleted(metadata.confirmToken, order.id)
-      }
-
-      return order
     } catch (error) {
       if (metadata.confirmToken) {
         this.releaseConfirmToken(metadata.confirmToken)
@@ -332,11 +326,56 @@ export class TradeExecutionService {
         normalizedError.rawMessage,
       )
     }
+
+    let order: OrderRecord
+    try {
+      order = this.persistRealOrder(preview, exchangeResult, {
+        triggerId: metadata.triggerId,
+        ruleId: metadata.ruleId,
+        fallbackMessage: metadata.rawMessage,
+      })
+    } catch (error) {
+      if (metadata.confirmToken) {
+        this.markConfirmTokenBlockedAfterExchangeSubmit(
+          metadata.confirmToken,
+          '交易所已接单，但本地订单落库失败，请到恢复任务继续处理，禁止重复确认',
+        )
+      }
+      this.registerSubmitFinalizeRecovery(preview, exchangeResult, metadata, clientOrderId, error)
+      throw new TradeExecutionError(
+        '交易所已接单，但本地订单落库失败，请到恢复任务继续处理',
+        preview,
+        undefined,
+        'exchange_submit_local_persist_failed',
+        error instanceof Error ? error.message : '本地订单落库失败',
+      )
+    }
+
+    if (metadata.confirmToken) {
+      this.markConfirmTokenCompleted(metadata.confirmToken, order.id)
+    }
+
+    if (metadata.source === 'manual') {
+      try {
+        this.recordManualRealOrderSubmittedAudit(preview, order, exchangeResult.rawMessage)
+      } catch (error) {
+        this.registerSubmitFinalizeRecovery(preview, exchangeResult, metadata, clientOrderId, error, order)
+      }
+    }
+
+    return order
   }
 
-  private buildClientOrderId(source: 'manual' | 'rule') {
-    // OKX 和 Binance 都对客户端订单号长度有限制，这里统一使用短前缀和定长随机串。
-    return `${source}_${nanoid(18)}`
+  private buildClientOrderId(source: 'manual' | 'rule', exchange: ExchangeCode) {
+    // OKX clOrdId 最大 32 字符，仅限 [A-Za-z0-9]（官方文档限制）。
+    // Binance newClientOrderId 最大 36 字符，允许 [.A-Z:/a-z0-9_-]。
+    // nanoid 默认含 `-~`，OKX 会以 51000 参数不合法拒单，统一改用纯字母数字字符集。
+    const ALPHANUMERIC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    const randomPart = customAlphabet(ALPHANUMERIC, 20)()
+    const prefix = source === 'manual' ? 'm' : 'r'
+    // OKX：prefix(1) + randomPart(20) = 21 位，≤ 32 ✅
+    // Binance：prefix(1) + randomPart(20) = 21 位，≤ 36 ✅
+    return `${prefix}${randomPart}`
   }
 
   private persistRealOrder(
@@ -405,6 +444,10 @@ export class TradeExecutionService {
       }
     }
 
+    if (tokenState.blockedAfterExchangeSubmit) {
+      throw new Error(tokenState.blockedReason ?? '上一笔真实交易已提交交易所，正在等待恢复任务处理')
+    }
+
     if (tokenState.processing) {
       throw new Error('真实交易确认正在处理中，请稍后刷新成交记录查看结果')
     }
@@ -422,6 +465,21 @@ export class TradeExecutionService {
 
     tokenState.processing = false
     tokenState.orderId = orderId
+    tokenState.blockedAfterExchangeSubmit = false
+    tokenState.blockedReason = undefined
+    tokenState.expiresAt = Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS
+    this.confirmTokenStore.set(confirmToken, tokenState)
+  }
+
+  private markConfirmTokenBlockedAfterExchangeSubmit(confirmToken: string, reason: string) {
+    const tokenState = this.confirmTokenStore.get(confirmToken)
+    if (!tokenState) {
+      return
+    }
+
+    tokenState.processing = false
+    tokenState.blockedAfterExchangeSubmit = true
+    tokenState.blockedReason = reason
     tokenState.expiresAt = Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS
     this.confirmTokenStore.set(confirmToken, tokenState)
   }
@@ -502,6 +560,55 @@ export class TradeExecutionService {
         executionPrice: preview.executionPrice,
         baseQuantity: preview.baseQuantity,
         quoteAmount: preview.quoteAmount,
+      },
+    })
+  }
+
+  /**
+   * 交易所已接单后，如果本地订单落库或补充审计失败，需要登记恢复任务。
+   * 恢复任务后续会优先重建最小订单记录，再由真实订单同步链路补齐最终状态。
+   */
+  private registerSubmitFinalizeRecovery(
+    preview: TradeOrderPreview,
+    exchangeResult: Awaited<ReturnType<ReturnType<ExchangeFactory['getAdapter']>['placeOrder']>>,
+    metadata: {
+      source: OrderRecoverySource
+      clientOrderId?: string
+      confirmToken?: string
+      triggerId?: string
+      ruleId?: string
+      rawMessage: string
+    },
+    clientOrderId: string,
+    error: unknown,
+    order?: OrderRecord,
+  ) {
+    this.orderRecoveryService.createOrRefresh({
+      identityKey: `order_submit_finalize:${preview.exchange}:${exchangeResult.exchangeOrderId}`,
+      orderId: order?.id,
+      exchangeOrderId: exchangeResult.exchangeOrderId,
+      exchange: preview.exchange,
+      source: metadata.source,
+      mode: preview.mode,
+      symbol: preview.symbol,
+      failureStage: 'order_submit_finalize',
+      lastErrorCode: 'local_persist_failed',
+      lastErrorMessage: error instanceof Error ? error.message : '本地订单落库失败',
+      payload: {
+        triggerId: metadata.triggerId,
+        ruleId: metadata.ruleId,
+        clientOrderId,
+        confirmToken: metadata.confirmToken,
+        exchangeOrderId: exchangeResult.exchangeOrderId,
+        status: exchangeResult.status,
+        rawMessage: exchangeResult.rawMessage || metadata.rawMessage,
+        acceptedAt: exchangeResult.acceptedAt,
+        symbol: preview.symbol,
+        side: preview.side,
+        orderType: preview.orderType,
+        baseQuantity: exchangeResult.baseQuantity ?? preview.baseQuantity,
+        quoteAmount: exchangeResult.quoteAmount ?? preview.quoteAmount,
+        price: exchangeResult.price ?? (preview.orderType === 'limit' ? preview.executionPrice : undefined),
       },
     })
   }

@@ -13,6 +13,7 @@ const levelMeta: Record<AuditLogLevel, { text: string; color: string }> = {
 
 const actionMeta: Record<AuditLogAction, string> = {
   'signal.created': '信号生成',
+  'signal.ingested': '外部信号接入',
   'signal.converted': '信号转换',
   'signal.duplicated': '信号重复',
   'risk.passed': '风控通过',
@@ -26,6 +27,11 @@ const actionMeta: Record<AuditLogAction, string> = {
   'order.final_validation_failed': '最终校验失败',
   'order.failed': '下单失败',
   'order.sync_failed': '同步失败',
+  'recovery.created': '恢复任务创建',
+  'recovery.retry_started': '恢复开始',
+  'recovery.retry_succeeded': '恢复成功',
+  'recovery.retry_failed': '恢复失败',
+  'recovery.manual_review_required': '转人工处理',
   'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }

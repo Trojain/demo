@@ -55,6 +55,7 @@ export function createDatabase(databasePath: string) {
       symbol TEXT NOT NULL,
       market_price TEXT NOT NULL,
       market_event_time TEXT NOT NULL DEFAULT '',
+      source_type TEXT NOT NULL DEFAULT 'price_rule',
       target_price TEXT NOT NULL,
       operator TEXT NOT NULL,
       side TEXT NOT NULL,
@@ -65,6 +66,7 @@ export function createDatabase(databasePath: string) {
       simulation_mode INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
       reason TEXT NOT NULL,
+      source_metadata_json TEXT,
       created_at TEXT NOT NULL,
       converted_at TEXT,
       FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
@@ -81,6 +83,7 @@ export function createDatabase(databasePath: string) {
       quote_exposure TEXT NOT NULL,
       market_price TEXT NOT NULL,
       items_json TEXT NOT NULL,
+      stat_date TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (signal_id) REFERENCES trading_signals(id),
       FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
@@ -214,12 +217,36 @@ export function createDatabase(databasePath: string) {
       FOREIGN KEY (account_id) REFERENCES trade_accounts(id)
     );
 
+    CREATE TABLE IF NOT EXISTS order_recovery_records (
+      id TEXT PRIMARY KEY,
+      identity_key TEXT NOT NULL,
+      order_id TEXT,
+      exchange_order_id TEXT,
+      exchange TEXT NOT NULL,
+      source TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      symbol TEXT,
+      failure_stage TEXT NOT NULL,
+      recovery_status TEXT NOT NULL,
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      max_retry_count INTEGER NOT NULL,
+      last_error_code TEXT,
+      last_error_message TEXT,
+      next_retry_at TEXT,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      resolved_at TEXT,
+      FOREIGN KEY (order_id) REFERENCES order_records(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_monitor_rules_enabled ON monitor_rules(enabled);
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_status ON trading_signals(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_rule_id ON trading_signals(rule_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_signal_id ON risk_checks(signal_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_status ON risk_checks(status);
+    CREATE INDEX IF NOT EXISTS idx_risk_checks_stat_date ON risk_checks(stat_date, status, created_at);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
@@ -229,10 +256,14 @@ export function createDatabase(databasePath: string) {
     CREATE INDEX IF NOT EXISTS idx_trade_operation_logs_account_created_at ON trade_operation_logs(account_id, created_at);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_trade_equity_snapshots_account_date ON trade_equity_snapshots(account_id, snapshot_date);
     CREATE INDEX IF NOT EXISTS idx_trade_equity_snapshots_query ON trade_equity_snapshots(account_type, exchange, snapshot_date);
+    CREATE INDEX IF NOT EXISTS idx_order_recovery_records_status_retry ON order_recovery_records(recovery_status, next_retry_at, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_order_recovery_records_order_id ON order_recovery_records(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_recovery_records_identity_key ON order_recovery_records(identity_key, updated_at);
   `);
 
   migrateMonitorRules(db);
   migrateTradingSignals(db);
+  migrateRiskChecks(db);
   migrateOrderRecords(db);
 
   return db;
@@ -264,6 +295,25 @@ function migrateTradingSignals(db: Database.Database) {
   if (!columnNames.has('market_event_time')) {
     db.prepare("ALTER TABLE trading_signals ADD COLUMN market_event_time TEXT NOT NULL DEFAULT ''").run();
     db.prepare("UPDATE trading_signals SET market_event_time = created_at WHERE market_event_time = ''").run();
+  }
+
+  if (!columnNames.has('source_type')) {
+    db.prepare("ALTER TABLE trading_signals ADD COLUMN source_type TEXT NOT NULL DEFAULT 'price_rule'").run();
+  }
+
+  if (!columnNames.has('source_metadata_json')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN source_metadata_json TEXT').run();
+  }
+}
+
+function migrateRiskChecks(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(risk_checks)').all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  // 风控日维度统计需要稳定的本地日期字段，避免每次聚合都依赖 created_at 字符串裁剪。
+  if (!columnNames.has('stat_date')) {
+    db.prepare("ALTER TABLE risk_checks ADD COLUMN stat_date TEXT NOT NULL DEFAULT ''").run();
+    db.prepare("UPDATE risk_checks SET stat_date = date(created_at, 'localtime') WHERE stat_date = ''").run();
   }
 }
 

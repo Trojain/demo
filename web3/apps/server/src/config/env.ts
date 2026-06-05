@@ -38,6 +38,10 @@ const envSchema = z.object({
   REAL_ORDER_SYNC_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
   REAL_ORDER_SYNC_LOOKBACK_MINUTES: z.coerce.number().int().min(1).default(240),
   REAL_ORDER_SYNC_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+  ORDER_RECOVERY_INTERVAL_MS: z.coerce.number().int().min(1000).default(15_000),
+  ORDER_RECOVERY_MAX_RETRY_COUNT: z.coerce.number().int().min(1).max(20).default(3),
+  ORDER_RECOVERY_BATCH_SIZE: z.coerce.number().int().min(1).max(200).default(20),
+  ORDER_RECOVERY_RETRY_DELAY_MS: z.coerce.number().int().min(1000).default(30_000),
   RISK_MAX_QUOTE_AMOUNT: decimalString.default('1000'),
   RISK_MAX_MARKET_AGE_MS: z.coerce.number().int().min(1000).default(10_000),
   RISK_DAILY_MAX_TRIGGER_COUNT: z.coerce.number().int().min(1).default(20),
@@ -93,6 +97,16 @@ export const appConfig = {
     lookbackMinutes: parsedEnv.REAL_ORDER_SYNC_LOOKBACK_MINUTES,
     /** 单次同步最多处理多少条真实订单，避免启动后历史数据一次性打满私有接口 */
     batchSize: parsedEnv.REAL_ORDER_SYNC_BATCH_SIZE,
+  },
+  orderRecovery: {
+    /** 恢复任务自动扫描间隔，单位毫秒，建议与真实订单同步轮询保持同量级。 */
+    intervalMs: parsedEnv.ORDER_RECOVERY_INTERVAL_MS,
+    /** 单条恢复任务自动尝试的最大次数，超过后转人工处理。 */
+    maxRetryCount: parsedEnv.ORDER_RECOVERY_MAX_RETRY_COUNT,
+    /** 单次自动恢复最多处理多少条任务，避免异常堆积时瞬间打满交易所接口。 */
+    batchSize: parsedEnv.ORDER_RECOVERY_BATCH_SIZE,
+    /** 自动恢复失败后的下一次尝试间隔，单位毫秒。 */
+    retryDelayMs: parsedEnv.ORDER_RECOVERY_RETRY_DELAY_MS,
   },
   risk: {
     /** 单笔最大计价金额，例如 USDT 金额，超过后交易信号会被风控拒绝 */

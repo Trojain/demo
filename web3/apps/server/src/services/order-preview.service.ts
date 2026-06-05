@@ -8,6 +8,7 @@ import type { MarketService } from './market.service.js'
 import type { RiskConfigService } from './risk-config.service.js'
 import type { TradeExecutionService } from './trade-execution.service.js'
 import { RuleValidationError, type TradingRuleService } from './trading-rule.service.js'
+import { formatLocalDate } from '../utils/local-date.js'
 
 interface PreviewContext {
   /** 待预览的触发事件 */
@@ -164,9 +165,7 @@ export class OrderPreviewService {
     const maxQuoteAmount = new Decimal(riskConfig.maxQuoteAmount)
     const marketAgeMs = Date.now() - new Date(context.executionEventTime).getTime()
     const marketAgeValid = Number.isFinite(marketAgeMs) && marketAgeMs >= 0
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const dailyStats = this.riskCheckRepository.getPassedStatsSince(todayStart.toISOString())
+    const dailyStats = this.riskCheckRepository.getPassedStatsByDate(formatLocalDate(new Date()))
     const nextDailyQuoteAmount = new Decimal(dailyStats.quoteAmount).plus(context.estimatedQuoteAmount)
 
     return [

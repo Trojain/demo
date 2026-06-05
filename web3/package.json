@@ -9,6 +9,12 @@
     "dev:server": "pnpm --filter @web3/server dev",
     "test:market-price": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/market-price-regression.test.ts",
     "test:market-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/market-service-regression.test.ts",
+    "test:order-recovery": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/order-recovery-service.test.ts",
+    "test:order-recovery-routes": "pnpm --filter @web3/server exec node --import tsx --test ./tests/order-recovery-routes.test.ts",
+    "test:order-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/order-service.test.ts",
+    "test:signal-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/signal-service.test.ts",
+    "test:risk-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/risk-service.test.ts",
+    "test:signal-risk-routes": "pnpm --filter @web3/server exec node --import tsx --test ./tests/signal-risk-routes.test.ts",
     "typecheck": "pnpm --filter @web3/server typecheck && pnpm --filter @web3/web typecheck",
     "lint": "pnpm --filter @web3/server lint && pnpm --filter @web3/web lint"
   },

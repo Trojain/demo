@@ -1,8 +1,19 @@
 import { useMemo, useRef, useState } from 'react'
-import { App as AntApp, Button, Drawer, Empty, Popconfirm, Space, Tag, Timeline, Typography } from 'antd'
-import { PageContainer, ProDescriptions, ProTable, type ActionType, type ProColumns, type ProDescriptionsItemProps } from '@ant-design/pro-components'
-import { ReloadOutlined } from '@ant-design/icons'
-import { tradingApi } from '../api/trading'
+import { App as AntApp, Button, Drawer, Empty, Popconfirm, Space, Tag, Timeline, Tooltip, Typography } from 'antd'
+import {
+  DrawerForm,
+  PageContainer,
+  ProDescriptions,
+  ProFormSelect,
+  ProFormText,
+  ProFormTextArea,
+  ProTable,
+  type ActionType,
+  type ProColumns,
+  type ProDescriptionsItemProps
+} from '@ant-design/pro-components'
+import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { tradingApi, type CreateExternalSignalPayload } from '../api/trading'
 import type { RiskCheck, RiskCheckStatus, SignalStatus, TradingSignal } from '../types'
 import { toTableRequestResult } from '../utils/proTable'
 
@@ -38,6 +49,18 @@ function parseRiskItems(itemsJson?: string): RiskItem[] {
   } catch {
     return []
   }
+}
+
+function parseMetadataJson(value?: string) {
+  if (!value?.trim()) {
+    return undefined
+  }
+
+  return JSON.parse(value) as Record<string, unknown>
+}
+
+type ExternalSignalFormValues = CreateExternalSignalPayload & {
+  metadataJson?: string
 }
 
 export function SignalsPage() {
@@ -132,6 +155,12 @@ export function SignalsPage() {
         render: (_, row) => <Tag color={statusMeta[row.status].color}>{statusMeta[row.status].text}</Tag>,
       },
       {
+        title: '来源',
+        dataIndex: 'sourceType',
+        width: 120,
+        render: (_, row) => <Tag color={row.sourceType === 'external_input' ? 'purple' : 'blue'}>{row.sourceType === 'external_input' ? '外部信号' : '价格规则'}</Tag>,
+      },
+      {
         title: '方向',
         dataIndex: 'side',
         render: (_, row) => <Tag color={row.side === 'buy' ? 'success' : 'warning'}>{row.side === 'buy' ? '买入' : '卖出'}</Tag>,
@@ -163,6 +192,16 @@ export function SignalsPage() {
         title: '原因',
         dataIndex: 'reason',
         ellipsis: true,
+      },
+      {
+        title: '来源上下文',
+        dataIndex: 'sourceMetadataJson',
+        width: 100,
+        render: (_, row) => (
+          <Tooltip title={<pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{row.sourceMetadataJson ?? '-'}</pre>}>
+            <Typography.Link disabled={!row.sourceMetadataJson}>查看</Typography.Link>
+          </Tooltip>
+        ),
       },
       {
         title: '关联规则',
@@ -220,6 +259,93 @@ export function SignalsPage() {
         onReset={() => actionRef.current?.reload()}
         pagination={{ pageSize: 12 }}
         toolBarRender={() => [
+          <DrawerForm<ExternalSignalFormValues>
+            key='external-signal'
+            title='接入外部信号'
+            width={560}
+            trigger={
+              <Button type='primary' icon={<PlusOutlined />}>
+                外部信号
+              </Button>
+            }
+            drawerProps={{ destroyOnHidden: true }}
+            initialValues={{
+              sourceLabel: 'manual',
+            }}
+            onFinish={async values => {
+              try {
+                const result = await tradingApi.createExternalSignal({
+                  ruleId: values.ruleId,
+                  marketPrice: values.marketPrice,
+                  marketEventTime: values.marketEventTime || undefined,
+                  reason: values.reason,
+                  sourceKey: values.sourceKey || undefined,
+                  sourceLabel: values.sourceLabel || undefined,
+                  metadata: parseMetadataJson(values.metadataJson),
+                })
+                if (result.signal && result.trigger) {
+                  message.success('外部信号已写入并已生成触发事件')
+                } else if (result.signal) {
+                  message.success('外部信号已写入')
+                } else {
+                  message.warning('外部信号已被重复拦截或在冷却期内跳过')
+                }
+                actionRef.current?.reload()
+                return true
+              } catch (error) {
+                message.error(error instanceof Error ? error.message : '外部信号接入失败')
+                return false
+              }
+            }}
+          >
+            <ProFormSelect
+              name='ruleId'
+              label='关联规则'
+              rules={[{ required: true, message: '请选择关联规则' }]}
+              request={async () => {
+                const rules = await tradingApi.getRules()
+                return rules
+                  .filter(rule => rule.enabled)
+                  .map(rule => ({
+                    label: `${rule.symbol} | ${rule.exchange.toUpperCase()} | ${rule.side === 'buy' ? '买入' : '卖出'} | ${rule.simulationMode ? '模拟' : '真实'}`,
+                    value: rule.id,
+                  }))
+              }}
+              showSearch
+            />
+            <ProFormText
+              name='marketPrice'
+              label='市场价格'
+              rules={[{ required: true, message: '请输入市场价格' }]}
+              fieldProps={{ suffix: 'USDT' }}
+              tooltip='外部信号对应的当前市场价格，风控和后续预检会基于该值继续校验'
+            />
+            <ProFormText
+              name='marketEventTime'
+              label='行情事件时间'
+              tooltip='可选，格式使用 ISO 时间；不填时由服务端回退当前时间'
+            />
+            <ProFormText
+              name='sourceKey'
+              label='来源键'
+              tooltip='建议填写上游系统的稳定唯一值，便于排查与幂等控制'
+            />
+            <ProFormText
+              name='sourceLabel'
+              label='来源标签'
+              tooltip='例如 webhook、research、manual'
+            />
+            <ProFormTextArea
+              name='reason'
+              label='信号原因'
+              rules={[{ required: true, message: '请输入信号原因' }]}
+            />
+            <ProFormTextArea
+              name='metadataJson'
+              label='附加上下文 JSON'
+              tooltip='可选，填写 JSON 对象，后续会进入信号详情与审计日志'
+            />
+          </DrawerForm>,
           <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,

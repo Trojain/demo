@@ -1,9 +1,10 @@
 import { Decimal } from 'decimal.js';
 import { nanoid } from 'nanoid';
-import type { MonitorRule, RiskCheck, TradingSignal } from '../types/domain.js';
+import type { DailyRiskStats, MonitorRule, RiskCheck, TradingSignal } from '../types/domain.js';
 import type { RiskCheckRepository } from '../repositories/risk-check.repository.js';
 import type { AuditLogService } from './audit-log.service.js';
 import type { RiskConfigService } from './risk-config.service.js';
+import { formatLocalDate, shiftLocalDate } from '../utils/local-date.js';
 
 interface RiskServiceOptions {
   /** 是否允许真实交易，关闭时真实交易信号会被拒绝 */
@@ -42,9 +43,8 @@ export class RiskService {
     const marketAgeMs = Date.now() - new Date(input.signal.marketEventTime).getTime();
     const marketAgeValid = Number.isFinite(marketAgeMs) && marketAgeMs >= 0;
     const maxQuoteAmount = new Decimal(config.maxQuoteAmount);
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const dailyStats = this.riskCheckRepository.getPassedStatsSince(todayStart.toISOString());
+    const statDate = formatLocalDate(new Date());
+    const dailyStats = this.riskCheckRepository.getPassedStatsByDate(statDate);
     const nextDailyQuoteAmount = new Decimal(dailyStats.quoteAmount).plus(quoteExposure);
 
     const items: RiskItem[] = [
@@ -102,6 +102,7 @@ export class RiskService {
       quoteExposure: quoteExposure.toFixed(),
       marketPrice: input.signal.marketPrice,
       itemsJson: JSON.stringify(items),
+      statDate,
       createdAt: new Date().toISOString()
     });
 
@@ -122,6 +123,35 @@ export class RiskService {
     });
 
     return check;
+  }
+
+  listDailyStats(days: number): DailyRiskStats[] {
+    const today = formatLocalDate(new Date());
+    const fromDate = shiftLocalDate(today, -(days - 1));
+    const rows = this.riskCheckRepository.listDailyStats({ fromDate, toDate: today });
+    const rowMap = new Map(rows.map(item => [item.statDate, item]));
+    const items: DailyRiskStats[] = [];
+
+    for (let offset = 0; offset < days; offset += 1) {
+      const statDate = shiftLocalDate(today, -offset);
+      items.push(
+        rowMap.get(statDate) ?? {
+          statDate,
+          passedCount: 0,
+          passedQuoteAmount: '0',
+          rejectedCount: 0,
+          rejectedQuoteAmount: '0',
+          totalCount: 0,
+          totalQuoteAmount: '0',
+        },
+      );
+    }
+
+    return items;
+  }
+
+  getTodayStats() {
+    return this.listDailyStats(1)[0];
   }
 
   private calculateQuoteExposure(signal: TradingSignal) {
