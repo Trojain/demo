@@ -301,6 +301,56 @@ export class TradeAccountRepository {
       .map(row => mapTradeFill(row as TradeFillRow))
   }
 
+  /**
+   * 按本地日期分页查询成交明细。
+   * 用于日报明细抽屉，保证汇总和明细都走同一归档口径。
+   */
+  listFillsPage(input: {
+    accountType?: TradeAccountType
+    exchange?: ExchangeCode
+    localDate?: string
+    page: number
+    pageSize: number
+  }): {
+    items: TradeFill[]
+    total: number
+    page: number
+    pageSize: number
+  } {
+    const conditions: string[] = []
+    const params: Array<string | number> = []
+    if (input.accountType) {
+      conditions.push('account_type = ?')
+      params.push(input.accountType)
+    }
+    if (input.exchange) {
+      conditions.push('exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.localDate) {
+      conditions.push(`date(created_at, 'localtime') = ?`)
+      params.push(input.localDate)
+    }
+
+    const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const countRow = this.db
+      .prepare(`SELECT COUNT(*) AS count FROM trade_fills ${whereSql}`)
+      .get(...params) as { count: number }
+
+    const offset = (input.page - 1) * input.pageSize
+    const rows = this.db
+      .prepare(`SELECT * FROM trade_fills ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+      .all(...params, input.pageSize, offset)
+      .map(row => mapTradeFill(row as TradeFillRow))
+
+    return {
+      items: rows,
+      total: countRow.count,
+      page: input.page,
+      pageSize: input.pageSize,
+    }
+  }
+
   listOperationLogs(accountType: TradeAccountType | undefined, exchange: ExchangeCode | undefined, limit: number): TradeOperationLog[] {
     const conditions: string[] = []
     const params: Array<string | number> = []
@@ -421,6 +471,33 @@ export class TradeAccountRepository {
       buyCount: row.buy_count,
       sellCount: row.sell_count,
     }))
+  }
+
+  listFillsForAnalysis(input: {
+    fromDate: string
+    toDate: string
+    exchange?: string
+    mode?: 'simulation' | 'real'
+  }): TradeFill[] {
+    const conditions = [
+      `date(created_at, 'localtime') >= ?`,
+      `date(created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.exchange) {
+      conditions.push('exchange = ?')
+      params.push(input.exchange)
+    }
+    if (input.mode !== undefined) {
+      conditions.push('account_type = ?')
+      params.push(input.mode)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return this.db
+      .prepare(`SELECT * FROM trade_fills ${where} ORDER BY created_at ASC`)
+      .all(...params)
+      .map(row => mapTradeFill(row as TradeFillRow))
   }
 
   findFillByOrderId(orderId: string): TradeFill | undefined {

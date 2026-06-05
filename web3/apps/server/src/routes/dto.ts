@@ -186,6 +186,19 @@ export const listTradeRecordsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 })
 
+export const listTradeFillPageQuerySchema = z.object({
+  /** 下单模式，不传时返回全部模式数据 */
+  mode: z.enum(['simulation', 'real']).optional(),
+  /** 交易所编码，不传时返回全部交易所数据 */
+  exchange: z.enum(['okx', 'binance']).optional(),
+  /** 本地归档日期，格式 YYYY-MM-DD */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** 当前页码，从 1 开始 */
+  page: z.coerce.number().int().min(1).default(1),
+  /** 分页大小 */
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
 export const tradeOrderPreviewSchema = z
   .object({
     /** 下单模式，当前真实交易仍受总开关保护 */
@@ -258,3 +271,11 @@ export const listDailyReportQuerySchema = z.object({
   mode: z.enum(['simulation', 'real']).optional(),
 })
 
+export const listQualityAnalysisQuerySchema = z.object({
+  /** 查询天数，默认 30 天，最大限制 365 天，防范性能抖动 */
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  /** 交易所编码，不传时返回全部交易所数据 */
+  exchange: z.enum(['okx', 'binance']).optional(),
+  /** 下单模式，不传时返回模拟和真实数据合并结果 */
+  mode: z.enum(['simulation', 'real']).optional(),
+})

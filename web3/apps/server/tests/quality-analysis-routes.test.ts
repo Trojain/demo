@@ -5,8 +5,7 @@ import { registerApiRoutes } from '../src/routes/api.routes.ts'
 import type { ApiRouteDeps } from '../src/routes/api.routes.ts'
 
 function createRouteDeps(overrides?: {
-  createExternalSignal?: ApiRouteDeps['signalService']['createExternalSignal']
-  listDailyStats?: ApiRouteDeps['riskService']['listDailyStats']
+  getQualityAnalysis?: ApiRouteDeps['qualityAnalysisService']['getQualityAnalysis']
 }): ApiRouteDeps {
   return {
     auditLogRepository: {
@@ -17,6 +16,29 @@ function createRouteDeps(overrides?: {
       list: () => [],
       listPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
       record: () => undefined,
+    } as never,
+    dailyReportService: {
+      getDailyReport: () => [],
+    } as never,
+    qualityAnalysisService: {
+      getQualityAnalysis: overrides?.getQualityAnalysis ?? (() => ({
+        summary: {
+          totalOrderCount: 0,
+          filledOrderCount: 0,
+          failedOrderCount: 0,
+          cancelledOrderCount: 0,
+          fillRate: 0,
+          avgTriggerLatencyMs: 0,
+          avgExecutionLatencyMs: 0,
+          avgSlippagePercent: 0,
+          winRate: 0,
+          profitLossRatio: 0,
+        },
+        statusDistribution: [],
+        topSymbols: [],
+        dailyTrend: [],
+        failedReasons: [],
+      } as any)),
     } as never,
     exchangeFactory: {
       listExchanges: () => [],
@@ -57,7 +79,7 @@ function createRouteDeps(overrides?: {
       update: () => ({}),
     } as never,
     riskService: {
-      listDailyStats: overrides?.listDailyStats ?? (() => []),
+      listDailyStats: () => [],
     } as never,
     ruleRepository: {
       countEnabled: () => 0,
@@ -75,7 +97,7 @@ function createRouteDeps(overrides?: {
     } as never,
     signalService: {
       list: () => [],
-      createExternalSignal: overrides?.createExternalSignal ?? (() => ({})),
+      createExternalSignal: () => ({}),
     } as never,
     tradeAccountService: {
       listAccounts: () => [],
@@ -107,94 +129,72 @@ function createRouteDeps(overrides?: {
 }
 
 async function createTestApp(overrides?: {
-  createExternalSignal?: ApiRouteDeps['signalService']['createExternalSignal']
-  listDailyStats?: ApiRouteDeps['riskService']['listDailyStats']
+  getQualityAnalysis?: ApiRouteDeps['qualityAnalysisService']['getQualityAnalysis']
 }) {
   const app = Fastify()
   await registerApiRoutes(app, createRouteDeps(overrides))
   return app
 }
 
-test('POST /api/signals/external 可接收外部信号', async () => {
+test('GET /api/trade/quality-analysis 返回执行质量分析报表', async () => {
   const app = await createTestApp({
-    createExternalSignal: input => ({
-      signal: {
-        id: 'signal-1',
-        ruleId: input.ruleId,
-        exchange: 'okx',
-        symbol: 'BTC-USDT',
-        marketPrice: input.marketPrice,
-        marketEventTime: input.marketEventTime ?? '2026-06-04T10:00:00.000Z',
-        sourceType: 'external_input',
-        targetPrice: '70000',
-        operator: 'gte',
-        side: 'buy',
-        orderType: 'market',
-        quoteAmount: '50',
-        simulationMode: true,
-        status: 'pending',
-        reason: input.reason,
-        createdAt: '2026-06-04T10:00:01.000Z',
-      },
-      trigger: {
-        id: 'trigger-1',
-        ruleId: input.ruleId,
-        exchange: 'okx',
-        symbol: 'BTC-USDT',
-        marketPrice: input.marketPrice,
-        targetPrice: '70000',
-        status: 'pending',
-        createdAt: '2026-06-04T10:00:01.000Z',
-      },
-    }),
-  })
-
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/signals/external',
-    payload: {
-      ruleId: 'rule-1',
-      marketPrice: '70200',
-      reason: 'webhook signal',
-      sourceLabel: 'webhook',
-    },
-  })
-
-  assert.equal(response.statusCode, 200)
-  const payload = response.json() as { signal?: { sourceType: string }; trigger?: { id: string } }
-  assert.equal(payload.signal?.sourceType, 'external_input')
-  assert.equal(payload.trigger?.id, 'trigger-1')
-
-  await app.close()
-})
-
-test('GET /api/risk-stats/daily 返回日维度风控统计', async () => {
-  const app = await createTestApp({
-    listDailyStats: () => [
-      {
-        statDate: '2026-06-04',
-        passedCount: 3,
-        passedQuoteAmount: '150',
-        rejectedCount: 1,
-        rejectedQuoteAmount: '20',
-        totalCount: 4,
-        totalQuoteAmount: '170',
-      },
-    ],
+    getQualityAnalysis: (input) => {
+      assert.equal(input.days, 15)
+      assert.equal(input.exchange, 'okx')
+      assert.equal(input.mode, 'real')
+      return {
+        summary: {
+          totalOrderCount: 10,
+          filledOrderCount: 8,
+          failedOrderCount: 1,
+          cancelledOrderCount: 1,
+          fillRate: 0.8,
+          avgTriggerLatencyMs: 150,
+          avgExecutionLatencyMs: 450,
+          avgSlippagePercent: 0.2,
+          winRate: 0.75,
+          profitLossRatio: 2.5,
+        },
+        statusDistribution: [
+          { name: '已成交', value: 8 },
+        ],
+        topSymbols: [],
+        dailyTrend: [],
+        failedReasons: [],
+      }
+    }
   })
 
   const response = await app.inject({
     method: 'GET',
-    url: '/api/risk-stats/daily?days=7',
+    url: '/api/trade/quality-analysis?days=15&exchange=okx&mode=real',
   })
 
   assert.equal(response.statusCode, 200)
-  const payload = response.json() as {
-    today: { passedCount: number }
-    items: Array<{ statDate: string }>
-  }
-  assert.equal(payload.today?.passedCount, 3)
-  assert.equal(payload.items[0]?.statDate, '2026-06-04')
+  const payload = response.json()
+  assert.equal(payload.summary?.totalOrderCount, 10)
+  assert.equal(payload.summary?.winRate, 0.75)
+  assert.equal(payload.statusDistribution[0]?.name, '已成交')
+
+  await app.close()
+})
+
+test('GET /api/trade/quality-analysis 输入校验失败时返回 400', async () => {
+  const app = await createTestApp()
+
+  // 超过最大天数 365
+  const response1 = await app.inject({
+    method: 'GET',
+    url: '/api/trade/quality-analysis?days=400',
+  })
+  assert.equal(response1.statusCode, 400)
+
+  // 非法的 exchange
+  const response2 = await app.inject({
+    method: 'GET',
+    url: '/api/trade/quality-analysis?exchange=other',
+  })
+  assert.equal(response2.statusCode, 400)
 
   await app.close()
 })

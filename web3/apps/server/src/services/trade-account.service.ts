@@ -33,6 +33,22 @@ export class TradeAccountService {
     return this.tradeAccountRepository.listFills(mode, exchange, limit)
   }
 
+  listFillsPage(input: {
+    mode?: TradeAccountType
+    exchange?: ExchangeCode
+    localDate?: string
+    page: number
+    pageSize: number
+  }) {
+    return this.tradeAccountRepository.listFillsPage({
+      accountType: input.mode,
+      exchange: input.exchange,
+      localDate: input.localDate,
+      page: input.page,
+      pageSize: input.pageSize,
+    })
+  }
+
   listOperationLogs(mode: TradeAccountType | undefined, exchange: ExchangeCode | undefined, limit: number): TradeOperationLog[] {
     return this.tradeAccountRepository.listOperationLogs(mode, exchange, limit)
   }

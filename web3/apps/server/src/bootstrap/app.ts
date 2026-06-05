@@ -31,6 +31,7 @@ import { TradeAccountService } from '../services/trade-account.service.js';
 import { TradeExecutionService } from '../services/trade-execution.service.js';
 import { TradingRuleService } from '../services/trading-rule.service.js';
 import { DailyReportService } from '../services/daily-report.service.js';
+import { QualityAnalysisService } from '../services/quality-analysis.service.js';
 
 export interface ServerRuntime {
   app: FastifyInstance;
@@ -120,11 +121,13 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const privateOrderStreamService = new PrivateOrderStreamService(exchangeFactory, realOrderSyncService, auditLogService, orderRecoveryService);
   marketService.setPrivateTradeStreamHealthProvider(privateOrderStreamService);
   const dailyReportService = new DailyReportService(orderRepository, tradeAccountRepository, signalRepository, riskCheckRepository);
-
+  const qualityAnalysisService = new QualityAnalysisService(orderRepository, tradeAccountRepository, auditLogRepository);
+ 
   await registerApiRoutes(app, {
     auditLogRepository,
     auditLogService,
     dailyReportService,
+    qualityAnalysisService,
     exchangeFactory,
     marketService,
     orderRecoveryService,

@@ -3,6 +3,12 @@ import type { OrderRepository } from '../repositories/order.repository.js'
 import type { TradeAccountRepository } from '../repositories/trade-account.repository.js'
 import type { SignalRepository } from '../repositories/signal.repository.js'
 import type { RiskCheckRepository } from '../repositories/risk-check.repository.js'
+import { formatLocalDate, shiftLocalDate } from '../utils/local-date.js'
+
+type TradeDailyReportWithCancelled = TradeDailyReport & {
+  /** 当日已取消订单数。 */
+  cancelledOrderCount: number
+}
 
 export class DailyReportService {
   constructor(
@@ -22,8 +28,8 @@ export class DailyReportService {
     mode?: 'simulation' | 'real'
   }): TradeDailyReport[] {
     const { days, exchange, mode } = input
-    const today = this.formatLocalDate(new Date())
-    const fromDate = this.shiftDate(today, -(days - 1))
+    const today = formatLocalDate(new Date())
+    const fromDate = shiftLocalDate(today, -(days - 1))
 
     // 从各数据源批量查询日聚合，结果中只有有数据的日期
     const orderRows = this.orderRepository.listDailySummary({ fromDate, toDate: today, exchange, mode })
@@ -40,17 +46,18 @@ export class DailyReportService {
 
     // 补全 days 天（含无数据日期），按日期倒序生成
     return Array.from({ length: days }, (_, index) => {
-      const date = this.shiftDate(today, -(index))
-      const order = orderByDate.get(date)
-      const fill = fillByDate.get(date)
-      const signal = signalByDate.get(date)
-      const risk = riskByDate.get(date)
+      const statDate = shiftLocalDate(today, -index)
+      const order = orderByDate.get(statDate)
+      const fill = fillByDate.get(statDate)
+      const signal = signalByDate.get(statDate)
+      const risk = riskByDate.get(statDate)
 
       return {
-        date,
+        date: statDate,
         orderCount: order?.orderCount ?? 0,
         filledOrderCount: order?.filledOrderCount ?? 0,
         failedOrderCount: order?.failedOrderCount ?? 0,
+        cancelledOrderCount: order?.cancelledOrderCount ?? 0,
         totalQuoteAmount: fill?.totalQuoteAmount ?? '0',
         totalFeeAmount: fill?.totalFeeAmount ?? '0',
         totalRealizedPnl: fill?.totalRealizedPnl ?? '0',
@@ -59,21 +66,7 @@ export class DailyReportService {
         signalCount: signal?.signalCount ?? 0,
         riskPassCount: risk?.passedCount ?? 0,
         riskRejectCount: risk?.rejectedCount ?? 0,
-      }
-    })
-  }
-
-  private formatLocalDate(date: Date): string {
-    const year = date.getFullYear()
-    const month = `${date.getMonth() + 1}`.padStart(2, '0')
-    const day = `${date.getDate()}`.padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  private shiftDate(dateText: string, offsetDays: number): string {
-    const [year, month, day] = dateText.split('-').map(Number)
-    const date = new Date(year, month - 1, day)
-    date.setDate(date.getDate() + offsetDays)
-    return this.formatLocalDate(date)
+      } satisfies TradeDailyReportWithCancelled
+    }) as TradeDailyReport[]
   }
 }

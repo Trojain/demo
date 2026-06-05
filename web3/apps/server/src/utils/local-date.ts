@@ -17,3 +17,12 @@ export function shiftLocalDate(date: string, offsetDays: number) {
   current.setDate(current.getDate() + offsetDays)
   return formatLocalDate(current)
 }
+
+/**
+ * 将 ISO 时间或 Date 对象转换为服务端本地日期字符串。
+ * 用于保证日报聚合、趋势图和明细查询都走同一归档口径。
+ */
+export function toLocalDateString(input: string | Date) {
+  const value = input instanceof Date ? input : new Date(input)
+  return formatLocalDate(value)
+}

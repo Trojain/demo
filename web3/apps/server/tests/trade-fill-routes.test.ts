@@ -5,8 +5,7 @@ import { registerApiRoutes } from '../src/routes/api.routes.ts'
 import type { ApiRouteDeps } from '../src/routes/api.routes.ts'
 
 function createRouteDeps(overrides?: {
-  createExternalSignal?: ApiRouteDeps['signalService']['createExternalSignal']
-  listDailyStats?: ApiRouteDeps['riskService']['listDailyStats']
+  listFillsPage?: ApiRouteDeps['tradeAccountService']['listFillsPage']
 }): ApiRouteDeps {
   return {
     auditLogRepository: {
@@ -17,6 +16,29 @@ function createRouteDeps(overrides?: {
       list: () => [],
       listPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
       record: () => undefined,
+    } as never,
+    dailyReportService: {
+      getDailyReport: () => [],
+    } as never,
+    qualityAnalysisService: {
+      getQualityAnalysis: () => ({
+        summary: {
+          totalOrderCount: 0,
+          filledOrderCount: 0,
+          failedOrderCount: 0,
+          cancelledOrderCount: 0,
+          fillRate: 0,
+          avgTriggerLatencyMs: 0,
+          avgExecutionLatencyMs: 0,
+          avgSlippagePercent: 0,
+          winRate: 0,
+          profitLossRatio: 0,
+        },
+        statusDistribution: [],
+        topSymbols: [],
+        dailyTrend: [],
+        failedReasons: [],
+      }),
     } as never,
     exchangeFactory: {
       listExchanges: () => [],
@@ -57,7 +79,7 @@ function createRouteDeps(overrides?: {
       update: () => ({}),
     } as never,
     riskService: {
-      listDailyStats: overrides?.listDailyStats ?? (() => []),
+      listDailyStats: () => [],
     } as never,
     ruleRepository: {
       countEnabled: () => 0,
@@ -75,13 +97,13 @@ function createRouteDeps(overrides?: {
     } as never,
     signalService: {
       list: () => [],
-      createExternalSignal: overrides?.createExternalSignal ?? (() => ({})),
+      createExternalSignal: () => ({}),
     } as never,
     tradeAccountService: {
       listAccounts: () => [],
       listPositions: () => [],
       listFills: () => [],
-      listFillsPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
+      listFillsPage: overrides?.listFillsPage ?? (() => ({ items: [], total: 0, page: 1, pageSize: 20 })),
       listOperationLogs: () => [],
     } as never,
     tradeExecutionService: {
@@ -107,94 +129,53 @@ function createRouteDeps(overrides?: {
 }
 
 async function createTestApp(overrides?: {
-  createExternalSignal?: ApiRouteDeps['signalService']['createExternalSignal']
-  listDailyStats?: ApiRouteDeps['riskService']['listDailyStats']
+  listFillsPage?: ApiRouteDeps['tradeAccountService']['listFillsPage']
 }) {
   const app = Fastify()
   await registerApiRoutes(app, createRouteDeps(overrides))
   return app
 }
 
-test('POST /api/signals/external 可接收外部信号', async () => {
+test('GET /api/trade/fills/page 应按日期和分页参数转发到服务层', async () => {
   const app = await createTestApp({
-    createExternalSignal: input => ({
-      signal: {
-        id: 'signal-1',
-        ruleId: input.ruleId,
+    listFillsPage: input => {
+      assert.deepEqual(input, {
+        mode: 'real',
         exchange: 'okx',
-        symbol: 'BTC-USDT',
-        marketPrice: input.marketPrice,
-        marketEventTime: input.marketEventTime ?? '2026-06-04T10:00:00.000Z',
-        sourceType: 'external_input',
-        targetPrice: '70000',
-        operator: 'gte',
-        side: 'buy',
-        orderType: 'market',
-        quoteAmount: '50',
-        simulationMode: true,
-        status: 'pending',
-        reason: input.reason,
-        createdAt: '2026-06-04T10:00:01.000Z',
-      },
-      trigger: {
-        id: 'trigger-1',
-        ruleId: input.ruleId,
-        exchange: 'okx',
-        symbol: 'BTC-USDT',
-        marketPrice: input.marketPrice,
-        targetPrice: '70000',
-        status: 'pending',
-        createdAt: '2026-06-04T10:00:01.000Z',
-      },
-    }),
-  })
-
-  const response = await app.inject({
-    method: 'POST',
-    url: '/api/signals/external',
-    payload: {
-      ruleId: 'rule-1',
-      marketPrice: '70200',
-      reason: 'webhook signal',
-      sourceLabel: 'webhook',
+        localDate: '2026-06-05',
+        page: 2,
+        pageSize: 15,
+      })
+      return {
+        items: [],
+        total: 0,
+        page: input.page,
+        pageSize: input.pageSize,
+      }
     },
-  })
-
-  assert.equal(response.statusCode, 200)
-  const payload = response.json() as { signal?: { sourceType: string }; trigger?: { id: string } }
-  assert.equal(payload.signal?.sourceType, 'external_input')
-  assert.equal(payload.trigger?.id, 'trigger-1')
-
-  await app.close()
-})
-
-test('GET /api/risk-stats/daily 返回日维度风控统计', async () => {
-  const app = await createTestApp({
-    listDailyStats: () => [
-      {
-        statDate: '2026-06-04',
-        passedCount: 3,
-        passedQuoteAmount: '150',
-        rejectedCount: 1,
-        rejectedQuoteAmount: '20',
-        totalCount: 4,
-        totalQuoteAmount: '170',
-      },
-    ],
   })
 
   const response = await app.inject({
     method: 'GET',
-    url: '/api/risk-stats/daily?days=7',
+    url: '/api/trade/fills/page?mode=real&exchange=okx&date=2026-06-05&page=2&pageSize=15',
   })
 
   assert.equal(response.statusCode, 200)
-  const payload = response.json() as {
-    today: { passedCount: number }
-    items: Array<{ statDate: string }>
-  }
-  assert.equal(payload.today?.passedCount, 3)
-  assert.equal(payload.items[0]?.statDate, '2026-06-04')
+  const payload = response.json()
+  assert.equal(payload.page, 2)
+  assert.equal(payload.pageSize, 15)
 
+  await app.close()
+})
+
+test('GET /api/trade/fills/page 参数不合法时返回 400', async () => {
+  const app = await createTestApp()
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/trade/fills/page?date=20260605&page=0',
+  })
+
+  assert.equal(response.statusCode, 400)
   await app.close()
 })

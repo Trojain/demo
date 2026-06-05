@@ -2048,6 +2048,32 @@ pnpm --filter @web3/web typecheck
 pnpm lint
 ```
 
+## v0.5.3.1  2026-06-05
+
+### 已完成
+
+- 修复执行质量分析里取消单与失败单重复计数的问题，状态分布现在分别统计已成交、失败/拒绝、已取消。
+- 执行质量日趋势改为按服务端本地日期归档，不再使用 UTC 时间前缀分桶。
+- 交易日报新增服务端按日期分页查询成交明细接口，日报明细 Drawer 不再依赖“先取最近 500 条再前端过滤”的临时逻辑。
+- 日报聚合订单统计补充 `cancelledOrderCount`，前端日报卡片和明细摘要同步展示取消订单数。
+
+### 已确认决策
+
+- 日报汇总、趋势分析、风控日统计和成交明细必须统一使用服务端本地日期口径，禁止前端再用 ISO UTC 前缀自行拆桶。
+- 取消订单独立统计，失败/拒绝指标只覆盖 `failed` 与 `rejected`，避免执行质量分析重复计数。
+- 明细查询必须下沉到服务端分页接口，避免高成交日出现明细截断，保证数据归档闭环。
+
+### 验证记录
+
+```bash
+pnpm test:quality-analysis
+pnpm test:quality-analysis-routes
+pnpm test:trade-fill-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
 ## v0.5.1-alpha5  2026-06-04
 
 ### 已完成

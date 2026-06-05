@@ -15,6 +15,9 @@
     "test:signal-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/signal-service.test.ts",
     "test:risk-service": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/risk-service.test.ts",
     "test:signal-risk-routes": "pnpm --filter @web3/server exec node --import tsx --test ./tests/signal-risk-routes.test.ts",
+    "test:quality-analysis": "pnpm --filter @web3/server exec node --import tsx --test ../../tests/quality-analysis-service.test.ts",
+    "test:quality-analysis-routes": "pnpm --filter @web3/server exec node --import tsx --test ./tests/quality-analysis-routes.test.ts",
+    "test:trade-fill-routes": "pnpm --filter @web3/server exec node --import tsx --test ./tests/trade-fill-routes.test.ts",
     "typecheck": "pnpm --filter @web3/server typecheck && pnpm --filter @web3/web typecheck",
     "lint": "pnpm --filter @web3/server lint && pnpm --filter @web3/web lint"
   },

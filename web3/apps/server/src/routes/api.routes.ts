@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
 import type { DailyReportService } from '../services/daily-report.service.js'
+import type { QualityAnalysisService } from '../services/quality-analysis.service.js'
 import type { MarketService } from '../services/market.service.js'
 import type { OrderRecoveryService } from '../services/order-recovery.service.js'
 import type { OrderPreviewService } from '../services/order-preview.service.js'
@@ -33,6 +34,7 @@ import {
   listAuditLogsPageQuerySchema,
   listOrderRecoveriesPageQuerySchema,
   listDailyReportQuerySchema,
+  listQualityAnalysisQuerySchema,
   previewOrderSchema,
   listRiskChecksQuerySchema,
   listDailyRiskStatsQuerySchema,
@@ -43,6 +45,7 @@ import {
   tradeAccountQuerySchema,
   tradeEquityHistoryQuerySchema,
   tradePositionQuerySchema,
+  listTradeFillPageQuerySchema,
   listTradeRecordsQuerySchema,
   tradeOrderPreviewSchema,
   tradeOrderConfirmSchema
@@ -53,6 +56,7 @@ export interface ApiRouteDeps {
   auditLogRepository: AuditLogRepository
   auditLogService: AuditLogService
   dailyReportService: DailyReportService
+  qualityAnalysisService: QualityAnalysisService
   exchangeFactory: ExchangeFactory
   marketService: MarketService
   orderRecoveryService: OrderRecoveryService
@@ -349,6 +353,21 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
 
     return deps.tradeAccountService.listFills(parsed.data.mode, parsed.data.exchange, parsed.data.limit)
+  })
+
+  app.get('/api/trade/fills/page', async (request, reply) => {
+    const parsed = listTradeFillPageQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '交易成交分页查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.tradeAccountService.listFillsPage({
+      mode: parsed.data.mode,
+      exchange: parsed.data.exchange,
+      localDate: parsed.data.date,
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+    })
   })
 
   app.get('/api/trade/logs', async (request, reply) => {
@@ -672,5 +691,14 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
 
     return deps.dailyReportService.getDailyReport(parsed.data)
   })
-}
 
+  // 交易执行质量分析报表：统计成交率、胜率、滑点及执行时延等质量指标
+  app.get('/api/trade/quality-analysis', async (request, reply) => {
+    const parsed = listQualityAnalysisQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '质量分析查询参数不合法', issues: parsed.error.issues })
+    }
+
+    return deps.qualityAnalysisService.getQualityAnalysis(parsed.data)
+  })
+}

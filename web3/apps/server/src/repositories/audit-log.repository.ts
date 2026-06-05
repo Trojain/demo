@@ -130,6 +130,28 @@ export class AuditLogRepository {
     return result.changes > 0
   }
 
+  listAuditsForAnalysis(input: {
+    fromDate: string
+    toDate: string
+    action?: string
+  }): AuditLog[] {
+    const conditions = [
+      `date(created_at, 'localtime') >= ?`,
+      `date(created_at, 'localtime') <= ?`,
+    ]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    if (input.action) {
+      conditions.push('action = ?')
+      params.push(input.action)
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`
+    return this.db
+      .prepare(`SELECT * FROM audit_logs ${where} ORDER BY created_at DESC`)
+      .all(...params)
+      .map(row => mapAuditLog(row as AuditLogRow))
+  }
+
   /**
    * 统一拼装审计日志筛选条件，避免列表和分页查询各写一套 SQL 条件。
    */

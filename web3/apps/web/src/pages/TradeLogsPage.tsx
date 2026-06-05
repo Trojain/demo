@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { App as AntApp, Button, Drawer, Popconfirm, Segmented, Select, Tabs, Tag, Tooltip, Typography } from 'antd'
-import { PageContainer, ProDescriptions, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
+import { App as AntApp, Button, Card, Col, Drawer, Empty, List, Popconfirm, Row, Segmented, Select, Skeleton, Space, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { PageContainer, ProCard, ProDescriptions, ProTable, type ActionType, type ProColumns } from '@ant-design/pro-components'
 import { ReloadOutlined } from '@ant-design/icons'
 import { Decimal } from 'decimal.js'
-import { tradingApi } from '../api/trading'
+import ReactECharts from 'echarts-for-react'
+import { tradingApi, type TradeQualityAnalysisResult } from '../api/trading'
 import { useProfitDisplay } from '../hooks/useProfitDisplay'
 import type {
   AuditLog,
@@ -64,6 +65,320 @@ const recoveryStageMeta: Record<OrderRecoveryFailureStage, string> = {
   balance_refresh: '余额刷新',
 }
 
+function QualityAnalysisPanel() {
+  const { message } = AntApp.useApp()
+  const profitDisplay = useProfitDisplay()
+
+  const [days, setDays] = useState<number>(30)
+  const [exchange, setExchange] = useState<ExchangeCode | undefined>(undefined)
+  const [mode, setMode] = useState<'simulation' | 'real' | undefined>(undefined)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [data, setData] = useState<TradeQualityAnalysisResult | undefined>(undefined)
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await tradingApi.getQualityAnalysis(days, exchange, mode)
+      setData(res)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '获取质量分析数据失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [days, exchange, mode, message])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  // ECharts Option 定义
+  const pieOption = useMemo(() => {
+    if (!data) return {}
+    return {
+      title: { text: '订单状态分布', left: 'center', textStyle: { fontSize: 14 } },
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: { bottom: '0', left: 'center' },
+      series: [
+        {
+          name: '订单状态',
+          type: 'pie',
+          radius: ['45%', '70%'],
+          avoidLabelOverlap: false,
+          itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+          label: { show: false },
+          emphasis: { label: { show: true, fontSize: 13, fontWeight: 'bold' } },
+          data: data.statusDistribution,
+        },
+      ],
+    }
+  }, [data])
+
+  const barOption = useMemo(() => {
+    if (!data || data.topSymbols.length === 0) return {}
+    const reversed = [...data.topSymbols].reverse()
+    return {
+      title: { text: '成交额 Top 排行 (USDT)', left: 'center', textStyle: { fontSize: 14 } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
+      xAxis: { type: 'value', splitLine: { lineStyle: { type: 'dashed' } } },
+      yAxis: { type: 'category', data: reversed.map(d => d.symbol) },
+      series: [
+        {
+          name: '成交额',
+          type: 'bar',
+          data: reversed.map(d => Number(d.volume)),
+          itemStyle: { color: '#1890ff', borderRadius: [0, 4, 4, 0] },
+        },
+      ],
+    }
+  }, [data])
+
+  const trendOption = useMemo(() => {
+    if (!data || data.dailyTrend.length === 0) return {}
+    const sorted = [...data.dailyTrend].sort((a, b) => a.date.localeCompare(b.date))
+    return {
+      title: { text: '滑点与撮合延迟趋势', left: 'center', textStyle: { fontSize: 14 } },
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['滑点 (%)', '撮合延迟 (ms)'], bottom: '0' },
+      grid: { left: '5%', right: '5%', bottom: '12%', containLabel: true },
+      xAxis: { type: 'category', boundaryGap: false, data: sorted.map(d => d.date) },
+      yAxis: [
+        {
+          type: 'value',
+          name: '滑点 (%)',
+          axisLabel: { formatter: '{value}%' },
+          splitLine: { show: false },
+        },
+        {
+          type: 'value',
+          name: '撮合延迟 (ms)',
+          splitLine: { lineStyle: { type: 'dashed' } },
+        },
+      ],
+      series: [
+        {
+          name: '滑点 (%)',
+          type: 'line',
+          smooth: true,
+          data: sorted.map(d => Number(d.avgSlippagePercent.toFixed(4))),
+          lineStyle: { color: '#ff4d4f', width: 2 },
+          itemStyle: { color: '#ff4d4f' },
+        },
+        {
+          name: '撮合延迟 (ms)',
+          type: 'line',
+          smooth: true,
+          yAxisIndex: 1,
+          data: sorted.map(d => Math.round(d.avgExecutionLatencyMs)),
+          lineStyle: { color: '#52c41a', width: 2 },
+          itemStyle: { color: '#52c41a' },
+        },
+      ],
+    }
+  }, [data])
+
+  if (loading && !data) {
+    return (
+      <Card bordered={false}>
+        <Skeleton active paragraph={{ rows: 12 }} />
+      </Card>
+    )
+  }
+
+  const summary = data?.summary
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 顶部筛选栏 */}
+      <Card size="small" bordered={false}>
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Segmented
+              value={days}
+              options={[
+                { label: '近 7 天', value: 7 },
+                { label: '近 30 天', value: 30 },
+                { label: '近 90 天', value: 90 },
+              ]}
+              onChange={val => setDays(val as number)}
+            />
+          </Col>
+          <Col>
+            <Space>
+              <Select
+                value={exchange}
+                onChange={setExchange}
+                options={[
+                  { label: '全部交易所', value: undefined },
+                  { label: 'OKX', value: 'okx' },
+                  { label: 'Binance', value: 'binance' },
+                ]}
+                style={{ width: 120 }}
+                placeholder="选择交易所"
+                allowClear
+              />
+              <Select
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { label: '全部模式', value: undefined },
+                  { label: '模拟交易', value: 'simulation' },
+                  { label: '真实交易', value: 'real' },
+                ]}
+                style={{ width: 110 }}
+                placeholder="下单模式"
+                allowClear
+              />
+              <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
+                刷新分析
+              </Button>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* 指标卡片行 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} sm={12} md={6}>
+          <ProCard
+            title="订单成交率"
+            tooltip="已成交订单占所有订单的比例"
+            boxShadow
+            bordered
+            bodyStyle={{ padding: '12px 24px' }}
+          >
+            <div style={{ fontSize: 24, fontWeight: 'bold' }}>
+              {summary ? `${(summary.fillRate * 100).toFixed(2)}%` : '0.00%'}
+            </div>
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              成交 / 总单：{summary ? `${summary.filledOrderCount} / ${summary.totalOrderCount}` : '0 / 0'}
+            </div>
+          </ProCard>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <ProCard
+            title="交易胜率"
+            tooltip="平仓盈利单占总平仓单的比例"
+            boxShadow
+            bordered
+            bodyStyle={{ padding: '12px 24px' }}
+          >
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: summary && summary.winRate >= 0.5 ? '#52c41a' : '#ff4d4f' }}>
+              {summary ? `${(summary.winRate * 100).toFixed(2)}%` : '0.00%'}
+            </div>
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              盈亏比：{summary ? (summary.profitLossRatio === 999 ? '∞' : summary.profitLossRatio.toFixed(2)) : '0.00'}
+            </div>
+          </ProCard>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <ProCard
+            title="平均撮合延迟"
+            tooltip="订单提交到交易所最终完全成交的平均网络与撮合时间"
+            boxShadow
+            bordered
+            bodyStyle={{ padding: '12px 24px' }}
+          >
+            <div style={{ fontSize: 24, fontWeight: 'bold' }}>
+              {summary ? `${Math.round(summary.avgExecutionLatencyMs)} ms` : '0 ms'}
+            </div>
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              触发响应延迟：{summary ? `${Math.round(summary.avgTriggerLatencyMs)} ms` : '0 ms'}
+            </div>
+          </ProCard>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <ProCard
+            title="平均成交滑点"
+            tooltip="成交均价相较于触发价格的平均偏离程度"
+            boxShadow
+            bordered
+            bodyStyle={{ padding: '12px 24px' }}
+          >
+            <div style={{ fontSize: 24, fontWeight: 'bold', color: summary && summary.avgSlippagePercent > 0.5 ? '#faad14' : 'inherit' }}>
+              {summary ? `${summary.avgSlippagePercent.toFixed(4)}%` : '0.0000%'}
+            </div>
+            <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 4 }}>
+              滑点越低，执行质量越优
+            </div>
+          </ProCard>
+        </Col>
+      </Row>
+
+      {/* 分布与排行 */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={10}>
+          <ProCard title="订单状态及失败诊断" split="horizontal" bordered>
+            <ProCard bodyStyle={{ height: 260 }}>
+              {data && data.statusDistribution.some(item => item.value > 0) ? (
+                <ReactECharts option={pieOption} style={{ height: '100%', width: '100%' }} />
+              ) : (
+                <Empty description="暂无状态数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+            </ProCard>
+            <ProCard title="失败原因排行" headerBordered bodyStyle={{ maxHeight: 200, overflowY: 'auto' }}>
+              {data && data.failedReasons.length > 0 ? (
+                <List
+                  size="small"
+                  dataSource={data.failedReasons}
+                  renderItem={(item, index) => (
+                    <List.Item extra={<Tag color="error">{item.count} 次</Tag>}>
+                      <Typography.Text ellipsis style={{ width: '80%' }}>
+                        {index + 1}. {item.reason}
+                      </Typography.Text>
+                    </List.Item>
+                  )}
+                />
+              ) : (
+                <div style={{ color: '#8c8c8c', textAlign: 'center', padding: 16 }}>暂无失败记录</div>
+              )}
+            </ProCard>
+          </ProCard>
+        </Col>
+        <Col xs={24} md={14}>
+          <ProCard title="交易对活跃度与盈利分析" bordered bodyStyle={{ height: 494 }}>
+            {data && data.topSymbols.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ flex: 1, minHeight: 280 }}>
+                  <ReactECharts option={barOption} style={{ height: '100%', width: '100%' }} />
+                </div>
+                <div style={{ padding: '8px 24px', borderTop: '1px solid #f0f0f0' }}>
+                  <Typography.Text strong style={{ fontSize: 13 }}>交易对已实现盈亏列表：</Typography.Text>
+                  <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
+                    {data.topSymbols.map(s => {
+                      return (
+                        <Col key={s.symbol} span={12}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', paddingRight: 12 }}>
+                            <span style={{ color: '#595959' }}>{s.symbol}:</span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 'bold' }}>
+                              {profitDisplay.renderMoney(s.realizedPnl, 'USDT')}
+                            </span>
+                          </div>
+                        </Col>
+                      )
+                    })}
+                  </Row>
+                </div>
+              </div>
+            ) : (
+              <Empty description="暂无成交对分析" />
+            )}
+          </ProCard>
+        </Col>
+      </Row>
+
+      {/* 执行趋势折线图 */}
+      <Card bordered={false}>
+        {data && data.dailyTrend.some(d => d.avgSlippagePercent > 0 || d.avgExecutionLatencyMs > 0) ? (
+          <ReactECharts option={trendOption} style={{ height: 320 }} />
+        ) : (
+          <Empty description="暂无趋势数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        )}
+      </Card>
+    </div>
+  )
+}
+
 export function TradeLogsPage() {
   const { message } = AntApp.useApp()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -81,15 +396,16 @@ export function TradeLogsPage() {
         ? 'recoveries'
         : searchParams.get('tab') === 'report'
           ? 'report'
-        : 'fills'
+          : searchParams.get('tab') === 'analysis'
+            ? 'analysis'
+            : 'fills'
 
   // 交易日报：天数筛选和 Drawer 明细状态
   const [reportDays, setReportDays] = useState<number>(30)
   const [reportExchange, setReportExchange] = useState<ExchangeCode | undefined>(undefined)
   const [reportMode, setReportMode] = useState<'simulation' | 'real' | undefined>(undefined)
   const [reportDrawerRow, setReportDrawerRow] = useState<TradeDailyReport | undefined>(undefined)
-  const [reportDrawerFills, setReportDrawerFills] = useState<TradeFill[]>([])
-  const [reportDrawerLoading, setReportDrawerLoading] = useState(false)
+  const reportDrawerActionRef = useRef<ActionType | undefined>(undefined)
 
   const fillColumns = useMemo<ProColumns<TradeFill>[]>(
     () => [
@@ -279,11 +595,12 @@ export function TradeLogsPage() {
       {
         title: '成交',
         key: 'filled',
-        width: 90,
+        width: 150,
         render: (_, row) => (
           <span>
             <Tag color='success' style={{ marginRight: 2 }}>{row.filledOrderCount}</Tag>
-            <Tag color='error'>{row.failedOrderCount}</Tag>
+            <Tag color='error' style={{ marginRight: 2 }}>{row.failedOrderCount}</Tag>
+            <Tag>{row.cancelledOrderCount}</Tag>
           </span>
         ),
       },
@@ -334,15 +651,7 @@ export function TradeLogsPage() {
             type='link'
             onClick={async () => {
               setReportDrawerRow(row)
-              setReportDrawerFills([])
-              setReportDrawerLoading(true)
-              // 拉取当日成交明细（最多 500 条），过滤 created_at 日期前缀匹配
-              try {
-                const allFills = await tradingApi.getTradeFills(reportMode, reportExchange, 500)
-                setReportDrawerFills(allFills.filter(f => f.createdAt.startsWith(row.date)))
-              } finally {
-                setReportDrawerLoading(false)
-              }
+              setTimeout(() => reportDrawerActionRef.current?.reload(), 0)
             }}
           >
             明细
@@ -553,6 +862,7 @@ export function TradeLogsPage() {
                           { label: '订单数', dataIndex: 'orderCount' },
                           { label: '成交订单', dataIndex: 'filledOrderCount' },
                           { label: '失败订单', dataIndex: 'failedOrderCount' },
+                          { label: '取消订单', dataIndex: 'cancelledOrderCount' },
                           { label: '成交额', dataIndex: 'totalQuoteAmount', render: v => new Decimal(String(v)).toFixed(4) + ' USDT' },
                           { label: '手续费', dataIndex: 'totalFeeAmount', render: v => new Decimal(String(v)).toFixed(6) },
                           { label: '已实现盈亏', dataIndex: 'totalRealizedPnl', render: (_, row) => profitDisplay.renderMoney(row.totalRealizedPnl, 'USDT') },
@@ -566,10 +876,26 @@ export function TradeLogsPage() {
                         style={{ marginBottom: 16 }}
                       />
                       <ProTable<TradeFill>
+                        actionRef={reportDrawerActionRef}
                         rowKey='id'
                         search={false}
-                        loading={reportDrawerLoading}
-                        dataSource={reportDrawerFills}
+                        request={async params => {
+                          if (!reportDrawerRow) {
+                            return { data: [], success: true, total: 0 }
+                          }
+                          const pageResult = await tradingApi.getTradeFillPage(
+                            params.current ?? 1,
+                            params.pageSize ?? 10,
+                            reportMode,
+                            reportExchange,
+                            reportDrawerRow.date,
+                          )
+                          return {
+                            data: pageResult.items,
+                            success: true,
+                            total: pageResult.total,
+                          }
+                        }}
                         pagination={{ pageSize: 10 }}
                         columns={fillColumns}
                         toolBarRender={false}
@@ -579,6 +905,11 @@ export function TradeLogsPage() {
                 </Drawer>
               </>
             ),
+          },
+          {
+            key: 'analysis',
+            label: '执行分析',
+            children: <QualityAnalysisPanel />,
           },
         ]}
       />

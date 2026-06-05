@@ -128,7 +128,7 @@ export class OrderRepository {
   }
 
   /**
-   * 按本地日期纴度聊合订单统计。
+   * 按本地日期维度聚合订单统计。
    * 使用 SQLite date(created_at, 'localtime') 与风控日期口径保持一致。
    */
   listDailySummary(input: {
@@ -141,6 +141,7 @@ export class OrderRepository {
     orderCount: number
     filledOrderCount: number
     failedOrderCount: number
+    cancelledOrderCount: number
   }> {
     const conditions = [
       `date(created_at, 'localtime') >= ?`,
@@ -164,7 +165,8 @@ export class OrderRepository {
              date(created_at, 'localtime') AS date,
              COUNT(*) AS order_count,
              SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) AS filled_order_count,
-             SUM(CASE WHEN status IN ('rejected','failed','cancelled') THEN 1 ELSE 0 END) AS failed_order_count
+             SUM(CASE WHEN status IN ('rejected','failed') THEN 1 ELSE 0 END) AS failed_order_count,
+             SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_order_count
            FROM order_records
            ${where}
            GROUP BY date(created_at, 'localtime')
@@ -175,12 +177,14 @@ export class OrderRepository {
         order_count: number
         filled_order_count: number
         failed_order_count: number
+        cancelled_order_count: number
       }>
     ).map(row => ({
       date: row.date,
       orderCount: row.order_count,
       filledOrderCount: row.filled_order_count,
       failedOrderCount: row.failed_order_count,
+      cancelledOrderCount: row.cancelled_order_count,
     }))
   }
 

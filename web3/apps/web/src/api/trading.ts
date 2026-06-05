@@ -161,6 +161,18 @@ export const tradingApi = {
     });
     return data;
   },
+  getTradeFillPage: async (
+    page = 1,
+    pageSize = 20,
+    mode?: TradeAccountType,
+    exchange?: ExchangeCode,
+    date?: string,
+  ) => {
+    const { data } = await apiClient.get<PagedResult<TradeFill>>('/trade/fills/page', {
+      params: { page, pageSize, mode, exchange, date }
+    });
+    return data;
+  },
   getTradeLogs: async (mode?: TradeAccountType, exchange?: ExchangeCode, limit = 100) => {
     const { data } = await apiClient.get<TradeOperationLog[]>('/trade/logs', {
       params: { mode, exchange, limit }
@@ -287,4 +299,44 @@ export const tradingApi = {
     });
     return data;
   },
+  getQualityAnalysis: async (days = 30, exchange?: ExchangeCode, mode?: 'simulation' | 'real') => {
+    const { data } = await apiClient.get<TradeQualityAnalysisResult>('/trade/quality-analysis', {
+      params: { days, exchange, mode }
+    });
+    return data;
+  },
 };
+
+export interface TradeQualityAnalysisResult {
+  summary: {
+    totalOrderCount: number
+    filledOrderCount: number
+    failedOrderCount: number
+    cancelledOrderCount: number
+    fillRate: number
+    avgTriggerLatencyMs: number
+    avgExecutionLatencyMs: number
+    avgSlippagePercent: number
+    winRate: number
+    profitLossRatio: number
+  }
+  statusDistribution: Array<{
+    name: string
+    value: number
+  }>
+  topSymbols: Array<{
+    symbol: string
+    volume: string
+    count: number
+    realizedPnl: string
+  }>
+  dailyTrend: Array<{
+    date: string
+    avgSlippagePercent: number
+    avgExecutionLatencyMs: number
+  }>
+  failedReasons: Array<{
+    reason: string
+    count: number
+  }>
+}

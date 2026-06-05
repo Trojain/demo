@@ -113,6 +113,7 @@ function createRouteDeps(overrides?: {
       listAccounts: () => [],
       listPositions: () => [],
       listFills: () => [],
+      listFillsPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
       listOperationLogs: () => [],
     } as never,
     tradeExecutionService: {
