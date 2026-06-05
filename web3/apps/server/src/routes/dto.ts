@@ -10,6 +10,18 @@ const positiveDecimalString = z.string().refine(value => {
   }
 }, '必须是大于 0 的数字字符串')
 
+function createCsvEnumSchema<const T extends readonly [string, ...string[]]>(values: T, message: string) {
+  const valueSet = new Set(values)
+  return z.string().refine(
+    value => value
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean)
+      .every(item => valueSet.has(item)),
+    message,
+  )
+}
+
 export const createRuleSchema = z
   .object({
     /** 交易所编码，当前 okx 可用，binance 预留 */
@@ -141,10 +153,44 @@ export const listOrderRecoveriesPageQuerySchema = z.object({
   /** 分页大小 */
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   /** 按恢复状态筛选，多个状态使用逗号分隔 */
-  statuses: z.string().optional(),
+  statuses: createCsvEnumSchema(
+    ['pending_recovery', 'recovering', 'recovered', 'manual_review_required', 'recovery_failed'],
+    '恢复状态筛选存在不支持的取值',
+  ).optional(),
   /** 按失败阶段筛选，多个阶段使用逗号分隔 */
-  stages: z.string().optional(),
+  stages: createCsvEnumSchema(
+    ['order_submit_finalize', 'rule_trigger_finalize', 'order_sync', 'private_stream', 'trade_fill_sync', 'balance_refresh'],
+    '失败阶段筛选存在不支持的取值',
+  ).optional(),
+  /** 按交易所筛选，多个交易所使用逗号分隔 */
+  exchanges: createCsvEnumSchema(['okx', 'binance'], '交易所筛选存在不支持的取值').optional(),
+  /** 按下单模式筛选，多个模式使用逗号分隔 */
+  modes: createCsvEnumSchema(['simulation', 'real'], '下单模式筛选存在不支持的取值').optional(),
+  /** 按来源筛选，多个来源使用逗号分隔 */
+  sources: createCsvEnumSchema(['manual', 'rule', 'system'], '来源筛选存在不支持的取值').optional(),
 })
+
+export const retryOrderRecoveriesBatchSchema = z.object({
+  /** 指定重试的恢复任务 ID 列表。 */
+  ids: z.array(z.string().min(1)).optional(),
+  /** 按恢复状态筛选，多个状态使用逗号分隔。 */
+  statuses: z.array(z.enum(['pending_recovery', 'recovering', 'recovered', 'manual_review_required', 'recovery_failed'])).optional(),
+  /** 按失败阶段筛选。 */
+  stages: z.array(z.enum(['order_submit_finalize', 'rule_trigger_finalize', 'order_sync', 'private_stream', 'trade_fill_sync', 'balance_refresh'])).optional(),
+  /** 按交易所筛选。 */
+  exchanges: z.array(z.enum(['okx', 'binance'])).optional(),
+  /** 按下单模式筛选。 */
+  modes: z.array(z.enum(['simulation', 'real'])).optional(),
+  /** 按来源筛选。 */
+  sources: z.array(z.enum(['manual', 'rule', 'system'])).optional(),
+  /** 批量恢复最大处理条数。 */
+  limit: z.number().int().min(1).max(200).default(50),
+}).refine(
+  data => (data.ids && data.ids.length > 0) || (data.statuses && data.statuses.length > 0) || (data.stages && data.stages.length > 0) || (data.exchanges && data.exchanges.length > 0) || (data.modes && data.modes.length > 0) || (data.sources && data.sources.length > 0),
+  {
+    message: '批量恢复至少需要指定一项筛选条件或恢复任务 ID 列表',
+  },
+)
 
 export const listRiskChecksQuerySchema = z.object({
   /** 返回风控检查数量，限制最大值避免一次性读取过多 SQLite 记录 */
@@ -278,4 +324,40 @@ export const listQualityAnalysisQuerySchema = z.object({
   exchange: z.enum(['okx', 'binance']).optional(),
   /** 下单模式，不传时返回模拟和真实数据合并结果 */
   mode: z.enum(['simulation', 'real']).optional(),
+})
+
+export const configArchiveRuleSchema = createRuleSchema.extend({
+  /** 规则主键，导入时按该字段做幂等更新。 */
+  id: z.string().min(1),
+})
+
+export const configArchiveSchema = z.object({
+  /** 归档类型。 */
+  archiveType: z.literal('web3-trading-config'),
+  /** 归档结构版本。 */
+  schemaVersion: z.literal('1.0.0'),
+  /** 导出时间。 */
+  exportedAt: z.string().datetime(),
+  /** 归档元信息。 */
+  meta: z.object({
+    /** 归档说明。 */
+    description: z.string().min(1),
+    /** 支持的交易所。 */
+    supportedExchanges: z.array(z.enum(['okx', 'binance'])).min(1),
+    /** 支持的信号来源。 */
+    supportedSignalSources: z.array(z.enum(['price_rule', 'external_input'])).min(1),
+  }),
+  /** 风控配置快照。 */
+  riskConfig: updateRiskConfigSchema,
+  /** 规则配置列表。 */
+  rules: z.array(configArchiveRuleSchema),
+})
+
+export const importConfigArchiveSchema = z.object({
+  /** 待导入的配置归档。 */
+  archive: configArchiveSchema,
+  /** 是否默认暂停导入规则。 */
+  pauseImportedRules: z.boolean().default(true),
+  /** 是否覆盖现有风控配置。 */
+  overwriteRiskConfig: z.boolean().default(true),
 })

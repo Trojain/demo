@@ -18,6 +18,29 @@ function createRouteDeps(overrides?: {
       listPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
       record: () => undefined,
     } as never,
+    configArchiveService: {
+      exportArchive: () => ({
+        archiveType: 'web3-trading-config',
+        schemaVersion: '1.0.0',
+        exportedAt: '2026-06-05T00:00:00.000Z',
+        meta: {
+          description: 'stub',
+          supportedExchanges: ['okx'],
+          supportedSignalSources: ['price_rule'],
+        },
+        riskConfig: {},
+        rules: [],
+      }),
+      importArchive: async () => ({
+        riskConfigUpdated: false,
+        createdRuleCount: 0,
+        updatedRuleCount: 0,
+        pausedRuleCount: 0,
+      }),
+    } as never,
+    dailyReportService: {
+      getDailyReport: () => [],
+    } as never,
     exchangeFactory: {
       listExchanges: () => [],
     } as never,
@@ -46,6 +69,26 @@ function createRouteDeps(overrides?: {
       list: () => [],
       listByRuleId: () => [],
       delete: () => false,
+    } as never,
+    qualityAnalysisService: {
+      getQualityAnalysis: () => ({
+        summary: {
+          totalOrderCount: 0,
+          filledOrderCount: 0,
+          failedOrderCount: 0,
+          cancelledOrderCount: 0,
+          fillRate: 0,
+          avgTriggerLatencyMs: 0,
+          avgExecutionLatencyMs: 0,
+          avgSlippagePercent: 0,
+          winRate: 0,
+          profitLossRatio: 0,
+        },
+        statusDistribution: [],
+        topSymbols: [],
+        dailyTrend: [],
+        failedReasons: [],
+      }),
     } as never,
     riskCheckRepository: {
       list: () => [],

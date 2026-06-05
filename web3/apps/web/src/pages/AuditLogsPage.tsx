@@ -32,6 +32,8 @@ const actionMeta: Record<AuditLogAction, string> = {
   'recovery.retry_succeeded': '恢复成功',
   'recovery.retry_failed': '恢复失败',
   'recovery.manual_review_required': '转人工处理',
+  'recovery.batch_started': '批量恢复开始',
+  'recovery.batch_finished': '批量恢复完成',
   'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }

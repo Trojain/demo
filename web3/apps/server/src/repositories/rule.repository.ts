@@ -204,4 +204,8 @@ export class RuleRepository {
   delete(id: string) {
     this.db.prepare('DELETE FROM monitor_rules WHERE id = ?').run(id)
   }
+
+  runInTransaction<T>(callback: () => T): T {
+    return this.db.transaction(callback)()
+  }
 }

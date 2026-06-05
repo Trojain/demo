@@ -4,6 +4,7 @@ import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
 import type { DailyReportService } from '../services/daily-report.service.js'
 import type { QualityAnalysisService } from '../services/quality-analysis.service.js'
+import type { ConfigArchiveService } from '../services/config-archive.service.js'
 import type { MarketService } from '../services/market.service.js'
 import type { OrderRecoveryService } from '../services/order-recovery.service.js'
 import type { OrderPreviewService } from '../services/order-preview.service.js'
@@ -30,9 +31,11 @@ import {
   marketCandlesQuerySchema,
   listSignalsQuerySchema,
   createExternalSignalSchema,
+  importConfigArchiveSchema,
   listAuditLogsQuerySchema,
   listAuditLogsPageQuerySchema,
   listOrderRecoveriesPageQuerySchema,
+  retryOrderRecoveriesBatchSchema,
   listDailyReportQuerySchema,
   listQualityAnalysisQuerySchema,
   previewOrderSchema,
@@ -55,6 +58,7 @@ import { OVERVIEW_SYMBOLS_BY_EXCHANGE } from '../services/market.service.js'
 export interface ApiRouteDeps {
   auditLogRepository: AuditLogRepository
   auditLogService: AuditLogService
+  configArchiveService: ConfigArchiveService
   dailyReportService: DailyReportService
   qualityAnalysisService: QualityAnalysisService
   exchangeFactory: ExchangeFactory
@@ -85,6 +89,21 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
   }))
 
   app.get('/api/exchanges', async () => deps.exchangeFactory.listExchanges())
+
+  app.get('/api/config/archive', async () => deps.configArchiveService.exportArchive())
+
+  app.post('/api/config/archive/import', async (request, reply) => {
+    const parsed = importConfigArchiveSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '配置导入参数不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      return await deps.configArchiveService.importArchive(parsed.data)
+    } catch (error) {
+      return reply.status(400).send({ message: error instanceof Error ? error.message : '配置导入失败' })
+    }
+  })
 
   app.get('/api/trading-rules', async (request, reply) => {
     const query = request.query as { exchange?: string; symbol?: string }
@@ -162,12 +181,27 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       ?.split(',')
       .map(stage => stage.trim())
       .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['stages']
+    const exchanges = parsed.data.exchanges
+      ?.split(',')
+      .map(exchange => exchange.trim())
+      .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['exchanges']
+    const modes = parsed.data.modes
+      ?.split(',')
+      .map(mode => mode.trim())
+      .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['modes']
+    const sources = parsed.data.sources
+      ?.split(',')
+      .map(source => source.trim())
+      .filter(Boolean) as Parameters<typeof deps.orderRecoveryService.listPage>[0]['sources']
 
     return deps.orderRecoveryService.listPage({
       page: parsed.data.page,
       pageSize: parsed.data.pageSize,
       statuses: statuses && statuses.length > 0 ? statuses : undefined,
       stages: stages && stages.length > 0 ? stages : undefined,
+      exchanges: exchanges && exchanges.length > 0 ? exchanges : undefined,
+      modes: modes && modes.length > 0 ? modes : undefined,
+      sources: sources && sources.length > 0 ? sources : undefined,
     })
   })
 
@@ -181,6 +215,19 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       return await deps.orderRecoveryService.retryById(parsed.data.id, 'manual')
     } catch (error) {
       return reply.status(400).send({ message: error instanceof Error ? error.message : '恢复任务重试失败' })
+    }
+  })
+
+  app.post('/api/order-recoveries/retry-batch', async (request, reply) => {
+    const parsed = retryOrderRecoveriesBatchSchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '批量恢复参数不合法', issues: parsed.error.issues })
+    }
+
+    try {
+      return await deps.orderRecoveryService.retryBatch(parsed.data)
+    } catch (error) {
+      return reply.status(400).send({ message: error instanceof Error ? error.message : '批量恢复失败' })
     }
   })
 

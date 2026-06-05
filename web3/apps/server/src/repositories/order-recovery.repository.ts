@@ -107,11 +107,20 @@ export class OrderRecoveryRepository {
     pageSize: number
     statuses?: OrderRecoveryStatus[]
     stages?: OrderRecoveryFailureStage[]
+    exchanges?: OrderRecoveryRecord['exchange'][]
+    modes?: OrderRecoveryRecord['mode'][]
+    sources?: OrderRecoveryRecord['source'][]
   }) {
     const safePage = Math.max(1, input.page)
     const safePageSize = Math.max(1, input.pageSize)
     const offset = (safePage - 1) * safePageSize
-    const { whereSql, params } = this.buildFilterQuery(input.statuses, input.stages)
+    const { whereSql, params } = this.buildFilterQuery(
+      input.statuses,
+      input.stages,
+      input.exchanges,
+      input.modes,
+      input.sources,
+    )
     const totalRow = this.db
       .prepare(`SELECT COUNT(1) as total FROM order_recovery_records ${whereSql}`)
       .get(...params) as { total: number } | undefined
@@ -138,6 +147,39 @@ export class OrderRecoveryRepository {
          LIMIT ?`,
       )
       .all(nowIso, limit)
+      .map(row => mapOrderRecovery(row as OrderRecoveryRow))
+  }
+
+  listByIds(ids: string[]): OrderRecoveryRecord[] {
+    if (ids.length === 0) {
+      return []
+    }
+
+    return this.db
+      .prepare(`SELECT * FROM order_recovery_records WHERE id IN (${ids.map(() => '?').join(', ')}) ORDER BY updated_at DESC`)
+      .all(...ids)
+      .map(row => mapOrderRecovery(row as OrderRecoveryRow))
+  }
+
+  listForBatch(input: {
+    limit: number
+    statuses?: OrderRecoveryStatus[]
+    stages?: OrderRecoveryFailureStage[]
+    exchanges?: OrderRecoveryRecord['exchange'][]
+    modes?: OrderRecoveryRecord['mode'][]
+    sources?: OrderRecoveryRecord['source'][]
+  }) {
+    const { whereSql, params } = this.buildFilterQuery(
+      input.statuses,
+      input.stages,
+      input.exchanges,
+      input.modes,
+      input.sources,
+    )
+
+    return this.db
+      .prepare(`SELECT * FROM order_recovery_records ${whereSql} ORDER BY updated_at DESC LIMIT ?`)
+      .all(...params, input.limit)
       .map(row => mapOrderRecovery(row as OrderRecoveryRow))
   }
 
@@ -179,7 +221,13 @@ export class OrderRecoveryRepository {
     return record
   }
 
-  private buildFilterQuery(statuses?: OrderRecoveryStatus[], stages?: OrderRecoveryFailureStage[]) {
+  private buildFilterQuery(
+    statuses?: OrderRecoveryStatus[],
+    stages?: OrderRecoveryFailureStage[],
+    exchanges?: OrderRecoveryRecord['exchange'][],
+    modes?: OrderRecoveryRecord['mode'][],
+    sources?: OrderRecoveryRecord['source'][],
+  ) {
     const conditions: string[] = []
     const params: Array<string | number> = []
     if (statuses && statuses.length > 0) {
@@ -189,6 +237,18 @@ export class OrderRecoveryRepository {
     if (stages && stages.length > 0) {
       conditions.push(`failure_stage IN (${stages.map(() => '?').join(', ')})`)
       params.push(...stages)
+    }
+    if (exchanges && exchanges.length > 0) {
+      conditions.push(`exchange IN (${exchanges.map(() => '?').join(', ')})`)
+      params.push(...exchanges)
+    }
+    if (modes && modes.length > 0) {
+      conditions.push(`mode IN (${modes.map(() => '?').join(', ')})`)
+      params.push(...modes)
+    }
+    if (sources && sources.length > 0) {
+      conditions.push(`source IN (${sources.map(() => '?').join(', ')})`)
+      params.push(...sources)
     }
     const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
     return { whereSql, params }

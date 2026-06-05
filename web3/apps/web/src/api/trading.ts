@@ -76,9 +76,105 @@ export interface DailyRiskStatsResult {
   items: DailyRiskStats[];
 }
 
+export interface ConfigArchiveRulePayload extends CreateRulePayload {
+  /** 规则主键，导入时按该字段做幂等更新。 */
+  id: string;
+}
+
+export interface ConfigArchivePayload {
+  /** 归档类型。 */
+  archiveType: 'web3-trading-config';
+  /** 归档结构版本。 */
+  schemaVersion: '1.0.0';
+  /** 导出时间。 */
+  exportedAt: string;
+  /** 归档元信息。 */
+  meta: {
+    /** 归档说明。 */
+    description: string;
+    /** 支持的交易所。 */
+    supportedExchanges: ExchangeCode[];
+    /** 支持的信号来源。 */
+    supportedSignalSources: Array<'price_rule' | 'external_input'>;
+  };
+  /** 风控配置快照。 */
+  riskConfig: UpdateRiskConfigPayload;
+  /** 规则配置列表。 */
+  rules: ConfigArchiveRulePayload[];
+}
+
+export interface ImportConfigArchivePayload {
+  /** 待导入的配置归档。 */
+  archive: ConfigArchivePayload;
+  /** 是否默认暂停导入规则。 */
+  pauseImportedRules: boolean;
+  /** 是否覆盖现有风控配置。 */
+  overwriteRiskConfig: boolean;
+}
+
+export interface ImportConfigArchiveResult {
+  /** 是否覆盖了风控配置。 */
+  riskConfigUpdated: boolean;
+  /** 新增规则数量。 */
+  createdRuleCount: number;
+  /** 更新规则数量。 */
+  updatedRuleCount: number;
+  /** 导入后被暂停的规则数量。 */
+  pausedRuleCount: number;
+}
+
+export interface RetryOrderRecoveryBatchPayload {
+  /** 指定重试的恢复任务 ID 列表。 */
+  ids?: string[];
+  /** 按恢复状态筛选。 */
+  statuses?: string[];
+  /** 按失败阶段筛选。 */
+  stages?: string[];
+  /** 按交易所筛选。 */
+  exchanges?: ExchangeCode[];
+  /** 按下单模式筛选。 */
+  modes?: TradeAccountType[];
+  /** 按来源筛选。 */
+  sources?: Array<'manual' | 'rule' | 'system'>;
+  /** 本次批量重试最大处理条数。 */
+  limit: number;
+}
+
+export interface RetryOrderRecoveryBatchItemResult {
+  /** 恢复任务 ID。 */
+  id: string;
+  /** 本条恢复结果。 */
+  result: 'succeeded' | 'failed' | 'skipped';
+  /** 当前恢复状态。 */
+  recoveryStatus: string;
+  /** 失败或跳过原因。 */
+  message?: string;
+}
+
+export interface RetryOrderRecoveryBatchResult {
+  /** 总处理条数。 */
+  totalCount: number;
+  /** 成功条数。 */
+  successCount: number;
+  /** 失败条数。 */
+  failedCount: number;
+  /** 跳过条数。 */
+  skippedCount: number;
+  /** 各任务处理结果。 */
+  items: RetryOrderRecoveryBatchItemResult[];
+}
+
 export const tradingApi = {
   getDashboardSummary: async () => {
     const { data } = await apiClient.get<DashboardSummary>('/dashboard/summary');
+    return data;
+  },
+  exportConfigArchive: async () => {
+    const { data } = await apiClient.get<ConfigArchivePayload>('/config/archive');
+    return data;
+  },
+  importConfigArchive: async (payload: ImportConfigArchivePayload) => {
+    const { data } = await apiClient.post<ImportConfigArchiveResult>('/config/archive/import', payload);
     return data;
   },
   getRules: async () => {
@@ -252,14 +348,34 @@ export const tradingApi = {
     });
     return data;
   },
-  getOrderRecoveryPage: async (page = 1, pageSize = 20, statuses?: string[], stages?: string[]) => {
+  getOrderRecoveryPage: async (
+    page = 1,
+    pageSize = 20,
+    statuses?: string[],
+    stages?: string[],
+    exchanges?: ExchangeCode[],
+    modes?: TradeAccountType[],
+    sources?: Array<'manual' | 'rule' | 'system'>,
+  ) => {
     const { data } = await apiClient.get<PagedResult<OrderRecoveryRecord>>('/order-recoveries/page', {
-      params: { page, pageSize, statuses: statuses?.join(','), stages: stages?.join(',') }
+      params: {
+        page,
+        pageSize,
+        statuses: statuses?.join(','),
+        stages: stages?.join(','),
+        exchanges: exchanges?.join(','),
+        modes: modes?.join(','),
+        sources: sources?.join(','),
+      }
     });
     return data;
   },
   retryOrderRecovery: async (id: string) => {
     const { data } = await apiClient.post<OrderRecoveryRecord>(`/order-recoveries/${id}/retry`);
+    return data;
+  },
+  retryOrderRecoveryBatch: async (payload: RetryOrderRecoveryBatchPayload) => {
+    const { data } = await apiClient.post<RetryOrderRecoveryBatchResult>('/order-recoveries/retry-batch', payload);
     return data;
   },
   deleteAuditLog: async (id: string) => {

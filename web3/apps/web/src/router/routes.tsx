@@ -6,6 +6,7 @@ const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) =>
 const RulesPage = lazy(() => import('../pages/RulesPage').then((module) => ({ default: module.RulesPage })));
 const RiskConfigPage = lazy(() => import('../pages/RiskConfigPage').then((module) => ({ default: module.RiskConfigPage })));
 const TradeLogsPage = lazy(() => import('../pages/TradeLogsPage').then((module) => ({ default: module.TradeLogsPage })));
+const RecoveryCenterPage = lazy(() => import('../pages/RecoveryCenterPage').then((module) => ({ default: module.RecoveryCenterPage })));
 
 export const appRoutes: RouteObject[] = [
   {
@@ -31,6 +32,10 @@ export const appRoutes: RouteObject[] = [
   {
     path: '/trade-logs',
     element: <TradeLogsPage />
+  },
+  {
+    path: '/recovery-center',
+    element: <RecoveryCenterPage />
   },
   {
     path: '/signals',

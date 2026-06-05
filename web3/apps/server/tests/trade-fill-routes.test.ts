@@ -17,6 +17,26 @@ function createRouteDeps(overrides?: {
       listPage: () => ({ items: [], total: 0, page: 1, pageSize: 20 }),
       record: () => undefined,
     } as never,
+    configArchiveService: {
+      exportArchive: () => ({
+        archiveType: 'web3-trading-config',
+        schemaVersion: '1.0.0',
+        exportedAt: '2026-06-05T00:00:00.000Z',
+        meta: {
+          description: 'stub',
+          supportedExchanges: ['okx'],
+          supportedSignalSources: ['price_rule'],
+        },
+        riskConfig: {},
+        rules: [],
+      }),
+      importArchive: async () => ({
+        riskConfigUpdated: false,
+        createdRuleCount: 0,
+        updatedRuleCount: 0,
+        pausedRuleCount: 0,
+      }),
+    } as never,
     dailyReportService: {
       getDailyReport: () => [],
     } as never,

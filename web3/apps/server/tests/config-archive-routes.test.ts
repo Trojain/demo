@@ -4,8 +4,47 @@ import Fastify from 'fastify'
 import { registerApiRoutes } from '../src/routes/api.routes.ts'
 import type { ApiRouteDeps } from '../src/routes/api.routes.ts'
 
+function createArchive() {
+  return {
+    archiveType: 'web3-trading-config' as const,
+    schemaVersion: '1.0.0' as const,
+    exportedAt: '2026-06-05T09:00:00.000Z',
+    meta: {
+      description: '测试导入导出',
+      supportedExchanges: ['okx', 'binance'] as const,
+      supportedSignalSources: ['price_rule', 'external_input'] as const,
+    },
+    riskConfig: {
+      maxQuoteAmount: '1000',
+      maxMarketAgeMs: 8000,
+      dailyMaxTriggerCount: 10,
+      dailyMaxQuoteAmount: '5000',
+      tradingMode: 'allow_real' as const,
+    },
+    rules: [
+      {
+        id: 'rule-1',
+        exchange: 'okx' as const,
+        symbol: 'BTC-USDT',
+        operator: 'gte' as const,
+        targetPrice: '70000',
+        checkIntervalMs: 3000,
+        side: 'buy' as const,
+        orderType: 'market' as const,
+        quoteAmount: '50',
+        maxSlippagePercent: '0.5',
+        cooldownMs: 60000,
+        maxTriggerCount: 1,
+        simulationMode: true,
+        enabled: true,
+      },
+    ],
+  }
+}
+
 function createRouteDeps(overrides?: {
-  getQualityAnalysis?: ApiRouteDeps['qualityAnalysisService']['getQualityAnalysis']
+  exportArchive?: ApiRouteDeps['configArchiveService']['exportArchive']
+  importArchive?: ApiRouteDeps['configArchiveService']['importArchive']
 }): ApiRouteDeps {
   return {
     auditLogRepository: {
@@ -18,30 +57,19 @@ function createRouteDeps(overrides?: {
       record: () => undefined,
     } as never,
     configArchiveService: {
-      exportArchive: () => ({
-        archiveType: 'web3-trading-config',
-        schemaVersion: '1.0.0',
-        exportedAt: '2026-06-05T00:00:00.000Z',
-        meta: {
-          description: 'stub',
-          supportedExchanges: ['okx'],
-          supportedSignalSources: ['price_rule'],
-        },
-        riskConfig: {},
-        rules: [],
-      }),
-      importArchive: async () => ({
-        riskConfigUpdated: false,
-        createdRuleCount: 0,
+      exportArchive: overrides?.exportArchive ?? (() => createArchive()),
+      importArchive: overrides?.importArchive ?? (async () => ({
+        riskConfigUpdated: true,
+        createdRuleCount: 1,
         updatedRuleCount: 0,
-        pausedRuleCount: 0,
-      }),
+        pausedRuleCount: 1,
+      })),
     } as never,
     dailyReportService: {
       getDailyReport: () => [],
     } as never,
     qualityAnalysisService: {
-      getQualityAnalysis: overrides?.getQualityAnalysis ?? (() => ({
+      getQualityAnalysis: () => ({
         summary: {
           totalOrderCount: 0,
           filledOrderCount: 0,
@@ -58,7 +86,7 @@ function createRouteDeps(overrides?: {
         topSymbols: [],
         dailyTrend: [],
         failedReasons: [],
-      } as any)),
+      }),
     } as never,
     exchangeFactory: {
       listExchanges: () => [],
@@ -149,72 +177,79 @@ function createRouteDeps(overrides?: {
 }
 
 async function createTestApp(overrides?: {
-  getQualityAnalysis?: ApiRouteDeps['qualityAnalysisService']['getQualityAnalysis']
+  exportArchive?: ApiRouteDeps['configArchiveService']['exportArchive']
+  importArchive?: ApiRouteDeps['configArchiveService']['importArchive']
 }) {
   const app = Fastify()
   await registerApiRoutes(app, createRouteDeps(overrides))
   return app
 }
 
-test('GET /api/trade/quality-analysis 返回执行质量分析报表', async () => {
-  const app = await createTestApp({
-    getQualityAnalysis: (input) => {
-      assert.equal(input.days, 15)
-      assert.equal(input.exchange, 'okx')
-      assert.equal(input.mode, 'real')
-      return {
-        summary: {
-          totalOrderCount: 10,
-          filledOrderCount: 8,
-          failedOrderCount: 1,
-          cancelledOrderCount: 1,
-          fillRate: 0.8,
-          avgTriggerLatencyMs: 150,
-          avgExecutionLatencyMs: 450,
-          avgSlippagePercent: 0.2,
-          winRate: 0.75,
-          profitLossRatio: 2.5,
-        },
-        statusDistribution: [
-          { name: '已成交', value: 8 },
-        ],
-        topSymbols: [],
-        dailyTrend: [],
-        failedReasons: [],
-      }
-    }
-  })
+test('GET /api/config/archive 返回配置归档', async () => {
+  const app = await createTestApp()
 
   const response = await app.inject({
     method: 'GET',
-    url: '/api/trade/quality-analysis?days=15&exchange=okx&mode=real',
+    url: '/api/config/archive',
   })
 
   assert.equal(response.statusCode, 200)
-  const payload = response.json()
-  assert.equal(payload.summary?.totalOrderCount, 10)
-  assert.equal(payload.summary?.winRate, 0.75)
-  assert.equal(payload.statusDistribution[0]?.name, '已成交')
+  const payload = response.json() as ReturnType<typeof createArchive>
+  assert.equal(payload.archiveType, 'web3-trading-config')
+  assert.equal(payload.rules.length, 1)
 
   await app.close()
 })
 
-test('GET /api/trade/quality-analysis 输入校验失败时返回 400', async () => {
+test('POST /api/config/archive/import 会将归档参数转发给服务层', async () => {
+  const app = await createTestApp({
+    importArchive: async (input) => {
+      assert.equal(input.pauseImportedRules, true)
+      assert.equal(input.overwriteRiskConfig, false)
+      assert.equal(input.archive.rules[0]?.id, 'rule-1')
+      return {
+        riskConfigUpdated: false,
+        createdRuleCount: 0,
+        updatedRuleCount: 1,
+        pausedRuleCount: 1,
+      }
+    },
+  })
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/config/archive/import',
+    payload: {
+      archive: createArchive(),
+      pauseImportedRules: true,
+      overwriteRiskConfig: false,
+    },
+  })
+
+  assert.equal(response.statusCode, 200)
+  const payload = response.json() as {
+    updatedRuleCount: number
+  }
+  assert.equal(payload.updatedRuleCount, 1)
+
+  await app.close()
+})
+
+test('POST /api/config/archive/import 参数不合法时返回 400', async () => {
   const app = await createTestApp()
 
-  // 超过最大天数 365
-  const response1 = await app.inject({
-    method: 'GET',
-    url: '/api/trade/quality-analysis?days=400',
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/config/archive/import',
+    payload: {
+      archive: {
+        archiveType: 'other',
+      },
+    },
   })
-  assert.equal(response1.statusCode, 400)
 
-  // 非法的 exchange
-  const response2 = await app.inject({
-    method: 'GET',
-    url: '/api/trade/quality-analysis?exchange=other',
-  })
-  assert.equal(response2.statusCode, 400)
+  assert.equal(response.statusCode, 400)
+  assert.match(response.body, /配置导入参数不合法/)
 
   await app.close()
 })

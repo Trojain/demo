@@ -2621,3 +2621,69 @@ pnpm --filter @web3/server typecheck
 pnpm --filter @web3/web typecheck
 pnpm lint
 ```
+
+## v0.5.3.3  2026-06-05
+
+### 已完成
+
+- 增加配置归档导出接口 `GET /api/config/archive`，统一导出监控规则、风控配置和归档元信息。
+- 增加配置归档导入接口 `POST /api/config/archive/import`，支持规则幂等更新、风控配置覆盖、默认暂停导入规则。
+- 导入时增加规则 ID 去重校验，并复用后端规则校验服务确保导入结构与现有业务字段一致。
+- `RulesPage` 工具栏已增加“导出配置”和“导入配置”入口，导入前支持本地预览归档摘要。
+- 新增配置归档服务层测试与路由测试，旧路由测试桩已同步补齐 `configArchiveService` 依赖。
+
+### 已确认决策
+
+- 归档仅包含监控规则和风控配置，不包含交易所密钥、运行态订单、审计日志和恢复任务。
+- 导入默认暂停规则，避免归档落库后立即进入扫描和执行链路。
+- 导入按规则 `id` 幂等更新，保留统一结构版本 `schemaVersion = 1.0.0` 作为后续扩展入口。
+
+### 验证记录
+
+```bash
+pnpm test:config-archive
+pnpm test:config-archive-routes
+pnpm test:signal-risk-routes
+pnpm test:order-recovery-routes
+pnpm test:quality-analysis-routes
+pnpm test:trade-fill-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.4  2026-06-05
+
+### 已完成
+
+- 后端恢复服务新增批量重试能力，支持按恢复任务 ID 或按当前筛选条件批量重试。
+- 恢复任务分页查询已支持按状态、阶段、交易所、下单模式、来源筛选。
+- 新增批量恢复审计动作：
+  - `recovery.batch_started`
+  - `recovery.batch_finished`
+- 前端新增独立页面 `恢复中心`，支持：
+  - 按状态、阶段、交易所、下单模式、来源筛选
+  - 单条重试
+  - 批量重试选中项
+  - 按当前筛选条件批量重试
+- `TradeLogsPage` 审计日志筛选已纳入批量恢复审计动作。
+
+### 已确认决策
+
+- 批量恢复默认只对“可恢复”的任务集执行，`recovering` 与 `recovered` 会被跳过并记录到结果摘要。
+- 批量恢复接口同时支持“按选中 ID”与“按当前筛选条件”两种模式，前端恢复中心统一复用该接口。
+- 恢复中心作为独立菜单页存在，继续保留 `TradeLogsPage` 的轻量恢复任务视图，二者职责分层：
+  - `TradeLogsPage` 负责日志联查
+  - `恢复中心` 负责集中筛选和批量操作
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery
+pnpm test:order-recovery-routes
+pnpm test:config-archive
+pnpm test:config-archive-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```

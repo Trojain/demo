@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState, type ReactElement } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import {
   App as AntApp,
   Button,
   Col,
   Drawer,
   Empty,
+  Modal,
   Popconfirm,
   Row,
   Space,
@@ -29,8 +30,8 @@ import {
   type ProColumns,
   type ProDescriptionsItemProps,
 } from '@ant-design/pro-components'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { tradingApi } from '../api/trading'
+import { DownloadOutlined, PlusOutlined, ReloadOutlined, UploadOutlined } from '@ant-design/icons'
+import { tradingApi, type ConfigArchivePayload } from '../api/trading'
 import { RuleRuntimeStatusTag, TriggerStatusTag } from '../components/StatusTag'
 import { DEFAULT_MARKET_SYMBOL, MARKET_EXCHANGE_OPTIONS, getMarketSymbolOptions } from '../constants/market'
 import { useBootstrapTrading } from '../hooks/useBootstrapTrading'
@@ -167,6 +168,8 @@ const auditActionTextMap: Record<AuditLog['action'], string> = {
   'recovery.retry_succeeded': '恢复成功',
   'recovery.retry_failed': '恢复失败',
   'recovery.manual_review_required': '转人工处理',
+  'recovery.batch_started': '批量恢复开始',
+  'recovery.batch_finished': '批量恢复完成',
   'private_stream.error': '私有推送异常',
   'strategy.error': '策略异常',
 }
@@ -254,6 +257,18 @@ function renderPayload(payloadJson?: string) {
   } catch {
     return payloadJson
   }
+}
+
+function isConfigArchivePayload(value: unknown): value is ConfigArchivePayload {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const archive = value as Partial<ConfigArchivePayload>
+  return archive.archiveType === 'web3-trading-config'
+    && archive.schemaVersion === '1.0.0'
+    && Array.isArray(archive.rules)
+    && typeof archive.riskConfig === 'object'
 }
 
 function RuleFormFields({ statusLabel }: { statusLabel: string }) {
@@ -439,11 +454,107 @@ export function RulesPage() {
   const pendingTriggerCount = useTradingStore(state => state.dashboardSummary.pendingTriggerCount)
   const orderCount = useTradingStore(state => state.dashboardSummary.orderCount)
   const actionRef = useRef<ActionType | undefined>(undefined)
+  const importFileInputRef = useRef<HTMLInputElement | null>(null)
   const [togglingRuleId, setTogglingRuleId] = useState('')
   const [executionDrawerOpen, setExecutionDrawerOpen] = useState(false)
   const [executionLoading, setExecutionLoading] = useState(false)
   const [selectedRule, setSelectedRule] = useState<MonitorRule>()
   const [executionDetail, setExecutionDetail] = useState<RuleExecutionDetail>()
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [importingConfig, setImportingConfig] = useState(false)
+  const [selectedArchive, setSelectedArchive] = useState<ConfigArchivePayload>()
+  const [selectedArchiveName, setSelectedArchiveName] = useState('')
+  const [pauseImportedRules, setPauseImportedRules] = useState(true)
+  const [overwriteRiskConfig, setOverwriteRiskConfig] = useState(true)
+
+  const refreshSummary = useTradingStore(state => state.refreshSummary)
+  const refreshRules = useTradingStore(state => state.refreshRules)
+  const refreshTriggers = useTradingStore(state => state.refreshTriggers)
+  const refreshOrders = useTradingStore(state => state.refreshOrders)
+
+  const handleExportConfigArchive = async () => {
+    try {
+      const archive = await tradingApi.exportConfigArchive()
+      const fileName = `web3-trading-config-${archive.exportedAt.slice(0, 10)}.json`
+      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json;charset=utf-8' })
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = downloadUrl
+      anchor.download = fileName
+      anchor.click()
+      window.URL.revokeObjectURL(downloadUrl)
+      message.success('配置归档已导出')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '配置归档导出失败')
+    }
+  }
+
+  const resetImportState = () => {
+    setImportModalOpen(false)
+    setImportingConfig(false)
+    setSelectedArchive(undefined)
+    setSelectedArchiveName('')
+    setPauseImportedRules(true)
+    setOverwriteRiskConfig(true)
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = ''
+    }
+  }
+
+  const handleImportFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    try {
+      const archive = JSON.parse(await file.text()) as unknown
+      if (!isConfigArchivePayload(archive)) {
+        throw new Error('配置归档结构不合法，请检查文件版本和内容')
+      }
+
+      setPauseImportedRules(true)
+      setOverwriteRiskConfig(true)
+      setSelectedArchive(archive)
+      setSelectedArchiveName(file.name)
+      setImportModalOpen(true)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '配置归档解析失败')
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleImportConfigArchive = async () => {
+    if (!selectedArchive) {
+      message.warning('请先选择配置归档文件')
+      return
+    }
+
+    setImportingConfig(true)
+    try {
+      const result = await tradingApi.importConfigArchive({
+        archive: selectedArchive,
+        pauseImportedRules,
+        overwriteRiskConfig,
+      })
+      await Promise.all([
+        refreshSummary(),
+        refreshRules(),
+        refreshTriggers(),
+        refreshOrders(),
+      ])
+      actionRef.current?.reload()
+      message.success(
+        `配置导入完成，新增 ${result.createdRuleCount} 条，更新 ${result.updatedRuleCount} 条，暂停 ${result.pausedRuleCount} 条`,
+      )
+      resetImportState()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '配置导入失败')
+      setImportingConfig(false)
+    }
+  }
 
   const openExecutionDrawer = async (rule: MonitorRule) => {
     setSelectedRule(rule)
@@ -771,6 +882,12 @@ export function RulesPage() {
           <Button key='reload' icon={<ReloadOutlined />} onClick={() => actionRef.current?.reload()}>
             刷新
           </Button>,
+          <Button key='export-config' icon={<DownloadOutlined />} onClick={() => void handleExportConfigArchive()}>
+            导出配置
+          </Button>,
+          <Button key='import-config' icon={<UploadOutlined />} onClick={() => importFileInputRef.current?.click()}>
+            导入配置
+          </Button>,
           <RuleDrawerForm<CreateRulePayload>
             key='create'
             title='新增交易计划'
@@ -789,6 +906,46 @@ export function RulesPage() {
           />,
         ]}
       />
+      <input
+        ref={importFileInputRef}
+        type='file'
+        accept='.json,application/json'
+        style={{ display: 'none' }}
+        onChange={event => void handleImportFileChange(event)}
+      />
+
+      <Modal
+        title='导入配置归档'
+        open={importModalOpen}
+        confirmLoading={importingConfig}
+        onCancel={resetImportState}
+        onOk={() => void handleImportConfigArchive()}
+        destroyOnHidden
+      >
+        <Space direction='vertical' size={12} style={{ width: '100%' }}>
+          <Typography.Text type='secondary'>
+            当前只导入监控规则和风控配置，不包含交易所密钥、运行态订单和审计数据。
+          </Typography.Text>
+          <Typography.Text>归档文件：{selectedArchiveName || '-'}</Typography.Text>
+          <Typography.Text>结构版本：{selectedArchive?.schemaVersion ?? '-'}</Typography.Text>
+          <Typography.Text>规则数量：{selectedArchive?.rules.length ?? 0}</Typography.Text>
+          <Typography.Text>
+            支持交易所：{selectedArchive?.meta.supportedExchanges.map(exchange => exchange.toUpperCase()).join('、') || '-'}
+          </Typography.Text>
+          <Typography.Text>
+            信号来源：{selectedArchive?.meta.supportedSignalSources.join('、') || '-'}
+          </Typography.Text>
+
+          <Space align='center'>
+            <Switch checked={pauseImportedRules} onChange={setPauseImportedRules} />
+            <Typography.Text>导入后默认暂停规则，避免导入完成后立即开始执行</Typography.Text>
+          </Space>
+          <Space align='center'>
+            <Switch checked={overwriteRiskConfig} onChange={setOverwriteRiskConfig} />
+            <Typography.Text>覆盖当前风控配置，保持测试环境和归档环境一致</Typography.Text>
+          </Space>
+        </Space>
+      </Modal>
 
       <Drawer
         title={executionRule ? `执行详情 ${executionRule.symbol}` : '执行详情'}

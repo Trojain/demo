@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Layout, Menu, Space, Tag, Typography } from 'antd'
-import { DashboardOutlined, FileTextOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { DashboardOutlined, FileTextOutlined, SafetyOutlined, ThunderboltOutlined, SyncOutlined } from '@ant-design/icons'
 import styles from './DashboardLayout.module.scss'
 
 const { Header, Content, Sider } = Layout
@@ -31,6 +31,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             { key: '/overview', icon: <DashboardOutlined />, label: <Link to='/overview'>总览</Link> },
             { key: '/rules', icon: <ThunderboltOutlined />, label: <Link to='/rules'>交易计划</Link> },
             { key: '/trade-logs', icon: <FileTextOutlined />, label: <Link to='/trade-logs'>成交与日志</Link> },
+            { key: '/recovery-center', icon: <SyncOutlined />, label: <Link to='/recovery-center'>恢复中心</Link> },
             { key: '/risk-config', icon: <SafetyOutlined />, label: <Link to='/risk-config'>风控配置</Link> },
           ]}
         />

@@ -45,6 +45,8 @@ export type AuditLogAction =
   | 'recovery.retry_succeeded'
   | 'recovery.retry_failed'
   | 'recovery.manual_review_required'
+  | 'recovery.batch_started'
+  | 'recovery.batch_finished'
   | 'private_stream.error'
   | 'strategy.error';
 

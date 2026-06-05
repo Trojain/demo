@@ -48,6 +48,31 @@ class InMemoryOrderRecoveryRepository {
       .slice(0, limit)
   }
 
+  listByIds(ids: string[]) {
+    const idSet = new Set(ids)
+    return [...this.records.values()]
+      .filter(record => idSet.has(record.id))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+  }
+
+  listForBatch(input: {
+    limit: number
+    statuses?: OrderRecoveryStatus[]
+    stages?: OrderRecoveryFailureStage[]
+    exchanges?: OrderRecoveryRecord['exchange'][]
+    modes?: OrderRecoveryRecord['mode'][]
+    sources?: OrderRecoveryRecord['source'][]
+  }) {
+    return [...this.records.values()]
+      .filter(record => !input.statuses || input.statuses.includes(record.recoveryStatus))
+      .filter(record => !input.stages || input.stages.includes(record.failureStage))
+      .filter(record => !input.exchanges || input.exchanges.includes(record.exchange))
+      .filter(record => !input.modes || input.modes.includes(record.mode))
+      .filter(record => !input.sources || input.sources.includes(record.source))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, input.limit)
+  }
+
   update(record: OrderRecoveryRecord) {
     this.records.set(record.id, record)
     return record
@@ -341,6 +366,80 @@ test('规则确认收尾恢复任务会补齐触发状态和缺失审计', async
   assert.equal(auditLogService.logs.some(log => log.action === 'order.submitted' && log.orderId === 'order-9'), true)
 })
 
+test('批量恢复会汇总成功、失败和跳过结果', async () => {
+  const { service, repository } = createService()
+
+  const succeeded = service.createOrRefresh({
+    ...createRecoveryInput('trade_fill_sync'),
+    identityKey: 'trade_fill_sync:order-2',
+    orderId: 'order-2',
+  })
+  const skipped = service.createOrRefresh({
+    ...createRecoveryInput('private_stream'),
+    identityKey: 'private_stream:exchange:okx',
+    orderId: undefined,
+  })
+  repository.update({
+    ...skipped,
+    recoveryStatus: 'recovered',
+  })
+
+  const result = await service.retryBatch({
+    ids: [succeeded.id, skipped.id],
+    limit: 20,
+  })
+
+  assert.equal(result.totalCount, 2)
+  assert.equal(result.successCount, 1)
+  assert.equal(result.failedCount, 0)
+  assert.equal(result.skippedCount, 1)
+  assert.equal(result.items.find(item => item.id === succeeded.id)?.result, 'succeeded')
+  assert.equal(result.items.find(item => item.id === skipped.id)?.result, 'skipped')
+})
+
+test('批量恢复在单条失败时会继续处理并写入批量审计', async () => {
+  const { service, auditLogService } = createService()
+
+  service.createOrRefresh({
+    ...createRecoveryInput('order_sync'),
+    orderId: undefined,
+    identityKey: 'order_sync:missing-order-id-batch',
+  })
+  service.createOrRefresh({
+    ...createRecoveryInput('private_stream'),
+    identityKey: 'private_stream:exchange:binance',
+    exchange: 'binance',
+    orderId: undefined,
+  })
+
+  const result = await service.retryBatch({
+    statuses: ['pending_recovery'],
+    limit: 20,
+  })
+
+  assert.equal(result.totalCount, 2)
+  assert.equal(result.successCount, 1)
+  assert.equal(result.failedCount, 1)
+  assert.equal(result.skippedCount, 0)
+  assert.equal(auditLogService.logs.some(log => log.action === 'recovery.batch_started'), true)
+  assert.equal(auditLogService.logs.some(log => log.action === 'recovery.batch_finished'), true)
+})
+
+test('批量恢复会明确返回不存在的恢复任务 ID', async () => {
+  const { service } = createService()
+
+  const created = service.createOrRefresh(createRecoveryInput('trade_fill_sync'))
+  const result = await service.retryBatch({
+    ids: [created.id, 'recovery-missing'],
+    limit: 20,
+  })
+
+  assert.equal(result.totalCount, 2)
+  assert.equal(result.successCount, 1)
+  assert.equal(result.failedCount, 1)
+  assert.equal(result.items.some(item => item.id === 'recovery-missing' && item.message?.includes('不存在')), true)
+})
+
 // ── 风险 1 覆盖：order_submit_finalize payload 不完整时报错说明缺少哪些字段 ──
 test('order_submit_finalize 缺少 exchangeOrderId 时报错信息包含字段名', async () => {
   const { service } = createService()
@@ -394,4 +493,3 @@ test('rule_trigger_finalize 缺少 orderId 时报错信息明确指向 orderId',
     },
   )
 })
-

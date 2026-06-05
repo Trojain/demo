@@ -15,6 +15,7 @@ import { TriggerRepository } from '../repositories/trigger.repository.js';
 import { registerApiRoutes } from '../routes/api.routes.js';
 import { marketCandleSubscriptionMessageSchema } from '../routes/dto.js';
 import { AuditLogService } from '../services/audit-log.service.js';
+import { ConfigArchiveService } from '../services/config-archive.service.js';
 import { MarketCapService } from '../services/market-cap.service.js';
 import { MarketService } from '../services/market.service.js';
 import { NotificationService } from '../services/notification.service.js';
@@ -122,10 +123,12 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   marketService.setPrivateTradeStreamHealthProvider(privateOrderStreamService);
   const dailyReportService = new DailyReportService(orderRepository, tradeAccountRepository, signalRepository, riskCheckRepository);
   const qualityAnalysisService = new QualityAnalysisService(orderRepository, tradeAccountRepository, auditLogRepository);
+  const configArchiveService = new ConfigArchiveService(ruleRepository, riskConfigService, tradingRuleService);
  
   await registerApiRoutes(app, {
     auditLogRepository,
     auditLogService,
+    configArchiveService,
     dailyReportService,
     qualityAnalysisService,
     exchangeFactory,

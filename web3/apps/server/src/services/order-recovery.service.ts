@@ -52,6 +52,64 @@ export interface CreateOrderRecoveryInput {
   payload?: Record<string, unknown>
 }
 
+export interface ListOrderRecoveryPageInput {
+  /** 当前页码。 */
+  page: number
+  /** 分页大小。 */
+  pageSize: number
+  /** 按恢复状态筛选。 */
+  statuses?: OrderRecoveryStatus[]
+  /** 按失败阶段筛选。 */
+  stages?: OrderRecoveryFailureStage[]
+  /** 按交易所筛选。 */
+  exchanges?: ExchangeCode[]
+  /** 按下单模式筛选。 */
+  modes?: TradeAccountType[]
+  /** 按来源筛选。 */
+  sources?: OrderRecoverySource[]
+}
+
+export interface RetryOrderRecoveryBatchInput {
+  /** 指定重试的恢复任务 ID 列表，优先级高于筛选条件。 */
+  ids?: string[]
+  /** 按恢复状态筛选。 */
+  statuses?: OrderRecoveryStatus[]
+  /** 按失败阶段筛选。 */
+  stages?: OrderRecoveryFailureStage[]
+  /** 按交易所筛选。 */
+  exchanges?: ExchangeCode[]
+  /** 按下单模式筛选。 */
+  modes?: TradeAccountType[]
+  /** 按来源筛选。 */
+  sources?: OrderRecoverySource[]
+  /** 批量恢复最大处理条数。 */
+  limit: number
+}
+
+export interface RetryOrderRecoveryBatchItemResult {
+  /** 恢复任务 ID。 */
+  id: string
+  /** 最终结果。 */
+  result: 'succeeded' | 'failed' | 'skipped'
+  /** 当前状态。 */
+  recoveryStatus: OrderRecoveryStatus
+  /** 失败或跳过原因。 */
+  message?: string
+}
+
+export interface RetryOrderRecoveryBatchResult {
+  /** 本次批量操作总处理条数。 */
+  totalCount: number
+  /** 成功条数。 */
+  successCount: number
+  /** 失败条数。 */
+  failedCount: number
+  /** 跳过条数。 */
+  skippedCount: number
+  /** 各条恢复任务执行结果。 */
+  items: RetryOrderRecoveryBatchItemResult[]
+}
+
 export class OrderRecoveryService {
   private timer?: NodeJS.Timeout
 
@@ -81,12 +139,7 @@ export class OrderRecoveryService {
     }
   }
 
-  listPage(input: {
-    page: number
-    pageSize: number
-    statuses?: OrderRecoveryStatus[]
-    stages?: OrderRecoveryFailureStage[]
-  }) {
+  listPage(input: ListOrderRecoveryPageInput) {
     return this.orderRecoveryRepository.listPage(input)
   }
 
@@ -169,6 +222,107 @@ export class OrderRecoveryService {
     }
 
     return this.retryRecord(record, reason)
+  }
+
+  async retryBatch(input: RetryOrderRecoveryBatchInput): Promise<RetryOrderRecoveryBatchResult> {
+    const requestedIds = input.ids && input.ids.length > 0 ? [...new Set(input.ids)] : undefined
+    const records = requestedIds
+      ? this.orderRecoveryRepository.listByIds(requestedIds)
+      : this.orderRecoveryRepository.listForBatch({
+          limit: input.limit,
+          statuses: input.statuses,
+          stages: input.stages,
+          exchanges: input.exchanges,
+          modes: input.modes,
+          sources: input.sources,
+        })
+
+    this.auditLogService.record({
+      action: 'recovery.batch_started',
+      entityType: 'recovery_batch',
+      message: `开始批量重试恢复任务，共 ${records.length} 条`,
+      payload: {
+        ids: input.ids,
+        statuses: input.statuses,
+        stages: input.stages,
+        exchanges: input.exchanges,
+        modes: input.modes,
+        sources: input.sources,
+        limit: input.limit,
+        totalCount: records.length,
+      },
+    })
+
+    const items: RetryOrderRecoveryBatchItemResult[] = []
+    let successCount = 0
+    let failedCount = 0
+    let skippedCount = 0
+
+    if (requestedIds) {
+      const existingIdSet = new Set(records.map(record => record.id))
+      for (const id of requestedIds) {
+        if (existingIdSet.has(id)) {
+          continue
+        }
+
+        failedCount += 1
+        items.push({
+          id,
+          result: 'failed',
+          recoveryStatus: 'recovery_failed',
+          message: '恢复任务不存在或已被删除',
+        })
+      }
+    }
+
+    for (const record of records) {
+      if (record.recoveryStatus === 'recovering' || record.recoveryStatus === 'recovered') {
+        skippedCount += 1
+        items.push({
+          id: record.id,
+          result: 'skipped',
+          recoveryStatus: record.recoveryStatus,
+          message: record.recoveryStatus === 'recovered' ? '恢复任务已完成' : '恢复任务正在处理中',
+        })
+        continue
+      }
+
+      try {
+        const retried = await this.retryRecord(record, 'manual')
+        successCount += 1
+        items.push({
+          id: retried.id,
+          result: 'succeeded',
+          recoveryStatus: retried.recoveryStatus,
+        })
+      } catch (error) {
+        failedCount += 1
+        const current = this.orderRecoveryRepository.findById(record.id)
+        items.push({
+          id: record.id,
+          result: 'failed',
+          recoveryStatus: current?.recoveryStatus ?? 'recovery_failed',
+          message: error instanceof Error ? error.message : '恢复任务重试失败',
+        })
+      }
+    }
+
+    const result = {
+      totalCount: requestedIds ? requestedIds.length : records.length,
+      successCount,
+      failedCount,
+      skippedCount,
+      items,
+    } satisfies RetryOrderRecoveryBatchResult
+
+    this.auditLogService.record({
+      action: 'recovery.batch_finished',
+      entityType: 'recovery_batch',
+      message: `批量重试完成，成功 ${successCount} 条，失败 ${failedCount} 条，跳过 ${skippedCount} 条`,
+      payload: result,
+    })
+
+    return result
   }
 
   async processDueRecoveries() {
