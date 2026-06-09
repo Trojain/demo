@@ -3,6 +3,8 @@ import type { TriggerEvent } from '../types/domain.js'
 
 type TriggerRow = {
   id: string
+  strategy_id?: string | null
+  signal_id?: string | null
   rule_id: string
   exchange: TriggerEvent['exchange']
   symbol: string
@@ -16,6 +18,8 @@ type TriggerRow = {
 function mapTrigger(row: TriggerRow): TriggerEvent {
   return {
     id: row.id,
+    strategyId: row.strategy_id ?? undefined,
+    signalId: row.signal_id ?? undefined,
     ruleId: row.rule_id,
     exchange: row.exchange,
     symbol: row.symbol,
@@ -65,13 +69,15 @@ export class TriggerRepository {
     this.db
       .prepare(
         `INSERT INTO trigger_events (
-          id, rule_id, exchange, symbol, market_price, target_price, status, created_at, confirmed_at
+          id, strategy_id, signal_id, rule_id, exchange, symbol, market_price, target_price, status, created_at, confirmed_at
         ) VALUES (
-          @id, @ruleId, @exchange, @symbol, @marketPrice, @targetPrice, @status, @createdAt, @confirmedAt
+          @id, @strategyId, @signalId, @ruleId, @exchange, @symbol, @marketPrice, @targetPrice, @status, @createdAt, @confirmedAt
         )`,
       )
       .run({
         ...event,
+        strategyId: event.strategyId ?? null,
+        signalId: event.signalId ?? null,
         confirmedAt: event.confirmedAt ?? null,
       })
     return event

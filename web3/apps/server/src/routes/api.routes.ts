@@ -13,6 +13,7 @@ import { FinalOrderValidationError, TradeExecutionError, type OrderService } fro
 import type { RiskConfigService } from '../services/risk-config.service.js'
 import type { RiskService } from '../services/risk.service.js'
 import type { SignalService } from '../services/signal.service.js'
+import type { StrategyInstanceService } from '../services/strategy-instance.service.js'
 import type { TradeAccountService } from '../services/trade-account.service.js'
 import type { TradeExecutionService } from '../services/trade-execution.service.js'
 import { RuleValidationError, type TradingRuleService } from '../services/trading-rule.service.js'
@@ -74,6 +75,7 @@ export interface ApiRouteDeps {
   riskConfigService: RiskConfigService
   riskService: RiskService
   ruleRepository: RuleRepository
+  strategyInstanceService: StrategyInstanceService
   signalRepository: SignalRepository
   signalService: SignalService
   tradeAccountService: TradeAccountService
@@ -575,8 +577,12 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     }
 
     const now = new Date().toISOString()
+    const strategyId = nanoid()
+    const strategyVersionId = nanoid()
     const rule = deps.ruleRepository.create({
       id: nanoid(),
+      strategyId,
+      strategyVersionId,
       exchange: parsed.data.exchange,
       symbol: parsed.data.symbol.trim().toUpperCase(),
       operator: parsed.data.operator,
@@ -597,6 +603,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       createdAt: now,
       updatedAt: now,
     })
+    deps.strategyInstanceService.ensureForRule(rule, 'create')
 
     return reply.status(201).send(rule)
   })
@@ -623,7 +630,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       throw error
     }
 
-    const rule = deps.ruleRepository.update({
+    const nextRule = {
       ...current,
       exchange: parsed.data.exchange,
       symbol: parsed.data.symbol.trim().toUpperCase(),
@@ -640,6 +647,11 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       maxTriggerCount: parsed.data.maxTriggerCount,
       simulationMode: parsed.data.simulationMode,
       enabled: parsed.data.enabled,
+    }
+    const strategyVersion = deps.strategyInstanceService.ensureForRule(nextRule, 'update').version
+    const rule = deps.ruleRepository.update({
+      ...nextRule,
+      strategyVersionId: strategyVersion.id,
     })
 
     return rule
@@ -657,6 +669,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       return reply.status(404).send({ message: '监控规则不存在' })
     }
 
+    deps.strategyInstanceService.updateStatusForRule(rule)
     return rule
   })
 

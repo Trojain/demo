@@ -11,6 +11,7 @@ type OrderRecoveryRow = {
   identity_key: string
   order_id?: string | null
   exchange_order_id?: string | null
+  execution_task_id?: string | null
   exchange: OrderRecoveryRecord['exchange']
   source: OrderRecoveryRecord['source']
   mode: OrderRecoveryRecord['mode']
@@ -36,6 +37,7 @@ function mapOrderRecovery(row: OrderRecoveryRow): OrderRecoveryRecord {
     identityKey: row.identity_key,
     orderId: row.order_id ?? undefined,
     exchangeOrderId: row.exchange_order_id ?? undefined,
+    executionTaskId: row.execution_task_id ?? undefined,
     exchange: row.exchange,
     source: row.source,
     mode: row.mode,
@@ -63,11 +65,11 @@ export class OrderRecoveryRepository {
     this.db
       .prepare(
         `INSERT INTO order_recovery_records (
-          id, identity_key, order_id, exchange_order_id, exchange, source, mode, symbol,
+          id, identity_key, order_id, exchange_order_id, execution_task_id, exchange, source, mode, symbol,
           failure_stage, recovery_status, retry_count, max_retry_count, last_recovery_source, resolved_by, last_error_code,
           last_error_message, next_retry_at, payload_json, created_at, updated_at, resolved_at
         ) VALUES (
-          @id, @identityKey, @orderId, @exchangeOrderId, @exchange, @source, @mode, @symbol,
+          @id, @identityKey, @orderId, @exchangeOrderId, @executionTaskId, @exchange, @source, @mode, @symbol,
           @failureStage, @recoveryStatus, @retryCount, @maxRetryCount, @lastRecoverySource, @resolvedBy, @lastErrorCode,
           @lastErrorMessage, @nextRetryAt, @payloadJson, @createdAt, @updatedAt, @resolvedAt
         )`,
@@ -76,6 +78,7 @@ export class OrderRecoveryRepository {
         ...record,
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
+        executionTaskId: record.executionTaskId ?? null,
         symbol: record.symbol ?? null,
         lastRecoverySource: record.lastRecoverySource ?? null,
         resolvedBy: record.resolvedBy ?? null,
@@ -227,6 +230,7 @@ export class OrderRecoveryRepository {
          SET identity_key = @identityKey,
              order_id = @orderId,
              exchange_order_id = @exchangeOrderId,
+             execution_task_id = @executionTaskId,
              exchange = @exchange,
              source = @source,
              mode = @mode,
@@ -249,6 +253,7 @@ export class OrderRecoveryRepository {
         ...record,
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
+        executionTaskId: record.executionTaskId ?? null,
         symbol: record.symbol ?? null,
         lastRecoverySource: record.lastRecoverySource ?? null,
         resolvedBy: record.resolvedBy ?? null,

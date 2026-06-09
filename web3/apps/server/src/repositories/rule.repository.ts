@@ -3,6 +3,8 @@ import type { MonitorRule, RuleRuntimeStatus } from '../types/domain.js'
 
 type RuleRow = {
   id: string
+  strategy_id?: string | null
+  strategy_version_id?: string | null
   exchange: MonitorRule['exchange']
   symbol: string
   operator: MonitorRule['operator']
@@ -30,6 +32,8 @@ type RuleRow = {
 function mapRule(row: RuleRow): MonitorRule {
   return {
     id: row.id,
+    strategyId: row.strategy_id ?? undefined,
+    strategyVersionId: row.strategy_version_id ?? undefined,
     exchange: row.exchange,
     symbol: row.symbol,
     operator: row.operator,
@@ -91,12 +95,12 @@ export class RuleRepository {
     this.db
       .prepare(
         `INSERT INTO monitor_rules (
-          id, exchange, symbol, operator, target_price, check_interval_ms, side, order_type,
+          id, strategy_id, strategy_version_id, exchange, symbol, operator, target_price, check_interval_ms, side, order_type,
           base_quantity, quote_amount, limit_price, max_slippage_percent, cooldown_ms,
           max_trigger_count, triggered_count, simulation_mode, enabled, runtime_status,
           last_error_message, last_checked_at, last_triggered_at, created_at, updated_at
         ) VALUES (
-          @id, @exchange, @symbol, @operator, @targetPrice, @checkIntervalMs, @side, @orderType,
+          @id, @strategyId, @strategyVersionId, @exchange, @symbol, @operator, @targetPrice, @checkIntervalMs, @side, @orderType,
           @baseQuantity, @quoteAmount, @limitPrice, @maxSlippagePercent, @cooldownMs,
           @maxTriggerCount, @triggeredCount, @simulationMode, @enabled, @runtimeStatus,
           @lastErrorMessage, @lastCheckedAt, @lastTriggeredAt, @createdAt, @updatedAt
@@ -104,6 +108,8 @@ export class RuleRepository {
       )
       .run({
         ...rule,
+        strategyId: rule.strategyId ?? null,
+        strategyVersionId: rule.strategyVersionId ?? null,
         baseQuantity: rule.baseQuantity ?? null,
         quoteAmount: rule.quoteAmount ?? null,
         limitPrice: rule.limitPrice ?? null,
@@ -123,6 +129,8 @@ export class RuleRepository {
       .prepare(
         `UPDATE monitor_rules
          SET exchange = @exchange,
+             strategy_id = @strategyId,
+             strategy_version_id = @strategyVersionId,
              symbol = @symbol,
              operator = @operator,
              target_price = @targetPrice,
@@ -144,6 +152,8 @@ export class RuleRepository {
       )
       .run({
         ...rule,
+        strategyId: rule.strategyId ?? null,
+        strategyVersionId: rule.strategyVersionId ?? null,
         baseQuantity: rule.baseQuantity ?? null,
         quoteAmount: rule.quoteAmount ?? null,
         limitPrice: rule.limitPrice ?? null,

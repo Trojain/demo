@@ -3,6 +3,9 @@ import type { OrderRecord } from '../types/domain.js'
 
 type OrderRow = {
   id: string
+  strategy_id?: string | null
+  signal_id?: string | null
+  execution_task_id?: string | null
   trigger_id?: string | null
   rule_id?: string | null
   exchange: OrderRecord['exchange']
@@ -22,6 +25,9 @@ type OrderRow = {
 function mapOrder(row: OrderRow): OrderRecord {
   return {
     id: row.id,
+    strategyId: row.strategy_id ?? undefined,
+    signalId: row.signal_id ?? undefined,
+    executionTaskId: row.execution_task_id ?? undefined,
     triggerId: row.trigger_id ?? undefined,
     ruleId: row.rule_id ?? undefined,
     exchange: row.exchange,
@@ -269,15 +275,18 @@ export class OrderRepository {
     this.db
       .prepare(
         `INSERT INTO order_records (
-          id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
+          id, strategy_id, signal_id, execution_task_id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
           quote_amount, price, exchange_order_id, status, simulation_mode, raw_message, created_at
         ) VALUES (
-          @id, @triggerId, @ruleId, @exchange, @symbol, @side, @orderType, @baseQuantity,
+          @id, @strategyId, @signalId, @executionTaskId, @triggerId, @ruleId, @exchange, @symbol, @side, @orderType, @baseQuantity,
           @quoteAmount, @price, @exchangeOrderId, @status, @simulationMode, @rawMessage, @createdAt
         )`,
       )
       .run({
         ...order,
+        strategyId: order.strategyId ?? null,
+        signalId: order.signalId ?? null,
+        executionTaskId: order.executionTaskId ?? null,
         triggerId: order.triggerId ?? null,
         ruleId: order.ruleId ?? null,
         baseQuantity: order.baseQuantity ?? null,

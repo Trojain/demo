@@ -10,7 +10,31 @@ export type TradeOrderQuantityType = 'base' | 'quote';
 
 export type TriggerStatus = 'pending' | 'confirmed' | 'ignored' | 'failed';
 
-export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
+export type SignalStatus = 'pending' | 'received' | 'validated' | 'converted' | 'rejected' | 'expired';
+
+export type StrategyInstanceStatus = 'active' | 'paused' | 'archived';
+
+export type StrategyInstanceSourceType = 'price_rule' | 'external_input' | 'polymarket_lag';
+
+export type ExecutionTaskStatus =
+  | 'pending'
+  | 'waiting_confirm'
+  | 'running'
+  | 'submitted'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export type ExecutionTaskFailureStage =
+  | 'signal_validation'
+  | 'risk_check'
+  | 'confirm_wait'
+  | 'order_preview'
+  | 'order_submit'
+  | 'order_finalize'
+  | 'order_sync'
+  | 'trade_fill_sync'
+  | 'unknown';
 
 export type RiskCheckStatus = 'passed' | 'rejected';
 
@@ -35,6 +59,8 @@ export type AuditLogAction =
   | 'trigger.confirmed'
   | 'trigger.failed'
   | 'trigger.ignored'
+  | 'execution.created'
+  | 'execution.failed'
   | 'order.submitted'
   | 'order.synced'
   | 'order.final_validation_failed'
@@ -62,7 +88,96 @@ export type OrderRecoveryFailureStage =
   | 'trade_fill_sync'
   | 'balance_refresh';
 
-export type SignalSourceType = 'price_rule' | 'external_input';
+export type SignalSourceType = 'price_rule' | 'external_input' | 'polymarket_lag';
+
+export interface StrategyInstance {
+  /** 策略实例主键，内部执行体字段，不映射交易所官方字段。 */
+  id: string;
+  /** 策略名称，用于审计和人工排查。 */
+  name: string;
+  /** 策略来源类型，价格规则、外部输入和后续 Polymarket 信号统一归档。 */
+  sourceType: StrategyInstanceSourceType;
+  /** 关联规则 ID，手动快捷交易和后续外部信号可为空。 */
+  ruleId?: string;
+  /** 当前策略状态，暂停或归档后不允许继续产生可执行信号。 */
+  status: StrategyInstanceStatus;
+  /** 当前生效版本 ID。 */
+  currentVersionId?: string;
+  /** 策略参数摘要 JSON，禁止写入敏感字段。 */
+  paramsJson: string;
+  /** 创建时间。 */
+  createdAt: string;
+  /** 更新时间。 */
+  updatedAt: string;
+}
+
+export interface StrategyVersion {
+  /** 策略参数版本主键。 */
+  id: string;
+  /** 关联策略实例 ID。 */
+  strategyId: string;
+  /** 版本号，从 1 开始递增。 */
+  version: number;
+  /** 参数摘要 JSON，记录用户可审计的策略配置快照。 */
+  paramsJson: string;
+  /** 创建原因，例如 create、update、migration。 */
+  changeReason: string;
+  /** 创建时间。 */
+  createdAt: string;
+}
+
+export interface ExecutionTask {
+  /** 执行任务主键。 */
+  id: string;
+  /** 关联策略实例 ID，手动快捷交易可为空。 */
+  strategyId?: string;
+  /** 关联策略版本 ID，手动快捷交易可为空。 */
+  strategyVersionId?: string;
+  /** 关联信号 ID，手动快捷交易可为空。 */
+  signalId?: string;
+  /** 关联触发事件 ID，快捷交易可为空。 */
+  triggerId?: string;
+  /** 关联订单 ID，下单成功后回写。 */
+  orderId?: string;
+  /** 交易所编码。 */
+  exchange: ExchangeCode;
+  /** 统一交易对。 */
+  symbol: string;
+  /** 下单模式。 */
+  mode: TradeAccountType;
+  /** 买入或卖出方向。 */
+  side: OrderSide;
+  /** 市价或限价。 */
+  orderType: OrderType;
+  /** 当前任务状态。 */
+  status: ExecutionTaskStatus;
+  /** 任务来源，区分规则、手动快捷交易、系统恢复和后续 Polymarket。 */
+  source: OrderRecoverySource | 'polymarket';
+  /** 幂等键，防止重复信号、重复确认和重复提交。 */
+  idempotencyKey: string;
+  /** 同账户、交易所、交易对维度的互斥锁键。 */
+  lockKey: string;
+  /** 失败阶段。 */
+  failureStage?: ExecutionTaskFailureStage;
+  /** 失败原因。 */
+  failureReason?: string;
+  /** 等待确认开始时间。 */
+  waitingConfirmAt?: string;
+  /** 运行开始时间。 */
+  startedAt?: string;
+  /** 提交交易所时间。 */
+  submittedAt?: string;
+  /** 完成时间。 */
+  completedAt?: string;
+  /** 取消时间。 */
+  cancelledAt?: string;
+  /** 任务上下文 JSON，禁止写入敏感字段。 */
+  payloadJson?: string;
+  /** 创建时间。 */
+  createdAt: string;
+  /** 更新时间。 */
+  updatedAt: string;
+}
 
 export type OrderRecoveryStatus =
   | 'pending_recovery'
@@ -82,6 +197,10 @@ export type UnifiedOrderStatus =
 export interface MonitorRule {
   /** 瑙勫垯涓婚敭锛屼娇鐢?nanoid 鏂逛究鍓嶅悗绔睍绀?*/
   id: string;
+  /** 关联策略实例 ID，内部执行体字段。 */
+  strategyId?: string;
+  /** 关联策略参数版本 ID，内部执行体字段。 */
+  strategyVersionId?: string;
   /** 浜ゆ槗鎵€缂栫爜锛屽綋鍓嶆敮鎸?okx锛宐inance 涓洪鐣?*/
   exchange: ExchangeCode;
   /** 缁熶竴浜ゆ槗瀵癸紝鍓嶇寤鸿浣跨敤 BTC-USDT 杩欑被鍙鏍煎紡 */
@@ -131,6 +250,10 @@ export interface MonitorRule {
 export interface TriggerEvent {
   /** 瑙﹀彂浜嬩欢涓婚敭 */
   id: string;
+  /** 关联策略实例 ID，内部执行体字段。 */
+  strategyId?: string;
+  /** 关联信号 ID，内部执行体字段。 */
+  signalId?: string;
   /** 鍏宠仈鐩戞帶瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -152,6 +275,10 @@ export interface TriggerEvent {
 export interface TradingSignal {
   /** 淇″彿涓婚敭 */
   id: string;
+  /** 关联策略实例 ID，内部执行体字段。 */
+  strategyId?: string;
+  /** 关联策略参数版本 ID，内部执行体字段。 */
+  strategyVersionId?: string;
   /** 鍏宠仈鐩戞帶瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -182,6 +309,12 @@ export interface TradingSignal {
   simulationMode: boolean;
   /** 淇″彿鐘舵€?*/
   status: SignalStatus;
+  /** 信号去重键，用于拦截重复来源事件。 */
+  dedupeKey?: string;
+  /** 信号过期时间，过期后禁止进入执行。 */
+  expireAt?: string;
+  /** 信号拒绝原因。 */
+  rejectedReason?: string;
   /** 淇″彿鐢熸垚鍘熷洜 */
   reason: string;
   /** 澶栭儴淇″彿琛ュ厖涓婁笅鏂?JSON锛屼环鏍艰鍒欎俊鍙峰彲涓虹┖ */
@@ -659,6 +792,12 @@ export interface RuleExecutionDetail {
 export interface OrderRecord {
   /** 璁㈠崟璁板綍涓婚敭 */
   id: string;
+  /** 关联策略实例 ID，快捷交易可为空。 */
+  strategyId?: string;
+  /** 关联信号 ID，快捷交易可为空。 */
+  signalId?: string;
+  /** 关联执行任务 ID。 */
+  executionTaskId?: string;
   /** 鍏宠仈瑙﹀彂浜嬩欢 ID锛屾墜鍔ㄥ揩鎹蜂氦鏄撳彲涓虹┖ */
   triggerId?: string;
   /** 鍏宠仈瑙勫垯 ID锛屾墜鍔ㄥ揩鎹蜂氦鏄撳彲涓虹┖ */
@@ -698,6 +837,8 @@ export interface OrderRecoveryRecord {
   orderId?: string;
   /** 鍏宠仈浜ゆ槗鎵€璁㈠崟鍙凤紝渚夸簬鎺掓煡鐪熷疄浜ゆ槗闂 */
   exchangeOrderId?: string;
+  /** 关联执行任务 ID，用于恢复链路回到统一执行上下文。 */
+  executionTaskId?: string;
   /** 浜ゆ槗鎵€缂栫爜 */
   exchange: ExchangeCode;
   /** 澶辫触鏉ユ簮锛宮anual 琛ㄧず蹇嵎浜ゆ槗锛宺ule 琛ㄧず绛栫暐璁″垝锛宻ystem 琛ㄧず绯荤粺绾ф仮澶嶄换鍔?*/
@@ -737,6 +878,12 @@ export interface OrderRecoveryRecord {
 export interface AuditLog {
   /** 瀹¤鏃ュ織涓婚敭 */
   id: string;
+  /** 关联策略实例 ID。 */
+  strategyId?: string;
+  /** 关联信号 ID。 */
+  signalId?: string;
+  /** 关联执行任务 ID。 */
+  executionTaskId?: string;
   /** 鏃ュ織绾у埆锛屽尯鍒嗘櫘閫氳褰曘€佽鍛婂拰閿欒 */
   level: AuditLogLevel;
   /** 鎿嶄綔鍔ㄤ綔锛屼娇鐢ㄥ浐瀹氭灇涓炬柟渚垮墠绔瓫閫?*/

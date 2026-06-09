@@ -3,6 +3,7 @@ import type { TriggerRepository } from '../repositories/trigger.repository.js'
 import type { OrderPreview, OrderPreviewCheckItem, OrderRecord } from '../types/domain.js'
 import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { ExecutionTaskService } from './execution-task.service.js'
 import type { OrderPreviewService } from './order-preview.service.js'
 import type { OrderRecoveryService } from './order-recovery.service.js'
 import { TradeExecutionError, type TradeExecutionService } from './trade-execution.service.js'
@@ -28,6 +29,7 @@ export class OrderService {
     private readonly tradeExecutionService: TradeExecutionService,
     private readonly auditLogService: AuditLogService,
     private readonly orderRecoveryService: OrderRecoveryService,
+    private readonly executionTaskService: ExecutionTaskService,
   ) {}
 
   async confirmTrigger(
@@ -160,12 +162,14 @@ export class OrderService {
         : previewFailedItems
     const message = input.error instanceof Error ? input.error.message : '确认下单失败'
     const tradeExecutionError = input.error instanceof TradeExecutionError ? input.error : undefined
+    const executionTask = this.executionTaskService.findByTriggerId(input.trigger.id)
 
     this.auditLogService.record({
       level: 'warning',
       action: 'trigger.failed',
       entityType: 'trigger',
       entityId: input.trigger.id,
+      executionTaskId: executionTask?.id,
       ruleId: input.rule.id,
       triggerId: input.trigger.id,
       message: input.executionMode === 'auto' ? `${input.rule.symbol} 自动执行失败：${message}` : `${input.rule.symbol} 确认执行失败：${message}`,
@@ -189,6 +193,7 @@ export class OrderService {
       action: 'order.failed',
       entityType: 'trigger',
       entityId: input.trigger.id,
+      executionTaskId: executionTask?.id,
       ruleId: input.rule.id,
       triggerId: input.trigger.id,
       message,
@@ -221,11 +226,15 @@ export class OrderService {
     executionMode: 'manual' | 'auto'
     previewedAt: string
   }) {
+    const executionTask = this.executionTaskService.findByTriggerId(input.triggerId)
     this.triggerRepository.markConfirmed(input.triggerId)
     this.auditLogService.record({
       action: 'trigger.confirmed',
       entityType: 'trigger',
       entityId: input.triggerId,
+      strategyId: input.order.strategyId,
+      signalId: input.order.signalId,
+      executionTaskId: executionTask?.id ?? input.order.executionTaskId,
       ruleId: input.rule.id,
       triggerId: input.triggerId,
       orderId: input.order.id,
@@ -244,6 +253,9 @@ export class OrderService {
       action: 'order.submitted',
       entityType: 'order',
       entityId: input.order.id,
+      strategyId: input.order.strategyId,
+      signalId: input.order.signalId,
+      executionTaskId: executionTask?.id ?? input.order.executionTaskId,
       ruleId: input.rule.id,
       triggerId: input.triggerId,
       orderId: input.order.id,
@@ -278,6 +290,7 @@ export class OrderService {
       identityKey: `rule_trigger_finalize:${input.order.exchange}:${input.order.exchangeOrderId}`,
       orderId: input.order.id,
       exchangeOrderId: input.order.exchangeOrderId,
+      executionTaskId: input.order.executionTaskId,
       exchange: input.order.exchange,
       source: 'rule',
       mode: input.order.simulationMode ? 'simulation' : 'real',
@@ -289,6 +302,7 @@ export class OrderService {
         triggerId: input.triggerId,
         ruleId: input.rule.id,
         orderId: input.order.id,
+        executionTaskId: input.order.executionTaskId,
         executionMode: input.executionMode,
         marketPrice: input.trigger.marketPrice,
         targetPrice: input.trigger.targetPrice,

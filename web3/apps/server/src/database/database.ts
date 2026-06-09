@@ -11,6 +11,8 @@ export function createDatabase(databasePath: string) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS monitor_rules (
       id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      strategy_version_id TEXT,
       exchange TEXT NOT NULL,
       symbol TEXT NOT NULL,
       operator TEXT NOT NULL,
@@ -37,6 +39,8 @@ export function createDatabase(databasePath: string) {
 
     CREATE TABLE IF NOT EXISTS trigger_events (
       id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      signal_id TEXT,
       rule_id TEXT NOT NULL,
       exchange TEXT NOT NULL,
       symbol TEXT NOT NULL,
@@ -50,6 +54,8 @@ export function createDatabase(databasePath: string) {
 
     CREATE TABLE IF NOT EXISTS trading_signals (
       id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      strategy_version_id TEXT,
       rule_id TEXT NOT NULL,
       exchange TEXT NOT NULL,
       symbol TEXT NOT NULL,
@@ -65,6 +71,9 @@ export function createDatabase(databasePath: string) {
       limit_price TEXT,
       simulation_mode INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL,
+      dedupe_key TEXT,
+      expire_at TEXT,
+      rejected_reason TEXT,
       reason TEXT NOT NULL,
       source_metadata_json TEXT,
       created_at TEXT NOT NULL,
@@ -101,6 +110,9 @@ export function createDatabase(databasePath: string) {
 
     CREATE TABLE IF NOT EXISTS order_records (
       id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      signal_id TEXT,
+      execution_task_id TEXT,
       trigger_id TEXT,
       rule_id TEXT,
       exchange TEXT NOT NULL,
@@ -121,6 +133,9 @@ export function createDatabase(databasePath: string) {
 
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      signal_id TEXT,
+      execution_task_id TEXT,
       level TEXT NOT NULL,
       action TEXT NOT NULL,
       entity_type TEXT NOT NULL,
@@ -222,6 +237,7 @@ export function createDatabase(databasePath: string) {
       identity_key TEXT NOT NULL,
       order_id TEXT,
       exchange_order_id TEXT,
+      execution_task_id TEXT,
       exchange TEXT NOT NULL,
       source TEXT NOT NULL,
       mode TEXT NOT NULL,
@@ -242,10 +258,68 @@ export function createDatabase(databasePath: string) {
       FOREIGN KEY (order_id) REFERENCES order_records(id)
     );
 
+    CREATE TABLE IF NOT EXISTS strategy_instances (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      rule_id TEXT,
+      status TEXT NOT NULL,
+      current_version_id TEXT,
+      params_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS strategy_versions (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      params_json TEXT NOT NULL,
+      change_reason TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (strategy_id) REFERENCES strategy_instances(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS execution_tasks (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT,
+      strategy_version_id TEXT,
+      signal_id TEXT,
+      trigger_id TEXT,
+      order_id TEXT,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      side TEXT NOT NULL,
+      order_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      source TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      lock_key TEXT NOT NULL,
+      failure_stage TEXT,
+      failure_reason TEXT,
+      waiting_confirm_at TEXT,
+      started_at TEXT,
+      submitted_at TEXT,
+      completed_at TEXT,
+      cancelled_at TEXT,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (strategy_id) REFERENCES strategy_instances(id),
+      FOREIGN KEY (strategy_version_id) REFERENCES strategy_versions(id),
+      FOREIGN KEY (signal_id) REFERENCES trading_signals(id),
+      FOREIGN KEY (trigger_id) REFERENCES trigger_events(id),
+      FOREIGN KEY (order_id) REFERENCES order_records(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_monitor_rules_enabled ON monitor_rules(enabled);
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_status ON trading_signals(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_rule_id ON trading_signals(rule_id);
+    CREATE INDEX IF NOT EXISTS idx_trading_signals_strategy_id ON trading_signals(strategy_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trading_signals_dedupe_key ON trading_signals(dedupe_key) WHERE dedupe_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_risk_checks_signal_id ON risk_checks(signal_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_status ON risk_checks(status);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
@@ -260,13 +334,22 @@ export function createDatabase(databasePath: string) {
     CREATE INDEX IF NOT EXISTS idx_order_recovery_records_status_retry ON order_recovery_records(recovery_status, next_retry_at, updated_at);
     CREATE INDEX IF NOT EXISTS idx_order_recovery_records_order_id ON order_recovery_records(order_id);
     CREATE INDEX IF NOT EXISTS idx_order_recovery_records_identity_key ON order_recovery_records(identity_key, updated_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_instances_rule_id ON strategy_instances(rule_id) WHERE rule_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_strategy_instances_status ON strategy_instances(status, updated_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_versions_strategy_version ON strategy_versions(strategy_id, version);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_tasks_idempotency_key ON execution_tasks(idempotency_key);
+    CREATE INDEX IF NOT EXISTS idx_execution_tasks_status_time ON execution_tasks(status, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_execution_tasks_lock_key ON execution_tasks(lock_key, status, updated_at);
   `);
 
   migrateMonitorRules(db);
   migrateTradingSignals(db);
+  migrateTriggerEvents(db);
   migrateRiskChecks(db);
+  migrateAuditLogs(db);
   migrateOrderRecords(db);
   migrateOrderRecoveryRecords(db);
+  migrateStrategyInstances(db);
 
   return db;
 }
@@ -282,6 +365,14 @@ function migrateMonitorRules(db: Database.Database) {
 
   if (!columnNames.has('last_error_message')) {
     db.prepare('ALTER TABLE monitor_rules ADD COLUMN last_error_message TEXT').run();
+  }
+
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE monitor_rules ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('strategy_version_id')) {
+    db.prepare('ALTER TABLE monitor_rules ADD COLUMN strategy_version_id TEXT').run();
   }
 }
 
@@ -306,6 +397,42 @@ function migrateTradingSignals(db: Database.Database) {
   if (!columnNames.has('source_metadata_json')) {
     db.prepare('ALTER TABLE trading_signals ADD COLUMN source_metadata_json TEXT').run();
   }
+
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('strategy_version_id')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN strategy_version_id TEXT').run();
+  }
+
+  if (!columnNames.has('dedupe_key')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN dedupe_key TEXT').run();
+  }
+
+  if (!columnNames.has('expire_at')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN expire_at TEXT').run();
+  }
+
+  if (!columnNames.has('rejected_reason')) {
+    db.prepare('ALTER TABLE trading_signals ADD COLUMN rejected_reason TEXT').run();
+  }
+
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_trading_signals_strategy_id ON trading_signals(strategy_id)').run();
+  db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_trading_signals_dedupe_key ON trading_signals(dedupe_key) WHERE dedupe_key IS NOT NULL').run();
+}
+
+function migrateTriggerEvents(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(trigger_events)').all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE trigger_events ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('signal_id')) {
+    db.prepare('ALTER TABLE trigger_events ADD COLUMN signal_id TEXT').run();
+  }
 }
 
 function migrateRiskChecks(db: Database.Database) {
@@ -324,8 +451,21 @@ function migrateRiskChecks(db: Database.Database) {
 
 function migrateOrderRecords(db: Database.Database) {
   const columns = db.prepare('PRAGMA table_info(order_records)').all() as Array<{ name: string; notnull: number }>;
+  const columnNames = new Set(columns.map((column) => column.name));
   const triggerColumn = columns.find((column) => column.name === 'trigger_id');
   const ruleColumn = columns.find((column) => column.name === 'rule_id');
+
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE order_records ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('signal_id')) {
+    db.prepare('ALTER TABLE order_records ADD COLUMN signal_id TEXT').run();
+  }
+
+  if (!columnNames.has('execution_task_id')) {
+    db.prepare('ALTER TABLE order_records ADD COLUMN execution_task_id TEXT').run();
+  }
 
   // 兼容旧版本 SQLite，手动快捷交易不再强制依赖 trigger/rule 记录，因此订单表需要允许为空。
   if (!triggerColumn || !ruleColumn || (triggerColumn.notnull === 0 && ruleColumn.notnull === 0)) {
@@ -337,6 +477,9 @@ function migrateOrderRecords(db: Database.Database) {
     db.exec(`
       CREATE TABLE order_records_v2 (
         id TEXT PRIMARY KEY,
+        strategy_id TEXT,
+        signal_id TEXT,
+        execution_task_id TEXT,
         trigger_id TEXT,
         rule_id TEXT,
         exchange TEXT NOT NULL,
@@ -356,11 +499,11 @@ function migrateOrderRecords(db: Database.Database) {
       );
 
       INSERT INTO order_records_v2 (
-        id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
+        id, strategy_id, signal_id, execution_task_id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
         quote_amount, price, exchange_order_id, status, simulation_mode, raw_message, created_at
       )
       SELECT
-        id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
+        id, strategy_id, signal_id, execution_task_id, trigger_id, rule_id, exchange, symbol, side, order_type, base_quantity,
         quote_amount, price, exchange_order_id, status, simulation_mode, raw_message, created_at
       FROM order_records;
 
@@ -387,4 +530,150 @@ function migrateOrderRecoveryRecords(db: Database.Database) {
   if (!columnNames.has('resolved_by')) {
     db.prepare('ALTER TABLE order_recovery_records ADD COLUMN resolved_by TEXT').run();
   }
+
+  if (!columnNames.has('execution_task_id')) {
+    db.prepare('ALTER TABLE order_recovery_records ADD COLUMN execution_task_id TEXT').run();
+  }
+}
+
+function migrateAuditLogs(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(audit_logs)').all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE audit_logs ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('signal_id')) {
+    db.prepare('ALTER TABLE audit_logs ADD COLUMN signal_id TEXT').run();
+  }
+
+  if (!columnNames.has('execution_task_id')) {
+    db.prepare('ALTER TABLE audit_logs ADD COLUMN execution_task_id TEXT').run();
+  }
+}
+
+function migrateStrategyInstances(db: Database.Database) {
+  const now = new Date().toISOString();
+  const rules = db
+    .prepare(
+      `SELECT *
+       FROM monitor_rules
+       WHERE strategy_id IS NULL
+          OR strategy_version_id IS NULL`,
+    )
+    .all() as Array<{
+    id: string;
+    exchange: string;
+    symbol: string;
+    operator: string;
+    target_price: string;
+    side: string;
+    order_type: string;
+    base_quantity?: string | null;
+    quote_amount?: string | null;
+    limit_price?: string | null;
+    enabled: number;
+    created_at: string;
+  }>;
+
+  const backfill = db.transaction(() => {
+    for (const rule of rules) {
+      const strategyId = `strategy-rule-${rule.id}`;
+      const versionId = `strategy-version-${rule.id}-1`;
+      const paramsJson = JSON.stringify({
+        ruleId: rule.id,
+        exchange: rule.exchange,
+        symbol: rule.symbol,
+        operator: rule.operator,
+        targetPrice: rule.target_price,
+        side: rule.side,
+        orderType: rule.order_type,
+        baseQuantity: rule.base_quantity,
+        quoteAmount: rule.quote_amount,
+        limitPrice: rule.limit_price,
+      });
+
+      db.prepare(
+        `INSERT OR IGNORE INTO strategy_instances (
+          id, name, source_type, rule_id, status, current_version_id, params_json, created_at, updated_at
+        ) VALUES (
+          @id, @name, 'price_rule', @ruleId, @status, @currentVersionId, @paramsJson, @createdAt, @updatedAt
+        )`,
+      ).run({
+        id: strategyId,
+        name: `${rule.symbol} 价格规则策略`,
+        ruleId: rule.id,
+        status: rule.enabled ? 'active' : 'paused',
+        currentVersionId: versionId,
+        paramsJson,
+        createdAt: rule.created_at || now,
+        updatedAt: now,
+      });
+
+      db.prepare(
+        `INSERT OR IGNORE INTO strategy_versions (
+          id, strategy_id, version, params_json, change_reason, created_at
+        ) VALUES (
+          @id, @strategyId, 1, @paramsJson, 'migration', @createdAt
+        )`,
+      ).run({
+        id: versionId,
+        strategyId,
+        paramsJson,
+        createdAt: rule.created_at || now,
+      });
+
+      db.prepare(
+        `UPDATE monitor_rules
+         SET strategy_id = @strategyId,
+             strategy_version_id = @versionId
+         WHERE id = @ruleId`,
+      ).run({
+        strategyId,
+        versionId,
+        ruleId: rule.id,
+      });
+    }
+  });
+
+  backfill();
+
+  db.prepare(
+    `UPDATE trading_signals
+     SET strategy_id = (
+       SELECT strategy_id FROM monitor_rules WHERE monitor_rules.id = trading_signals.rule_id
+     ),
+     strategy_version_id = (
+       SELECT strategy_version_id FROM monitor_rules WHERE monitor_rules.id = trading_signals.rule_id
+     )
+     WHERE strategy_id IS NULL OR strategy_version_id IS NULL`,
+  ).run();
+
+  db.prepare(
+    `UPDATE trigger_events
+     SET strategy_id = (
+       SELECT strategy_id FROM monitor_rules WHERE monitor_rules.id = trigger_events.rule_id
+     ),
+     signal_id = (
+       SELECT id FROM trading_signals
+       WHERE trading_signals.rule_id = trigger_events.rule_id
+         AND trading_signals.created_at <= trigger_events.created_at
+       ORDER BY trading_signals.created_at DESC
+       LIMIT 1
+     )
+     WHERE strategy_id IS NULL OR signal_id IS NULL`,
+  ).run();
+
+  db.prepare(
+    `UPDATE order_records
+     SET strategy_id = (
+       SELECT strategy_id FROM monitor_rules WHERE monitor_rules.id = order_records.rule_id
+     ),
+     signal_id = (
+       SELECT signal_id FROM trigger_events WHERE trigger_events.id = order_records.trigger_id
+     )
+     WHERE rule_id IS NOT NULL
+       AND (strategy_id IS NULL OR signal_id IS NULL)`,
+  ).run();
 }

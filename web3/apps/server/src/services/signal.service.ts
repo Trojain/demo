@@ -5,6 +5,7 @@ import type { TriggerRepository } from '../repositories/trigger.repository.js';
 import type { AuditLogService } from './audit-log.service.js';
 import type { RiskService } from './risk.service.js';
 import type { RuleRepository } from '../repositories/rule.repository.js';
+import { ExecutionTaskConflictError, type ExecutionTaskService } from './execution-task.service.js';
 
 interface CreateSignalInput {
   /** 命中的监控规则 */
@@ -42,7 +43,8 @@ export class SignalService {
     private readonly ruleRepository: RuleRepository,
     private readonly triggerRepository: TriggerRepository,
     private readonly auditLogService: AuditLogService,
-    private readonly riskService: RiskService
+    private readonly riskService: RiskService,
+    private readonly executionTaskService: ExecutionTaskService
   ) {}
 
   list(limit?: number): TradingSignal[] {
@@ -94,6 +96,7 @@ export class SignalService {
         sourceLabel: input.sourceLabel,
         ...(input.metadata ?? {}),
       }),
+      sourceDedupeKey: input.sourceKey,
     });
     if (!signal) {
       return {};
@@ -113,6 +116,8 @@ export class SignalService {
     sourceMetadataJson?: string;
     /** 外部信号跳过风控拒绝冷却期检查，避免用户主动输入被价格规则冷却期阻断。 */
     skipRejectedCooldown?: boolean;
+    /** 外部来源提供的稳定去重键。 */
+    sourceDedupeKey?: string;
   }): TradingSignal | undefined {
     const pendingEvent = this.triggerRepository.findPendingByRuleId(input.rule.id);
     if (pendingEvent) {
@@ -184,8 +189,34 @@ export class SignalService {
       return undefined;
     }
 
+    const dedupeKey = this.buildDedupeKey(input);
+    const duplicatedSignal = this.signalRepository.findByDedupeKey(dedupeKey);
+    if (duplicatedSignal) {
+      this.auditLogService.record({
+        level: 'warning',
+        action: 'signal.duplicated',
+        entityType: 'signal',
+        entityId: duplicatedSignal.id,
+        strategyId: duplicatedSignal.strategyId,
+        signalId: duplicatedSignal.id,
+        ruleId: input.rule.id,
+        message: `${input.rule.symbol} 已存在相同去重键信号，跳过重复生成`,
+        payload: {
+          exchange: input.rule.exchange,
+          symbol: input.rule.symbol,
+          dedupeKey,
+          sourceType: input.sourceType,
+        },
+        dedupeKey: `signal.duplicated.dedupe-key:${dedupeKey}`,
+        dedupeMs: 60_000
+      });
+      return undefined;
+    }
+
     const signal = this.signalRepository.create({
       id: nanoid(),
+      strategyId: input.rule.strategyId,
+      strategyVersionId: input.rule.strategyVersionId,
       ruleId: input.rule.id,
       exchange: input.rule.exchange,
       symbol: input.rule.symbol,
@@ -200,7 +231,9 @@ export class SignalService {
       quoteAmount: input.rule.quoteAmount,
       limitPrice: input.rule.limitPrice,
       simulationMode: input.rule.simulationMode,
-      status: 'pending',
+      status: 'received',
+      dedupeKey,
+      expireAt: new Date(Date.now() + Math.max(input.rule.cooldownMs, 60_000)).toISOString(),
       reason: input.reason,
       sourceMetadataJson: input.sourceMetadataJson,
       createdAt: input.createdAt
@@ -210,6 +243,8 @@ export class SignalService {
       action: input.sourceType === 'external_input' ? 'signal.ingested' : 'signal.created',
       entityType: 'signal',
       entityId: signal.id,
+      strategyId: signal.strategyId,
+      signalId: signal.id,
       ruleId: signal.ruleId,
       message: input.sourceType === 'external_input' ? `${signal.symbol} 已接收外部信号` : `${signal.symbol} 已生成交易信号`,
       payload: {
@@ -228,6 +263,11 @@ export class SignalService {
 
   convertToTrigger(signal: TradingSignal, rule: MonitorRule): TriggerEvent | undefined {
     const pendingEvent = this.triggerRepository.findPendingByRuleId(signal.ruleId);
+    if (signal.expireAt && new Date(signal.expireAt).getTime() <= Date.now()) {
+      this.signalRepository.markRejected(signal.id, '信号已过期');
+      return undefined;
+    }
+
     const riskCheck = this.riskService.checkSignal({
       signal,
       rule,
@@ -235,12 +275,16 @@ export class SignalService {
     });
 
     if (riskCheck.status === 'rejected') {
-      this.signalRepository.markRejected(signal.id);
+      this.signalRepository.markRejected(signal.id, riskCheck.reason);
       return undefined;
     }
 
+    this.signalRepository.markValidated(signal.id);
+
     const event = this.triggerRepository.create({
       id: nanoid(),
+      strategyId: signal.strategyId,
+      signalId: signal.id,
       ruleId: signal.ruleId,
       exchange: signal.exchange,
       symbol: signal.symbol,
@@ -255,6 +299,8 @@ export class SignalService {
       action: 'trigger.created',
       entityType: 'trigger',
       entityId: event.id,
+      strategyId: signal.strategyId,
+      signalId: signal.id,
       ruleId: signal.ruleId,
       triggerId: event.id,
       message: `${signal.symbol} 已触发目标价`,
@@ -269,11 +315,57 @@ export class SignalService {
       }
     });
 
+    try {
+      this.executionTaskService.createOrGet({
+        strategyId: signal.strategyId,
+        strategyVersionId: signal.strategyVersionId,
+        signalId: signal.id,
+        triggerId: event.id,
+        exchange: signal.exchange,
+        symbol: signal.symbol,
+        mode: signal.simulationMode ? 'simulation' : 'real',
+        side: signal.side,
+        orderType: signal.orderType,
+        source: 'rule',
+        idempotencyKey: `signal:${signal.id}`,
+        status: 'waiting_confirm',
+        payload: {
+          ruleId: signal.ruleId,
+          riskCheckId: riskCheck.id,
+          sourceType: signal.sourceType,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ExecutionTaskConflictError) {
+        this.signalRepository.markRejected(signal.id, error.message);
+        this.triggerRepository.markFailed(event.id);
+        this.auditLogService.record({
+          level: 'warning',
+          action: 'execution.failed',
+          entityType: 'signal',
+          entityId: signal.id,
+          strategyId: signal.strategyId,
+          signalId: signal.id,
+          triggerId: event.id,
+          message: `${signal.symbol} 执行任务互斥冲突`,
+          payload: {
+            conflictTaskId: error.task.id,
+            lockKey: error.task.lockKey,
+          },
+        });
+        return undefined;
+      }
+
+      throw error;
+    }
+
     this.signalRepository.markConverted(signal.id);
     this.auditLogService.record({
       action: 'signal.converted',
       entityType: 'signal',
       entityId: signal.id,
+      strategyId: signal.strategyId,
+      signalId: signal.id,
       ruleId: signal.ruleId,
       triggerId: event.id,
       message: `${signal.symbol} 信号已转换为触发事件`,
@@ -285,5 +377,20 @@ export class SignalService {
     });
 
     return event;
+  }
+
+  private buildDedupeKey(input: CreateSignalInput & { sourceType: TradingSignal['sourceType']; sourceDedupeKey?: string }) {
+    if (input.sourceDedupeKey) {
+      return `${input.sourceType}:${input.rule.id}:${input.sourceDedupeKey}`;
+    }
+
+    return [
+      input.sourceType,
+      input.rule.id,
+      input.marketEventTime,
+      input.marketPrice,
+      input.rule.side,
+      input.rule.orderType,
+    ].join(':');
   }
 }

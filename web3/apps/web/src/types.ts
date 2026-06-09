@@ -4,7 +4,7 @@ export type OrderSide = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit';
 export type TradeOrderQuantityType = 'base' | 'quote';
 export type TriggerStatus = 'pending' | 'confirmed' | 'ignored' | 'failed';
-export type SignalStatus = 'pending' | 'converted' | 'rejected' | 'expired';
+export type SignalStatus = 'pending' | 'received' | 'validated' | 'converted' | 'rejected' | 'expired';
 export type RiskCheckStatus = 'passed' | 'rejected';
 export type RiskTradingMode = 'simulation_only' | 'allow_real';
 export type RuleRuntimeStatus = 'idle' | 'running' | 'paused' | 'limit_reached' | 'error';
@@ -22,6 +22,8 @@ export type AuditLogAction =
   | 'trigger.confirmed'
   | 'trigger.failed'
   | 'trigger.ignored'
+  | 'execution.created'
+  | 'execution.failed'
   | 'order.submitted'
   | 'order.synced'
   | 'order.final_validation_failed'
@@ -41,11 +43,15 @@ export type OrderRecoverySource = 'manual' | 'rule' | 'system';
 export type OrderRecoveryActionSource = 'normal_path' | 'auto_retry' | 'manual_retry';
 export type OrderRecoveryFailureStage = 'order_submit_finalize' | 'rule_trigger_finalize' | 'order_sync' | 'private_stream' | 'trade_fill_sync' | 'balance_refresh';
 export type OrderRecoveryStatus = 'pending_recovery' | 'recovering' | 'recovered' | 'manual_review_required' | 'recovery_failed';
-export type SignalSourceType = 'price_rule' | 'external_input';
+export type SignalSourceType = 'price_rule' | 'external_input' | 'polymarket_lag';
 
 export interface MonitorRule {
   /** 瑙勫垯涓婚敭 */
   id: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联策略参数版本 ID */
+  strategyVersionId?: string;
   /** 浜ゆ槗鎵€缂栫爜 */
   exchange: ExchangeCode;
   /** 缁熶竴浜ゆ槗瀵?*/
@@ -138,6 +144,10 @@ export interface MarketCandle {
 export interface TriggerEvent {
   /** 瑙﹀彂浜嬩欢涓婚敭 */
   id: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联信号 ID */
+  signalId?: string;
   /** 鍏宠仈瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -159,6 +169,10 @@ export interface TriggerEvent {
 export interface TradingSignal {
   /** 浜ゆ槗淇″彿涓婚敭 */
   id: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联策略参数版本 ID */
+  strategyVersionId?: string;
   /** 鍏宠仈瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -189,6 +203,12 @@ export interface TradingSignal {
   simulationMode: boolean;
   /** 淇″彿鐘舵€?*/
   status: SignalStatus;
+  /** 信号去重键 */
+  dedupeKey?: string;
+  /** 信号过期时间 */
+  expireAt?: string;
+  /** 信号拒绝原因 */
+  rejectedReason?: string;
   /** 淇″彿鐢熸垚鍘熷洜 */
   reason: string;
   /** 澶栭儴淇″彿闄勫姞涓婁笅鏂?JSON */
@@ -644,6 +664,12 @@ export interface TradeEquityHistoryPoint {
 export interface OrderRecord {
   /** 璁㈠崟璁板綍涓婚敭 */
   id: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联信号 ID */
+  signalId?: string;
+  /** 关联执行任务 ID */
+  executionTaskId?: string;
   /** 鍏宠仈瑙﹀彂浜嬩欢 ID锛屾墜鍔ㄥ揩鎹蜂氦鏄撳彲涓虹┖ */
   triggerId?: string;
   /** 鍏宠仈瑙勫垯 ID锛屾墜鍔ㄥ揩鎹蜂氦鏄撳彲涓虹┖ */
@@ -677,6 +703,12 @@ export interface OrderRecord {
 export interface AuditLog {
   /** 瀹¤鏃ュ織涓婚敭 */
   id: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联信号 ID */
+  signalId?: string;
+  /** 关联执行任务 ID */
+  executionTaskId?: string;
   /** 鏃ュ織绾у埆 */
   level: AuditLogLevel;
   /** 瀹¤鍔ㄤ綔 */
@@ -708,6 +740,8 @@ export interface OrderRecoveryRecord {
   orderId?: string;
   /** 鍏宠仈浜ゆ槗鎵€璁㈠崟鍙?*/
   exchangeOrderId?: string;
+  /** 关联执行任务 ID */
+  executionTaskId?: string;
   /** 浜ゆ槗鎵€缂栫爜 */
   exchange: ExchangeCode;
   /** 澶辫触鏉ユ簮 */

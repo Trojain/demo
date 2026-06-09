@@ -6,10 +6,12 @@ import { ExchangeFactory } from '../exchange/exchange-factory.js';
 import { AuditLogRepository } from '../repositories/audit-log.repository.js';
 import { OrderRepository } from '../repositories/order.repository.js';
 import { OrderRecoveryRepository } from '../repositories/order-recovery.repository.js';
+import { ExecutionTaskRepository } from '../repositories/execution-task.repository.js';
 import { RiskCheckRepository } from '../repositories/risk-check.repository.js';
 import { RiskConfigRepository } from '../repositories/risk-config.repository.js';
 import { RuleRepository } from '../repositories/rule.repository.js';
 import { SignalRepository } from '../repositories/signal.repository.js';
+import { StrategyInstanceRepository } from '../repositories/strategy-instance.repository.js';
 import { TradeAccountRepository } from '../repositories/trade-account.repository.js';
 import { TriggerRepository } from '../repositories/trigger.repository.js';
 import { registerApiRoutes } from '../routes/api.routes.js';
@@ -22,11 +24,13 @@ import { NotificationService } from '../services/notification.service.js';
 import { OrderPreviewService } from '../services/order-preview.service.js';
 import { OrderRecoveryService } from '../services/order-recovery.service.js';
 import { OrderService } from '../services/order.service.js';
+import { ExecutionTaskService } from '../services/execution-task.service.js';
 import { PrivateOrderStreamService } from '../services/private-order-stream.service.js';
 import { RealOrderSyncService } from '../services/real-order-sync.service.js';
 import { RiskConfigService } from '../services/risk-config.service.js';
 import { RiskService } from '../services/risk.service.js';
 import { SignalService } from '../services/signal.service.js';
+import { StrategyInstanceService } from '../services/strategy-instance.service.js';
 import { StrategyService } from '../services/strategy.service.js';
 import { TradeAccountService } from '../services/trade-account.service.js';
 import { TradeExecutionService } from '../services/trade-execution.service.js';
@@ -76,6 +80,8 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const riskCheckRepository = new RiskCheckRepository(db);
   const riskConfigRepository = new RiskConfigRepository(db);
   const signalRepository = new SignalRepository(db);
+  const strategyInstanceRepository = new StrategyInstanceRepository(db);
+  const executionTaskRepository = new ExecutionTaskRepository(db);
   const triggerRepository = new TriggerRepository(db);
   const orderRepository = new OrderRepository(db);
   const orderRecoveryRepository = new OrderRecoveryRepository(db);
@@ -103,8 +109,10 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
   const riskService = new RiskService(riskCheckRepository, auditLogService, riskConfigService, {
     enableRealTrading: appConfig.enableRealTrading,
   });
-  const signalService = new SignalService(signalRepository, ruleRepository, triggerRepository, auditLogService, riskService);
-  const realOrderSyncService = new RealOrderSyncService(exchangeFactory, orderRepository, tradeAccountRepository, auditLogService, {
+  const strategyInstanceService = new StrategyInstanceService(strategyInstanceRepository);
+  const executionTaskService = new ExecutionTaskService(executionTaskRepository, auditLogService);
+  const signalService = new SignalService(signalRepository, ruleRepository, triggerRepository, auditLogService, riskService, executionTaskService);
+  const realOrderSyncService = new RealOrderSyncService(exchangeFactory, orderRepository, tradeAccountRepository, auditLogService, executionTaskService, {
     intervalMs: appConfig.realOrderSync.intervalMs,
     lookbackMinutes: appConfig.realOrderSync.lookbackMinutes,
     batchSize: appConfig.realOrderSync.batchSize,
@@ -116,9 +124,9 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     retryDelayMs: appConfig.orderRecovery.retryDelayMs,
   });
   realOrderSyncService.setOrderRecoveryService(orderRecoveryService);
-  const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService, auditLogService, orderRecoveryService);
+  const tradeExecutionService = new TradeExecutionService(exchangeFactory, orderRepository, tradeAccountRepository, tradingRuleService, riskConfigService, auditLogService, orderRecoveryService, executionTaskService);
   const orderPreviewService = new OrderPreviewService(ruleRepository, triggerRepository, riskCheckRepository, marketService, riskConfigService, tradingRuleService, tradeExecutionService);
-  const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService, orderRecoveryService);
+  const orderService = new OrderService(ruleRepository, triggerRepository, orderPreviewService, tradeExecutionService, auditLogService, orderRecoveryService, executionTaskService);
   const strategyService = new StrategyService(ruleRepository, marketService, notificationService, auditLogService, signalService, orderService);
   const privateOrderStreamService = new PrivateOrderStreamService(exchangeFactory, realOrderSyncService, auditLogService, orderRecoveryService);
   marketService.setPrivateTradeStreamHealthProvider(privateOrderStreamService);
@@ -144,6 +152,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     riskConfigService,
     riskService,
     ruleRepository,
+    strategyInstanceService,
     signalRepository,
     signalService,
     tradeAccountService,

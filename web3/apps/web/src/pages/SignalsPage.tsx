@@ -19,6 +19,8 @@ import { toTableRequestResult } from '../utils/proTable'
 
 const statusMeta: Record<SignalStatus, { text: string; color: string }> = {
   pending: { text: '待处理', color: 'processing' },
+  received: { text: '已接收', color: 'processing' },
+  validated: { text: '已验证', color: 'blue' },
   converted: { text: '已转换', color: 'success' },
   rejected: { text: '已拒绝', color: 'error' },
   expired: { text: '已过期', color: 'default' },

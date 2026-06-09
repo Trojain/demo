@@ -10,6 +10,7 @@ import { resolveTradingEnvironmentLabel } from '../utils/trading-environment.js'
 import type {
   MonitorRule,
   ExchangeCode,
+  ExecutionTaskFailureStage,
   OrderRecord,
   OrderRecoverySource,
   TradeAccount,
@@ -25,6 +26,7 @@ import type {
 } from '../types/domain.js'
 import type { AccountBalance, InstrumentRule, TickerPrice } from '../types/exchange.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { ExecutionTaskService } from './execution-task.service.js'
 import type { OrderRecoveryService } from './order-recovery.service.js'
 import type { RiskConfigService } from './risk-config.service.js'
 import type { TradingRuleService } from './trading-rule.service.js'
@@ -79,6 +81,7 @@ export class TradeExecutionService {
     private readonly riskConfigService: RiskConfigService,
     private readonly auditLogService: AuditLogService,
     private readonly orderRecoveryService: OrderRecoveryService,
+    private readonly executionTaskService: ExecutionTaskService,
   ) {}
 
   async preview(input: TradeOrderPreviewInput): Promise<TradeOrderPreview> {
@@ -148,25 +151,45 @@ export class TradeExecutionService {
   async confirm(input: TradeOrderPreviewInput, confirmToken?: string): Promise<OrderRecord> {
     const preview = await this.buildPreview(input, false)
     this.assertPreviewPassed(preview)
-    if (preview.mode === 'real') {
-      this.assertRealTradingAllowed(preview)
-      const confirmedOrder = this.consumeConfirmTokenOrGetExistingOrder(input, confirmToken)
-      if (confirmedOrder) {
-        return confirmedOrder
+    const executionTask = this.createManualExecutionTask(preview, input, confirmToken)
+    if (executionTask.orderId) {
+      const existingOrder = this.orderRepository.findById(executionTask.orderId)
+      if (existingOrder) {
+        return existingOrder
+      }
+    }
+    try {
+      this.executionTaskService.markRunning(executionTask.id)
+      if (preview.mode === 'real') {
+        this.assertRealTradingAllowed(preview)
+        const confirmedOrder = this.consumeConfirmTokenOrGetExistingOrder(input, confirmToken)
+        if (confirmedOrder) {
+          this.executionTaskService.markSubmitted(executionTask.id, confirmedOrder)
+          return confirmedOrder
+        }
+
+        const order = await this.executeRealOrder(preview, {
+          source: 'manual',
+          executionTaskId: executionTask.id,
+          confirmToken,
+          rawMessage: '真实快捷交易订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+        })
+        this.executionTaskService.markSubmitted(executionTask.id, order)
+        return order
       }
 
-      return this.executeRealOrder(preview, {
-        source: 'manual',
-        confirmToken,
-        rawMessage: '真实快捷交易订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+      const account = this.findSimulationAccountOrThrow(preview)
+      const order = this.persistSimulationOrder(account, preview, {
+        executionTaskId: executionTask.id,
+        // 快捷交易不经过规则和触发事件链路，这里不再伪造外键记录。
+        rawMessage: '模拟交易即时成交，后续真实交易会由交易所订单状态同步',
       })
+      this.executionTaskService.markCompleted(executionTask.id, order)
+      return order
+    } catch (error) {
+      this.executionTaskService.markFailed(executionTask.id, this.resolveExecutionFailureStage(error), error instanceof Error ? error.message : '交易确认失败')
+      throw error
     }
-
-    const account = this.findSimulationAccountOrThrow(preview)
-    return this.persistSimulationOrder(account, preview, {
-      // 快捷交易不经过规则和触发事件链路，这里不再伪造外键记录。
-      rawMessage: '模拟交易即时成交，后续真实交易会由交易所订单状态同步',
-    })
   }
 
   async confirmRuleTrigger(input: {
@@ -178,27 +201,105 @@ export class TradeExecutionService {
     const previewInput = this.toPreviewInput(input.rule)
     const preview = await this.buildPreview(previewInput, false)
     this.assertPreviewPassed(preview)
-    if (preview.mode === 'real') {
-      this.assertRealTradingAllowed(preview)
-      const existingOrder = this.orderRepository.findByTriggerId(input.triggerId)
+    const executionTask = this.createRuleExecutionTask(input.triggerId, input.rule, preview)
+    if (executionTask.orderId) {
+      const existingOrder = this.orderRepository.findById(executionTask.orderId)
       if (existingOrder) {
         return existingOrder
       }
+    }
+    try {
+      this.executionTaskService.markRunning(executionTask.id)
+      if (preview.mode === 'real') {
+        this.assertRealTradingAllowed(preview)
+        const existingOrder = this.orderRepository.findByTriggerId(input.triggerId)
+        if (existingOrder) {
+          this.executionTaskService.markSubmitted(executionTask.id, existingOrder)
+          return existingOrder
+        }
 
-      return this.executeRealOrder(preview, {
-        source: 'rule',
+        const order = await this.executeRealOrder(preview, {
+          source: 'rule',
+          strategyId: input.rule.strategyId,
+          signalId: executionTask.signalId,
+          executionTaskId: executionTask.id,
+          triggerId: input.triggerId,
+          ruleId: input.rule.id,
+          rawMessage: '规则触发后的真实订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+        })
+        this.executionTaskService.markSubmitted(executionTask.id, order)
+        return order
+      }
+
+      const account = this.findSimulationAccountOrThrow(preview)
+      const order = this.persistSimulationOrder(account, preview, {
+        strategyId: input.rule.strategyId,
+        signalId: executionTask.signalId,
+        executionTaskId: executionTask.id,
         triggerId: input.triggerId,
         ruleId: input.rule.id,
-        rawMessage: '规则触发后的真实订单已提交到交易所，后续状态同步将在订单轮询和推送链路接入后补齐',
+        rawMessage: '规则触发后的模拟交易已即时成交，后续真实交易会由交易所订单状态同步',
       })
+      this.executionTaskService.markCompleted(executionTask.id, order)
+      return order
+    } catch (error) {
+      this.executionTaskService.markFailed(executionTask.id, this.resolveExecutionFailureStage(error), error instanceof Error ? error.message : '规则触发执行失败')
+      throw error
+    }
+  }
+
+  private createManualExecutionTask(preview: TradeOrderPreview, input: TradeOrderPreviewInput, confirmToken?: string) {
+    return this.executionTaskService.createOrGet({
+      exchange: preview.exchange,
+      symbol: preview.symbol,
+      mode: preview.mode,
+      side: preview.side,
+      orderType: preview.orderType,
+      source: 'manual',
+      idempotencyKey: confirmToken ? `manual-real:${confirmToken}` : `manual-simulation:${nanoid()}`,
+      status: 'pending',
+      payload: {
+        payloadHash: this.buildPreviewPayloadHash(input),
+        quantityType: preview.quantityType,
+        quoteAmount: preview.quoteAmount,
+        baseQuantity: preview.baseQuantity,
+      },
+    })
+  }
+
+  private createRuleExecutionTask(triggerId: string, rule: MonitorRule, preview: TradeOrderPreview) {
+    const existing = this.executionTaskService.findByTriggerId(triggerId)
+    if (existing) {
+      return existing
     }
 
-    const account = this.findSimulationAccountOrThrow(preview)
-    return this.persistSimulationOrder(account, preview, {
-      triggerId: input.triggerId,
-      ruleId: input.rule.id,
-      rawMessage: '规则触发后的模拟交易已即时成交，后续真实交易会由交易所订单状态同步',
+    return this.executionTaskService.createOrGet({
+      strategyId: rule.strategyId,
+      strategyVersionId: rule.strategyVersionId,
+      triggerId,
+      exchange: preview.exchange,
+      symbol: preview.symbol,
+      mode: preview.mode,
+      side: preview.side,
+      orderType: preview.orderType,
+      source: 'rule',
+      idempotencyKey: `rule-trigger:${triggerId}`,
+      status: 'waiting_confirm',
+      payload: {
+        ruleId: rule.id,
+        quantityType: preview.quantityType,
+        quoteAmount: preview.quoteAmount,
+        baseQuantity: preview.baseQuantity,
+      },
     })
+  }
+
+  private resolveExecutionFailureStage(error: unknown): ExecutionTaskFailureStage {
+    if (error instanceof TradeExecutionError) {
+      return error.errorCategory === 'exchange_submit_local_persist_failed' ? 'order_finalize' : 'order_submit'
+    }
+
+    return 'order_preview'
   }
 
   async listPositionViews(mode?: TradeAccountType, exchange?: ExchangeCode): Promise<TradePositionView[]> {
@@ -276,6 +377,12 @@ export class TradeExecutionService {
       source: 'manual' | 'rule'
       /** 手动真实下单失败前还没有本地订单 ID，这里保留客户端订单号用于稳定标识本次确认会话。 */
       clientOrderId?: string
+      /** 关联策略实例 ID，快捷交易可为空。 */
+      strategyId?: string
+      /** 关联信号 ID，快捷交易可为空。 */
+      signalId?: string
+      /** 关联执行任务 ID。 */
+      executionTaskId?: string
       /** 快捷交易真实确认必须携带确认令牌，用于防重复提交。 */
       confirmToken?: string
       /** 规则触发真实成交时保留触发事件 ID。 */
@@ -330,6 +437,9 @@ export class TradeExecutionService {
     let order: OrderRecord
     try {
       order = this.persistRealOrder(preview, exchangeResult, {
+        strategyId: metadata.strategyId,
+        signalId: metadata.signalId,
+        executionTaskId: metadata.executionTaskId,
         triggerId: metadata.triggerId,
         ruleId: metadata.ruleId,
         fallbackMessage: metadata.rawMessage,
@@ -382,6 +492,9 @@ export class TradeExecutionService {
     preview: TradeOrderPreview,
     exchangeResult: Awaited<ReturnType<ReturnType<ExchangeFactory['getAdapter']>['placeOrder']>>,
     metadata: {
+      strategyId?: string
+      signalId?: string
+      executionTaskId?: string
       triggerId?: string
       ruleId?: string
       fallbackMessage: string
@@ -391,6 +504,9 @@ export class TradeExecutionService {
       const createdAt = exchangeResult.acceptedAt ?? new Date().toISOString()
       return this.orderRepository.create({
         id: nanoid(),
+        strategyId: metadata.strategyId,
+        signalId: metadata.signalId,
+        executionTaskId: metadata.executionTaskId,
         triggerId: metadata.triggerId,
         ruleId: metadata.ruleId,
         exchange: preview.exchange,
@@ -503,6 +619,7 @@ export class TradeExecutionService {
       action: 'order.submitted',
       entityType: 'order',
       entityId: order.id,
+      executionTaskId: order.executionTaskId,
       orderId: order.id,
       message: `${preview.symbol} 真实${preview.side === 'buy' ? '买入' : '卖出'}订单已提交`,
       payload: {
@@ -527,6 +644,7 @@ export class TradeExecutionService {
     metadata: {
       source: 'manual' | 'rule'
       clientOrderId?: string
+      executionTaskId?: string
       confirmToken?: string
       triggerId?: string
       ruleId?: string
@@ -539,6 +657,7 @@ export class TradeExecutionService {
       action: 'order.failed',
       entityType: 'order',
       entityId: metadata.clientOrderId ?? metadata.confirmToken,
+      executionTaskId: metadata.executionTaskId,
       ruleId: metadata.ruleId,
       triggerId: metadata.triggerId,
       message: `${preview.symbol} 真实${preview.side === 'buy' ? '买入' : '卖出'}下单失败：${error.message}`,
@@ -574,6 +693,7 @@ export class TradeExecutionService {
     metadata: {
       source: OrderRecoverySource
       clientOrderId?: string
+      executionTaskId?: string
       confirmToken?: string
       triggerId?: string
       ruleId?: string
@@ -587,6 +707,7 @@ export class TradeExecutionService {
       identityKey: `order_submit_finalize:${preview.exchange}:${exchangeResult.exchangeOrderId}`,
       orderId: order?.id,
       exchangeOrderId: exchangeResult.exchangeOrderId,
+      executionTaskId: metadata.executionTaskId,
       exchange: preview.exchange,
       source: metadata.source,
       mode: preview.mode,
@@ -597,6 +718,7 @@ export class TradeExecutionService {
       payload: {
         triggerId: metadata.triggerId,
         ruleId: metadata.ruleId,
+        executionTaskId: metadata.executionTaskId,
         clientOrderId,
         confirmToken: metadata.confirmToken,
         exchangeOrderId: exchangeResult.exchangeOrderId,
@@ -639,6 +761,12 @@ export class TradeExecutionService {
     account: TradeAccount,
     preview: TradeOrderPreview,
     metadata: {
+      /** 关联策略实例 ID，快捷交易可为空。 */
+      strategyId?: string
+      /** 关联信号 ID，快捷交易可为空。 */
+      signalId?: string
+      /** 关联执行任务 ID。 */
+      executionTaskId?: string
       /** 规则触发成交时记录对应触发事件，手动快捷交易保持空值。 */
       triggerId?: string
       /** 规则触发成交时记录来源规则，手动快捷交易保持空值。 */
@@ -651,6 +779,9 @@ export class TradeExecutionService {
       const now = new Date().toISOString()
       const order = this.orderRepository.create({
         id: nanoid(),
+        strategyId: metadata.strategyId,
+        signalId: metadata.signalId,
+        executionTaskId: metadata.executionTaskId,
         triggerId: metadata.triggerId,
         ruleId: metadata.ruleId,
         exchange: preview.exchange,

@@ -102,7 +102,7 @@ export class ConfigArchiveService {
       meta: {
         description: '监控规则与风控配置归档，不包含交易所私钥和运行态数据',
         supportedExchanges: ['okx', 'binance'],
-        supportedSignalSources: ['price_rule', 'external_input'],
+        supportedSignalSources: ['price_rule', 'external_input', 'polymarket_lag'],
       },
       riskConfig: this.toRiskConfigInput(riskConfig),
       rules,

@@ -18,6 +18,7 @@ import type {
   PrivateOrderUpdate,
 } from '../types/exchange.js'
 import type { AuditLogService } from './audit-log.service.js'
+import type { ExecutionTaskService } from './execution-task.service.js'
 import type { OrderRecoveryService } from './order-recovery.service.js'
 
 interface RealOrderSyncServiceOptions {
@@ -50,6 +51,7 @@ export class RealOrderSyncService {
     private readonly orderRepository: OrderRepository,
     private readonly tradeAccountRepository: TradeAccountRepository,
     private readonly auditLogService: AuditLogService,
+    private readonly executionTaskService: ExecutionTaskService,
     private readonly options: RealOrderSyncServiceOptions,
   ) {}
 
@@ -324,6 +326,22 @@ export class RealOrderSyncService {
     }
 
     await this.applyOrderFillDelta(syncedOrder, detail, quoteBalanceCache, source)
+    this.finalizeExecutionTaskByOrderStatus(syncedOrder)
+  }
+
+  private finalizeExecutionTaskByOrderStatus(order: OrderRecord) {
+    if (!order.executionTaskId) {
+      return
+    }
+
+    if (order.status === 'filled' || order.status === 'cancelled') {
+      this.executionTaskService.markCompleted(order.executionTaskId, order)
+      return
+    }
+
+    if (order.status === 'failed' || order.status === 'rejected') {
+      this.executionTaskService.markFailed(order.executionTaskId, 'order_sync', `订单同步为终态：${order.status}`)
+    }
   }
 
   private hasOrderChanged(order: OrderRecord, detail: GetOrderDetailResult) {

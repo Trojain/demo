@@ -35,6 +35,8 @@ export interface CreateOrderRecoveryInput {
   orderId?: string
   /** 关联交易所订单号。 */
   exchangeOrderId?: string
+  /** 关联执行任务 ID。 */
+  executionTaskId?: string
   /** 交易所编码。 */
   exchange: ExchangeCode
   /** 失败来源。 */
@@ -156,6 +158,7 @@ export class OrderRecoveryService {
         ...current,
         orderId: input.orderId ?? current.orderId,
         exchangeOrderId: input.exchangeOrderId ?? current.exchangeOrderId,
+        executionTaskId: input.executionTaskId ?? current.executionTaskId,
         symbol: input.symbol ?? current.symbol,
         source: input.source,
         mode: input.mode,
@@ -178,6 +181,7 @@ export class OrderRecoveryService {
       identityKey: input.identityKey,
       orderId: input.orderId,
       exchangeOrderId: input.exchangeOrderId,
+      executionTaskId: input.executionTaskId,
       exchange: input.exchange,
       source: input.source,
       mode: input.mode,
@@ -443,6 +447,7 @@ export class OrderRecoveryService {
       entityType: 'recovery',
       entityId: record.id,
       orderId: record.orderId,
+      executionTaskId: record.executionTaskId,
       message,
       payload: {
         recoveryId: record.id,
@@ -462,6 +467,7 @@ export class OrderRecoveryService {
         resolvedBy: record.resolvedBy,
         nextRetryAt: record.nextRetryAt,
         exchangeOrderId: record.exchangeOrderId,
+        executionTaskId: record.executionTaskId,
         ...payload,
       },
     })
@@ -541,6 +547,7 @@ export class OrderRecoveryService {
     // 经过上方 missingFields 校验后，4 个字段必然非空，使用非空断言消除 TS 类型窄化限制。
     return this.orderRepository.create({
       id: record.orderId ?? nanoid(),
+      executionTaskId: record.executionTaskId ?? (typeof payload.executionTaskId === 'string' ? payload.executionTaskId : undefined),
       triggerId: typeof payload.triggerId === 'string' ? payload.triggerId : undefined,
       ruleId: typeof payload.ruleId === 'string' ? payload.ruleId : undefined,
       exchange: record.exchange,

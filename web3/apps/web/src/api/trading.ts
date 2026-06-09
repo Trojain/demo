@@ -95,7 +95,7 @@ export interface ConfigArchivePayload {
     /** 支持的交易所。 */
     supportedExchanges: ExchangeCode[];
     /** 支持的信号来源。 */
-    supportedSignalSources: Array<'price_rule' | 'external_input'>;
+    supportedSignalSources: Array<'price_rule' | 'external_input' | 'polymarket_lag'>;
   };
   /** 风控配置快照。 */
   riskConfig: UpdateRiskConfigPayload;

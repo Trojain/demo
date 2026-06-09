@@ -7,6 +7,9 @@ type AuditLogRow = {
   action: AuditLog['action']
   entity_type: string
   entity_id?: string
+  strategy_id?: string
+  signal_id?: string
+  execution_task_id?: string
   rule_id?: string
   trigger_id?: string
   order_id?: string
@@ -22,6 +25,9 @@ function mapAuditLog(row: AuditLogRow): AuditLog {
     action: row.action,
     entityType: row.entity_type,
     entityId: row.entity_id,
+    strategyId: row.strategy_id,
+    signalId: row.signal_id,
+    executionTaskId: row.execution_task_id,
     ruleId: row.rule_id,
     triggerId: row.trigger_id,
     orderId: row.order_id,
@@ -106,16 +112,19 @@ export class AuditLogRepository {
     this.db
       .prepare(
         `INSERT INTO audit_logs (
-          id, level, action, entity_type, entity_id, rule_id, trigger_id,
+          id, strategy_id, signal_id, execution_task_id, level, action, entity_type, entity_id, rule_id, trigger_id,
           order_id, message, payload_json, created_at
         ) VALUES (
-          @id, @level, @action, @entityType, @entityId, @ruleId, @triggerId,
+          @id, @strategyId, @signalId, @executionTaskId, @level, @action, @entityType, @entityId, @ruleId, @triggerId,
           @orderId, @message, @payloadJson, @createdAt
         )`,
       )
       .run({
         ...log,
         entityId: log.entityId ?? null,
+        strategyId: log.strategyId ?? null,
+        signalId: log.signalId ?? null,
+        executionTaskId: log.executionTaskId ?? null,
         ruleId: log.ruleId ?? null,
         triggerId: log.triggerId ?? null,
         orderId: log.orderId ?? null,

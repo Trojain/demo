@@ -366,7 +366,7 @@ export const configArchiveSchema = z.object({
     /** 支持的交易所。 */
     supportedExchanges: z.array(z.enum(['okx', 'binance'])).min(1),
     /** 支持的信号来源。 */
-    supportedSignalSources: z.array(z.enum(['price_rule', 'external_input'])).min(1),
+    supportedSignalSources: z.array(z.enum(['price_rule', 'external_input', 'polymarket_lag'])).min(1),
   }),
   /** 风控配置快照。 */
   riskConfig: updateRiskConfigSchema,

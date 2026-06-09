@@ -11,6 +11,12 @@ export interface WriteAuditLogInput {
   entityType: string;
   /** 关联实体 ID */
   entityId?: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联信号 ID */
+  signalId?: string;
+  /** 关联执行任务 ID */
+  executionTaskId?: string;
   /** 关联规则 ID */
   ruleId?: string;
   /** 关联触发事件 ID */
@@ -30,7 +36,7 @@ export interface WriteAuditLogInput {
 export class AuditLogService {
   /**
    * 记录去重键的过期时间戳。
-   * 使用过期时间而不是最近写入时间，便于定期清理，避免服务长时间运行后内存持续增长。
+   * 使用过期时间替代最近写入时间，便于定期清理，避免服务长时间运行后内存持续增长。
    */
   private readonly recentLogExpiryAt = new Map<string, number>();
   /** 最近一次执行去重缓存清理的时间戳。 */
@@ -75,6 +81,9 @@ export class AuditLogService {
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId,
+      strategyId: input.strategyId,
+      signalId: input.signalId,
+      executionTaskId: input.executionTaskId,
       ruleId: input.ruleId,
       triggerId: input.triggerId,
       orderId: input.orderId,
