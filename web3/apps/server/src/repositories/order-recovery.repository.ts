@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import type {
+  OrderRecoveryActionSource,
   OrderRecoveryFailureStage,
   OrderRecoveryRecord,
   OrderRecoveryStatus,
@@ -18,6 +19,8 @@ type OrderRecoveryRow = {
   recovery_status: OrderRecoveryStatus
   retry_count: number
   max_retry_count: number
+  last_recovery_source?: OrderRecoveryActionSource | null
+  resolved_by?: OrderRecoveryActionSource | null
   last_error_code?: string | null
   last_error_message?: string | null
   next_retry_at?: string | null
@@ -41,6 +44,8 @@ function mapOrderRecovery(row: OrderRecoveryRow): OrderRecoveryRecord {
     recoveryStatus: row.recovery_status,
     retryCount: row.retry_count,
     maxRetryCount: row.max_retry_count,
+    lastRecoverySource: row.last_recovery_source ?? undefined,
+    resolvedBy: row.resolved_by ?? undefined,
     lastErrorCode: row.last_error_code ?? undefined,
     lastErrorMessage: row.last_error_message ?? undefined,
     nextRetryAt: row.next_retry_at ?? undefined,
@@ -59,11 +64,11 @@ export class OrderRecoveryRepository {
       .prepare(
         `INSERT INTO order_recovery_records (
           id, identity_key, order_id, exchange_order_id, exchange, source, mode, symbol,
-          failure_stage, recovery_status, retry_count, max_retry_count, last_error_code,
+          failure_stage, recovery_status, retry_count, max_retry_count, last_recovery_source, resolved_by, last_error_code,
           last_error_message, next_retry_at, payload_json, created_at, updated_at, resolved_at
         ) VALUES (
           @id, @identityKey, @orderId, @exchangeOrderId, @exchange, @source, @mode, @symbol,
-          @failureStage, @recoveryStatus, @retryCount, @maxRetryCount, @lastErrorCode,
+          @failureStage, @recoveryStatus, @retryCount, @maxRetryCount, @lastRecoverySource, @resolvedBy, @lastErrorCode,
           @lastErrorMessage, @nextRetryAt, @payloadJson, @createdAt, @updatedAt, @resolvedAt
         )`,
       )
@@ -72,6 +77,8 @@ export class OrderRecoveryRepository {
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
         symbol: record.symbol ?? null,
+        lastRecoverySource: record.lastRecoverySource ?? null,
+        resolvedBy: record.resolvedBy ?? null,
         lastErrorCode: record.lastErrorCode ?? null,
         lastErrorMessage: record.lastErrorMessage ?? null,
         nextRetryAt: record.nextRetryAt ?? null,
@@ -183,6 +190,36 @@ export class OrderRecoveryRepository {
       .map(row => mapOrderRecovery(row as OrderRecoveryRow))
   }
 
+  listForAnalysis(input: {
+    fromDate: string
+    toDate: string
+    statuses?: OrderRecoveryStatus[]
+    stages?: OrderRecoveryFailureStage[]
+    exchanges?: OrderRecoveryRecord['exchange'][]
+    modes?: OrderRecoveryRecord['mode'][]
+    sources?: OrderRecoveryRecord['source'][]
+  }) {
+    const conditions = [`date(created_at, 'localtime') BETWEEN ? AND ?`]
+    const params: Array<string | number> = [input.fromDate, input.toDate]
+    const filterQuery = this.buildFilterQuery(
+      input.statuses,
+      input.stages,
+      input.exchanges,
+      input.modes,
+      input.sources,
+    )
+
+    if (filterQuery.whereSql) {
+      conditions.push(filterQuery.whereSql.replace(/^WHERE\s+/i, ''))
+      params.push(...filterQuery.params)
+    }
+
+    return this.db
+      .prepare(`SELECT * FROM order_recovery_records WHERE ${conditions.join(' AND ')} ORDER BY created_at ASC`)
+      .all(...params)
+      .map(row => mapOrderRecovery(row as OrderRecoveryRow))
+  }
+
   update(record: OrderRecoveryRecord): OrderRecoveryRecord {
     this.db
       .prepare(
@@ -198,6 +235,8 @@ export class OrderRecoveryRepository {
              recovery_status = @recoveryStatus,
              retry_count = @retryCount,
              max_retry_count = @maxRetryCount,
+             last_recovery_source = @lastRecoverySource,
+             resolved_by = @resolvedBy,
              last_error_code = @lastErrorCode,
              last_error_message = @lastErrorMessage,
              next_retry_at = @nextRetryAt,
@@ -211,6 +250,8 @@ export class OrderRecoveryRepository {
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
         symbol: record.symbol ?? null,
+        lastRecoverySource: record.lastRecoverySource ?? null,
+        resolvedBy: record.resolvedBy ?? null,
         lastErrorCode: record.lastErrorCode ?? null,
         lastErrorMessage: record.lastErrorMessage ?? null,
         nextRetryAt: record.nextRetryAt ?? null,

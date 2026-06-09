@@ -170,6 +170,27 @@ export const listOrderRecoveriesPageQuerySchema = z.object({
   sources: createCsvEnumSchema(['manual', 'rule', 'system'], '来源筛选存在不支持的取值').optional(),
 })
 
+export const listOrderRecoveryAnalysisQuerySchema = z.object({
+  /** 统计窗口天数。 */
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  /** 按恢复状态筛选，多个状态使用逗号分隔。 */
+  statuses: createCsvEnumSchema(
+    ['pending_recovery', 'recovering', 'recovered', 'manual_review_required', 'recovery_failed'],
+    '恢复状态筛选存在不支持的取值',
+  ).optional(),
+  /** 按失败阶段筛选，多个阶段使用逗号分隔。 */
+  stages: createCsvEnumSchema(
+    ['order_submit_finalize', 'rule_trigger_finalize', 'order_sync', 'private_stream', 'trade_fill_sync', 'balance_refresh'],
+    '失败阶段筛选存在不支持的取值',
+  ).optional(),
+  /** 按交易所筛选，多个交易所使用逗号分隔。 */
+  exchanges: createCsvEnumSchema(['okx', 'binance'], '交易所筛选存在不支持的取值').optional(),
+  /** 按下单模式筛选，多个模式使用逗号分隔。 */
+  modes: createCsvEnumSchema(['simulation', 'real'], '下单模式筛选存在不支持的取值').optional(),
+  /** 按来源筛选，多个来源使用逗号分隔。 */
+  sources: createCsvEnumSchema(['manual', 'rule', 'system'], '来源筛选存在不支持的取值').optional(),
+})
+
 export const retryOrderRecoveriesBatchSchema = z.object({
   /** 指定重试的恢复任务 ID 列表。 */
   ids: z.array(z.string().min(1)).optional(),

@@ -38,6 +38,7 @@ export type AuditLogAction =
   | 'strategy.error';
 
 export type OrderRecoverySource = 'manual' | 'rule' | 'system';
+export type OrderRecoveryActionSource = 'normal_path' | 'auto_retry' | 'manual_retry';
 export type OrderRecoveryFailureStage = 'order_submit_finalize' | 'rule_trigger_finalize' | 'order_sync' | 'private_stream' | 'trade_fill_sync' | 'balance_refresh';
 export type OrderRecoveryStatus = 'pending_recovery' | 'recovering' | 'recovered' | 'manual_review_required' | 'recovery_failed';
 export type SignalSourceType = 'price_rule' | 'external_input';
@@ -723,6 +724,10 @@ export interface OrderRecoveryRecord {
   retryCount: number;
   /** 鑷姩鎭㈠鏈€澶ф鏁?*/
   maxRetryCount: number;
+  /** 鏈€杩戜竴娆℃墽琛屾仮澶嶅姩浣滅殑鏉ユ簮 */
+  lastRecoverySource?: OrderRecoveryActionSource;
+  /** 鏈€缁堝皢璇ユ仮澶嶄换鍔℃爣璁颁负宸叉仮澶嶇殑鏉ユ簮 */
+  resolvedBy?: OrderRecoveryActionSource;
   /** 鏈€杩戜竴娆￠敊璇爜 */
   lastErrorCode?: string;
   /** 鏈€杩戜竴娆￠敊璇秷鎭?*/

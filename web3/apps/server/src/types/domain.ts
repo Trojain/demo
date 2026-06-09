@@ -51,6 +51,8 @@ export type AuditLogAction =
   | 'strategy.error';
 
 export type OrderRecoverySource = 'manual' | 'rule' | 'system';
+/** 恢复动作来源，区分正常链路恢复、自动恢复和人工重试恢复。 */
+export type OrderRecoveryActionSource = 'normal_path' | 'auto_retry' | 'manual_retry';
 
 export type OrderRecoveryFailureStage =
   | 'order_submit_finalize'
@@ -720,6 +722,10 @@ export interface OrderRecoveryRecord {
   nextRetryAt?: string;
   /** 缁撴瀯鍖栦笂涓嬫枃 JSON */
   payloadJson?: string;
+  /** 最近一次恢复动作来源，便于区分当前任务由自动恢复还是人工重试推进。 */
+  lastRecoverySource?: OrderRecoveryActionSource;
+  /** 最终恢复完成来源，便于后续统计正常链路、自动恢复和人工重试成功率。 */
+  resolvedBy?: OrderRecoveryActionSource;
   /** 鍒涘缓鏃堕棿 */
   createdAt: string;
   /** 鏇存柊鏃堕棿 */

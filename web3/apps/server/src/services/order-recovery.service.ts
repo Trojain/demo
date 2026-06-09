@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid'
 import type {
   AuditLogAction,
   ExchangeCode,
+  OrderRecoveryActionSource,
   OrderRecoveryFailureStage,
   OrderRecoveryRecord,
   OrderRecoverySource,
@@ -160,10 +161,13 @@ export class OrderRecoveryService {
         mode: input.mode,
         failureStage: input.failureStage,
         recoveryStatus: nextStatus,
+        lastRecoverySource: undefined,
+        resolvedBy: undefined,
         lastErrorCode: input.lastErrorCode,
         lastErrorMessage: input.lastErrorMessage,
         payloadJson,
         nextRetryAt: current.recoveryStatus === 'manual_review_required' ? current.nextRetryAt : now,
+        resolvedAt: undefined,
         updatedAt: now,
       })
       return updated
@@ -182,6 +186,8 @@ export class OrderRecoveryService {
       recoveryStatus: 'pending_recovery',
       retryCount: 0,
       maxRetryCount: this.options.maxRetryCount,
+      lastRecoverySource: undefined,
+      resolvedBy: undefined,
       lastErrorCode: input.lastErrorCode,
       lastErrorMessage: input.lastErrorMessage,
       nextRetryAt: now,
@@ -203,6 +209,7 @@ export class OrderRecoveryService {
     const recovered = this.orderRecoveryRepository.update({
       ...current,
       recoveryStatus: 'recovered',
+      resolvedBy: 'normal_path',
       updatedAt: recoveredAt,
       resolvedAt: recoveredAt,
       nextRetryAt: undefined,
@@ -346,10 +353,12 @@ export class OrderRecoveryService {
     }
 
     const now = new Date().toISOString()
+    const actionSource = this.getRecoveryActionSource(reason)
     const recovering = this.orderRecoveryRepository.update({
       ...current,
       recoveryStatus: 'recovering',
       retryCount: current.retryCount + 1,
+      lastRecoverySource: actionSource,
       nextRetryAt: undefined,
       updatedAt: now,
     })
@@ -366,6 +375,7 @@ export class OrderRecoveryService {
         ...recovering,
         ...recoveryPatch,
         recoveryStatus: 'recovered',
+        resolvedBy: actionSource,
         updatedAt: recoveredAt,
         resolvedAt: recoveredAt,
         nextRetryAt: undefined,
@@ -448,11 +458,17 @@ export class OrderRecoveryService {
         maxRetryCount: record.maxRetryCount,
         lastErrorCode: record.lastErrorCode,
         lastErrorMessage: record.lastErrorMessage,
+        lastRecoverySource: record.lastRecoverySource,
+        resolvedBy: record.resolvedBy,
         nextRetryAt: record.nextRetryAt,
         exchangeOrderId: record.exchangeOrderId,
         ...payload,
       },
     })
+  }
+
+  private getRecoveryActionSource(reason: 'manual' | 'auto'): OrderRecoveryActionSource {
+    return reason === 'manual' ? 'manual_retry' : 'auto_retry'
   }
 
   private parsePayload(payloadJson?: string) {

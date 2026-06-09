@@ -4,6 +4,7 @@ import type { ExchangeFactory } from '../exchange/exchange-factory.js'
 import type { AuditLogService } from '../services/audit-log.service.js'
 import type { DailyReportService } from '../services/daily-report.service.js'
 import type { QualityAnalysisService } from '../services/quality-analysis.service.js'
+import type { RecoveryAnalysisService } from '../services/recovery-analysis.service.js'
 import type { ConfigArchiveService } from '../services/config-archive.service.js'
 import type { MarketService } from '../services/market.service.js'
 import type { OrderRecoveryService } from '../services/order-recovery.service.js'
@@ -35,6 +36,7 @@ import {
   listAuditLogsQuerySchema,
   listAuditLogsPageQuerySchema,
   listOrderRecoveriesPageQuerySchema,
+  listOrderRecoveryAnalysisQuerySchema,
   retryOrderRecoveriesBatchSchema,
   listDailyReportQuerySchema,
   listQualityAnalysisQuerySchema,
@@ -61,6 +63,7 @@ export interface ApiRouteDeps {
   configArchiveService: ConfigArchiveService
   dailyReportService: DailyReportService
   qualityAnalysisService: QualityAnalysisService
+  recoveryAnalysisService: RecoveryAnalysisService
   exchangeFactory: ExchangeFactory
   marketService: MarketService
   orderRecoveryService: OrderRecoveryService
@@ -229,6 +232,43 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
     } catch (error) {
       return reply.status(400).send({ message: error instanceof Error ? error.message : '批量恢复失败' })
     }
+  })
+
+  app.get('/api/order-recoveries/analysis', async (request, reply) => {
+    const parsed = listOrderRecoveryAnalysisQuerySchema.safeParse(request.query)
+    if (!parsed.success) {
+      return reply.status(400).send({ message: '恢复统计查询参数不合法', issues: parsed.error.issues })
+    }
+
+    const statuses = parsed.data.statuses
+      ?.split(',')
+      .map(status => status.trim())
+      .filter(Boolean) as Parameters<typeof deps.recoveryAnalysisService.getAnalysis>[0]['statuses']
+    const stages = parsed.data.stages
+      ?.split(',')
+      .map(stage => stage.trim())
+      .filter(Boolean) as Parameters<typeof deps.recoveryAnalysisService.getAnalysis>[0]['stages']
+    const exchanges = parsed.data.exchanges
+      ?.split(',')
+      .map(exchange => exchange.trim())
+      .filter(Boolean) as Parameters<typeof deps.recoveryAnalysisService.getAnalysis>[0]['exchanges']
+    const modes = parsed.data.modes
+      ?.split(',')
+      .map(mode => mode.trim())
+      .filter(Boolean) as Parameters<typeof deps.recoveryAnalysisService.getAnalysis>[0]['modes']
+    const sources = parsed.data.sources
+      ?.split(',')
+      .map(source => source.trim())
+      .filter(Boolean) as Parameters<typeof deps.recoveryAnalysisService.getAnalysis>[0]['sources']
+
+    return deps.recoveryAnalysisService.getAnalysis({
+      days: parsed.data.days,
+      statuses: statuses && statuses.length > 0 ? statuses : undefined,
+      stages: stages && stages.length > 0 ? stages : undefined,
+      exchanges: exchanges && exchanges.length > 0 ? exchanges : undefined,
+      modes: modes && modes.length > 0 ? modes : undefined,
+      sources: sources && sources.length > 0 ? sources : undefined,
+    })
   })
 
   app.delete('/api/audit-logs/:id', async (request, reply) => {

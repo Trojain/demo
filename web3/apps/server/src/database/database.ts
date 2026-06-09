@@ -230,6 +230,8 @@ export function createDatabase(databasePath: string) {
       recovery_status TEXT NOT NULL,
       retry_count INTEGER NOT NULL DEFAULT 0,
       max_retry_count INTEGER NOT NULL,
+      last_recovery_source TEXT,
+      resolved_by TEXT,
       last_error_code TEXT,
       last_error_message TEXT,
       next_retry_at TEXT,
@@ -246,7 +248,6 @@ export function createDatabase(databasePath: string) {
     CREATE INDEX IF NOT EXISTS idx_trading_signals_rule_id ON trading_signals(rule_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_signal_id ON risk_checks(signal_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_status ON risk_checks(status);
-    CREATE INDEX IF NOT EXISTS idx_risk_checks_stat_date ON risk_checks(stat_date, status, created_at);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
@@ -265,6 +266,7 @@ export function createDatabase(databasePath: string) {
   migrateTradingSignals(db);
   migrateRiskChecks(db);
   migrateOrderRecords(db);
+  migrateOrderRecoveryRecords(db);
 
   return db;
 }
@@ -315,6 +317,9 @@ function migrateRiskChecks(db: Database.Database) {
     db.prepare("ALTER TABLE risk_checks ADD COLUMN stat_date TEXT NOT NULL DEFAULT ''").run();
     db.prepare("UPDATE risk_checks SET stat_date = date(created_at, 'localtime') WHERE stat_date = ''").run();
   }
+
+  // 旧库需要先补齐 stat_date，再创建依赖该字段的索引，否则启动阶段会直接抛错。
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_risk_checks_stat_date ON risk_checks(stat_date, status, created_at)').run();
 }
 
 function migrateOrderRecords(db: Database.Database) {
@@ -367,5 +372,19 @@ function migrateOrderRecords(db: Database.Database) {
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
+  }
+}
+
+function migrateOrderRecoveryRecords(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(order_recovery_records)').all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  // 恢复质量分析需要区分正常链路恢复、自动重试恢复和人工重试恢复来源。
+  if (!columnNames.has('last_recovery_source')) {
+    db.prepare('ALTER TABLE order_recovery_records ADD COLUMN last_recovery_source TEXT').run();
+  }
+
+  if (!columnNames.has('resolved_by')) {
+    db.prepare('ALTER TABLE order_recovery_records ADD COLUMN resolved_by TEXT').run();
   }
 }

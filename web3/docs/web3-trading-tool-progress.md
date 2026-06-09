@@ -2687,3 +2687,199 @@ pnpm --filter @web3/server typecheck
 pnpm --filter @web3/web typecheck
 pnpm lint
 ```
+
+## v0.5.5  2026-06-05
+
+### 已完成
+
+- 后端新增恢复统计分析服务 `RecoveryAnalysisService`，按恢复任务创建日期归档输出恢复质量结果。
+- 新增接口 `GET /api/order-recoveries/analysis`，支持按天数、恢复状态、失败阶段、交易所、下单模式、来源筛选。
+- 恢复统计当前输出：
+  - 总恢复任务数
+  - 恢复成功率
+  - 人工介入率
+  - 平均重试次数
+  - 状态分布
+  - 失败阶段分布
+  - 交易所分布
+  - 来源分布
+  - 近 N 天恢复趋势
+- 恢复中心页面顶部已接入恢复统计面板和趋势图，支持近 7 天、30 天、90 天切换。
+- 单条重试和批量重试完成后，会同步刷新恢复统计，保证页面操作和统计结果保持闭环。
+
+### 已确认决策
+
+- 恢复质量分析统一按恢复任务 `createdAt` 的本地日期归档，避免恢复过程跨日时出现趋势错桶。
+- 恢复成功率按 `recovered / totalRecoveryCount` 计算。
+- 人工介入率按 `manual_review_required / totalRecoveryCount` 计算。
+- 当前版本不推断“自动恢复成功率”和“人工重试成功率”，因为现有字段模型没有稳定存储恢复来源阶段，继续猜测会污染统计口径。
+- 恢复中心继续复用当前筛选条件驱动统计接口，避免页面再维护一套独立条件模型。
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery-analysis
+pnpm test:order-recovery-analysis-routes
+pnpm test:order-recovery
+pnpm test:order-recovery-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.5.1  2026-06-05
+
+### 已完成
+
+- 为恢复任务新增恢复动作来源字段：
+  - `lastRecoverySource`
+  - `resolvedBy`
+- `order_recovery_records` 表已补齐：
+  - `last_recovery_source`
+  - `resolved_by`
+- 自动恢复成功时，恢复任务会显式归档为 `auto_retry`。
+- 人工重试成功时，恢复任务会显式归档为 `manual_retry`。
+- 正常业务链路自然恢复时，恢复任务会显式归档为 `normal_path`。
+- 恢复审计 payload 已补齐恢复动作来源字段，便于后续恢复质量统计继续细分。
+
+### 已确认决策
+
+- 恢复来源字段单独归档到恢复任务记录中，不通过审计日志文本反推，避免统计口径漂移。
+- `resolvedBy` 只表示最终将任务关闭为已恢复的动作来源。
+- `lastRecoverySource` 记录最近一次实际执行的恢复动作来源，用于排查多次重试过程。
+- 当同一活动恢复任务被新的异常再次刷新时，会清空旧的恢复来源归档，避免旧状态污染当前恢复任务。
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.5.2  2026-06-05
+
+### 已完成
+
+- 细化恢复质量分析摘要，新增：
+  - `autoRetryRecoveredCount`
+  - `manualRetryRecoveredCount`
+  - `normalPathRecoveredCount`
+  - `autoRetryRecoverySuccessRate`
+  - `manualRetryRecoverySuccessRate`
+- 新增恢复动作来源分布 `recoveryActionDistribution`。
+- 新增按恢复来源拆分的阶段分布 `stageRecoveryBreakdown`。
+- 新增按恢复来源拆分的恢复趋势：
+  - `autoRetryRecoveredCount`
+  - `manualRetryRecoveredCount`
+  - `normalPathRecoveredCount`
+- 恢复中心页面顶部已同步接入：
+  - 自动恢复成功率
+  - 人工重试成功率
+  - 自动恢复成功数
+  - 人工重试成功数
+  - 正常链路恢复数
+  - 分来源恢复阶段分布图
+  - 分来源恢复趋势图
+
+### 已确认决策
+
+- 任务来源 `source` 与恢复动作来源 `resolvedBy` / `lastRecoverySource` 分开统计，避免把“谁触发了任务”和“谁把任务恢复成功”混为同一维度。
+- 自动恢复成功率与人工重试成功率当前统一按“对应来源恢复成功数 / 统计窗口任务总数”计算，先保证口径稳定，后续如需改为“尝试次数成功率”再单独扩字段。
+- 趋势图继续按恢复任务 `createdAt` 的本地日期归档，保持与恢复中心现有统计窗口一致。
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery-analysis
+pnpm test:order-recovery-analysis-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.5.3  2026-06-05
+
+### 已完成
+
+- 修复旧 SQLite 库启动时全部接口 500 的问题。
+- 根因是 `risk_checks.stat_date` 仍通过迁移补列，但索引 `idx_risk_checks_stat_date` 过早在数据库初始化阶段创建，旧库启动时会直接抛 `no such column: stat_date`。
+- 现已将 `idx_risk_checks_stat_date` 的创建移动到 `migrateRiskChecks` 内部，确保先补列再建索引。
+- 已用服务端真实启动注入验证：
+  - `/api/health`
+  - `/api/dashboard/summary`
+  - `/api/order-recoveries/analysis`
+  - `/api/order-recoveries/page`
+  均返回 `200`。
+
+### 已确认决策
+
+- 依赖迁移新增列的索引，一律放到对应迁移函数中创建，避免未来再次出现“旧库表结构未补齐，但索引已提前引用新列”的启动级故障。
+- 启动级数据库兼容问题优先用真实运行注入验证，保证不只停留在 typecheck 和 lint。
+
+### 验证记录
+
+```bash
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.5.4  2026-06-09
+
+### 已完成
+
+- 在恢复质量分析中新增恢复耗时统计口径，统一按 `resolvedAt - createdAt` 计算。
+- 恢复分析摘要新增：
+  - `avgRecoveredDurationMs`
+  - `avgAutoRetryRecoveredDurationMs`
+  - `avgManualRetryRecoveredDurationMs`
+  - `avgNormalPathRecoveredDurationMs`
+- 新增按阶段拆分的恢复耗时分布 `stageDurationBreakdown`。
+- 恢复中心页面顶部新增恢复耗时卡片，并增加“恢复耗时分析”图表，统一按秒展示。
+
+### 已确认决策
+
+- 恢复耗时只统计 `recoveryStatus = recovered` 且存在 `resolvedAt` 的任务，避免未完成任务污染平均值。
+- 恢复耗时统一按任务创建时间到恢复完成时间计算，先保证口径稳定。
+- 页面展示换算为秒，存储和接口层继续保持毫秒，避免丢精度。
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery-analysis
+pnpm test:order-recovery-analysis-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```
+
+## v0.5.5.5  2026-06-09
+
+### 已完成
+
+- 恢复质量分析新增“恢复尝试次数”统计，区分：
+  - 任务平均重试次数
+  - 恢复成功平均尝试次数
+  - 自动恢复成功平均尝试次数
+  - 人工重试成功平均尝试次数
+  - 正常链路恢复平均尝试次数
+- 新增按失败阶段拆分的恢复尝试次数分析 `stageAttemptBreakdown`。
+- 恢复中心页面顶部已补恢复尝试次数卡片，并增加“恢复尝试次数分析”图表。
+
+### 已确认决策
+
+- 当前“尝试次数”直接复用恢复任务上的 `retryCount` 字段，不额外猜测审计日志文本。
+- 人工重试成功任务的平均尝试次数，表示任务恢复成功前的累计尝试次数，因此会包含前置自动重试次数。
+- 如后续需要拆出“仅人工动作尝试次数”或“尝试级成功率”，需要单独新增尝试级归档模型，当前版本先保持任务级口径稳定。
+
+### 验证记录
+
+```bash
+pnpm test:order-recovery-analysis
+pnpm test:order-recovery-analysis-routes
+pnpm --filter @web3/server typecheck
+pnpm --filter @web3/web typecheck
+pnpm lint
+```

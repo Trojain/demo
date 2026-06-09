@@ -164,6 +164,113 @@ export interface RetryOrderRecoveryBatchResult {
   items: RetryOrderRecoveryBatchItemResult[];
 }
 
+export interface OrderRecoveryAnalysisResult {
+  summary: {
+    /** 统计窗口内创建的恢复任务总数。 */
+    totalRecoveryCount: number;
+    /** 当前已恢复成功的任务数。 */
+    recoveredCount: number;
+    /** 当前仍待恢复的任务数。 */
+    pendingRecoveryCount: number;
+    /** 当前处于恢复中的任务数。 */
+    recoveringCount: number;
+    /** 当前已转人工处理的任务数。 */
+    manualReviewRequiredCount: number;
+    /** 当前恢复失败且尚未转人工的任务数。 */
+    recoveryFailedCount: number;
+    /** 恢复成功率。 */
+    recoverySuccessRate: number;
+    /** 人工介入率。 */
+    manualReviewRate: number;
+    /** 平均重试次数。 */
+    avgRetryCount: number;
+    /** 已恢复任务平均尝试次数。 */
+    avgRecoveredAttemptCount: number;
+    /** 自动恢复成功数。 */
+    autoRetryRecoveredCount: number;
+    /** 人工重试成功数。 */
+    manualRetryRecoveredCount: number;
+    /** 正常链路自然恢复数。 */
+    normalPathRecoveredCount: number;
+    /** 自动恢复成功任务平均尝试次数。 */
+    avgAutoRetryRecoveredAttemptCount: number;
+    /** 人工重试成功任务平均尝试次数。 */
+    avgManualRetryRecoveredAttemptCount: number;
+    /** 正常链路自然恢复任务平均尝试次数。 */
+    avgNormalPathRecoveredAttemptCount: number;
+    /** 自动恢复成功率。 */
+    autoRetryRecoverySuccessRate: number;
+    /** 人工重试成功率。 */
+    manualRetryRecoverySuccessRate: number;
+    /** 已恢复任务平均恢复耗时，单位毫秒。 */
+    avgRecoveredDurationMs: number;
+    /** 自动恢复成功任务平均恢复耗时，单位毫秒。 */
+    avgAutoRetryRecoveredDurationMs: number;
+    /** 人工重试成功任务平均恢复耗时，单位毫秒。 */
+    avgManualRetryRecoveredDurationMs: number;
+    /** 正常链路自然恢复任务平均恢复耗时，单位毫秒。 */
+    avgNormalPathRecoveredDurationMs: number;
+  };
+  statusDistribution: Array<{
+    name: string;
+    value: number;
+  }>;
+  stageDistribution: Array<{
+    name: string;
+    value: number;
+  }>;
+  exchangeDistribution: Array<{
+    name: string;
+    value: number;
+  }>;
+  sourceDistribution: Array<{
+    name: string;
+    value: number;
+  }>;
+  recoveryActionDistribution: Array<{
+    name: string;
+    value: number;
+  }>;
+  stageRecoveryBreakdown: Array<{
+    stage: string;
+    autoRetryRecoveredCount: number;
+    manualRetryRecoveredCount: number;
+    normalPathRecoveredCount: number;
+  }>;
+  stageDurationBreakdown: Array<{
+    stage: string;
+    recoveredCount: number;
+    avgRecoveredDurationMs: number;
+    avgAutoRetryRecoveredDurationMs: number;
+    avgManualRetryRecoveredDurationMs: number;
+    avgNormalPathRecoveredDurationMs: number;
+  }>;
+  stageAttemptBreakdown: Array<{
+    stage: string;
+    recoveredCount: number;
+    avgRecoveredAttemptCount: number;
+    avgAutoRetryRecoveredAttemptCount: number;
+    avgManualRetryRecoveredAttemptCount: number;
+    avgNormalPathRecoveredAttemptCount: number;
+  }>;
+  dailyTrend: Array<{
+    /** 本地归档日期。 */
+    date: string;
+    /** 当日创建的恢复任务数。 */
+    createdCount: number;
+    /** 当日创建任务中当前已恢复成功的数量。 */
+    recoveredCount: number;
+    /** 当日创建任务中当前已转人工处理的数量。 */
+    manualReviewCount: number;
+    /** 当日创建任务中通过自动恢复成功的数量。 */
+    autoRetryRecoveredCount: number;
+    /** 当日创建任务中通过人工重试成功的数量。 */
+    manualRetryRecoveredCount: number;
+    /** 当日创建任务中通过正常链路自然恢复的数量。 */
+    normalPathRecoveredCount: number;
+  }>;
+}
+
 export const tradingApi = {
   getDashboardSummary: async () => {
     const { data } = await apiClient.get<DashboardSummary>('/dashboard/summary');
@@ -361,6 +468,26 @@ export const tradingApi = {
       params: {
         page,
         pageSize,
+        statuses: statuses?.join(','),
+        stages: stages?.join(','),
+        exchanges: exchanges?.join(','),
+        modes: modes?.join(','),
+        sources: sources?.join(','),
+      }
+    });
+    return data;
+  },
+  getOrderRecoveryAnalysis: async (
+    days = 30,
+    statuses?: string[],
+    stages?: string[],
+    exchanges?: ExchangeCode[],
+    modes?: TradeAccountType[],
+    sources?: Array<'manual' | 'rule' | 'system'>,
+  ) => {
+    const { data } = await apiClient.get<OrderRecoveryAnalysisResult>('/order-recoveries/analysis', {
+      params: {
+        days,
         statuses: statuses?.join(','),
         stages: stages?.join(','),
         exchanges: exchanges?.join(','),
