@@ -84,6 +84,8 @@ export function createDatabase(databasePath: string) {
     CREATE TABLE IF NOT EXISTS risk_checks (
       id TEXT PRIMARY KEY,
       signal_id TEXT NOT NULL,
+      strategy_id TEXT,
+      strategy_version_id TEXT,
       rule_id TEXT NOT NULL,
       exchange TEXT NOT NULL,
       symbol TEXT NOT NULL,
@@ -95,6 +97,8 @@ export function createDatabase(databasePath: string) {
       stat_date TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (signal_id) REFERENCES trading_signals(id),
+      FOREIGN KEY (strategy_id) REFERENCES strategy_instances(id),
+      FOREIGN KEY (strategy_version_id) REFERENCES strategy_versions(id),
       FOREIGN KEY (rule_id) REFERENCES monitor_rules(id)
     );
 
@@ -235,6 +239,8 @@ export function createDatabase(databasePath: string) {
     CREATE TABLE IF NOT EXISTS order_recovery_records (
       id TEXT PRIMARY KEY,
       identity_key TEXT NOT NULL,
+      strategy_id TEXT,
+      signal_id TEXT,
       order_id TEXT,
       exchange_order_id TEXT,
       execution_task_id TEXT,
@@ -255,6 +261,8 @@ export function createDatabase(databasePath: string) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       resolved_at TEXT,
+      FOREIGN KEY (strategy_id) REFERENCES strategy_instances(id),
+      FOREIGN KEY (signal_id) REFERENCES trading_signals(id),
       FOREIGN KEY (order_id) REFERENCES order_records(id)
     );
 
@@ -318,8 +326,6 @@ export function createDatabase(databasePath: string) {
     CREATE INDEX IF NOT EXISTS idx_trigger_events_status ON trigger_events(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_status ON trading_signals(status);
     CREATE INDEX IF NOT EXISTS idx_trading_signals_rule_id ON trading_signals(rule_id);
-    CREATE INDEX IF NOT EXISTS idx_trading_signals_strategy_id ON trading_signals(strategy_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_trading_signals_dedupe_key ON trading_signals(dedupe_key) WHERE dedupe_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_risk_checks_signal_id ON risk_checks(signal_id);
     CREATE INDEX IF NOT EXISTS idx_risk_checks_status ON risk_checks(status);
     CREATE INDEX IF NOT EXISTS idx_order_records_created_at ON order_records(created_at);
@@ -439,13 +445,33 @@ function migrateRiskChecks(db: Database.Database) {
   const columns = db.prepare('PRAGMA table_info(risk_checks)').all() as Array<{ name: string }>;
   const columnNames = new Set(columns.map((column) => column.name));
 
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE risk_checks ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('strategy_version_id')) {
+    db.prepare('ALTER TABLE risk_checks ADD COLUMN strategy_version_id TEXT').run();
+  }
+
   // 风控日维度统计需要稳定的本地日期字段，避免每次聚合都依赖 created_at 字符串裁剪。
   if (!columnNames.has('stat_date')) {
     db.prepare("ALTER TABLE risk_checks ADD COLUMN stat_date TEXT NOT NULL DEFAULT ''").run();
     db.prepare("UPDATE risk_checks SET stat_date = date(created_at, 'localtime') WHERE stat_date = ''").run();
   }
 
+  db.prepare(
+    `UPDATE risk_checks
+     SET strategy_id = (
+       SELECT strategy_id FROM trading_signals WHERE trading_signals.id = risk_checks.signal_id
+     ),
+     strategy_version_id = (
+       SELECT strategy_version_id FROM trading_signals WHERE trading_signals.id = risk_checks.signal_id
+     )
+     WHERE strategy_id IS NULL OR strategy_version_id IS NULL`,
+  ).run();
+
   // 旧库需要先补齐 stat_date，再创建依赖该字段的索引，否则启动阶段会直接抛错。
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_risk_checks_strategy_id ON risk_checks(strategy_id, stat_date, created_at)').run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_risk_checks_stat_date ON risk_checks(stat_date, status, created_at)').run();
 }
 
@@ -522,6 +548,14 @@ function migrateOrderRecoveryRecords(db: Database.Database) {
   const columns = db.prepare('PRAGMA table_info(order_recovery_records)').all() as Array<{ name: string }>;
   const columnNames = new Set(columns.map((column) => column.name));
 
+  if (!columnNames.has('strategy_id')) {
+    db.prepare('ALTER TABLE order_recovery_records ADD COLUMN strategy_id TEXT').run();
+  }
+
+  if (!columnNames.has('signal_id')) {
+    db.prepare('ALTER TABLE order_recovery_records ADD COLUMN signal_id TEXT').run();
+  }
+
   // 恢复质量分析需要区分正常链路恢复、自动重试恢复和人工重试恢复来源。
   if (!columnNames.has('last_recovery_source')) {
     db.prepare('ALTER TABLE order_recovery_records ADD COLUMN last_recovery_source TEXT').run();
@@ -534,6 +568,25 @@ function migrateOrderRecoveryRecords(db: Database.Database) {
   if (!columnNames.has('execution_task_id')) {
     db.prepare('ALTER TABLE order_recovery_records ADD COLUMN execution_task_id TEXT').run();
   }
+
+  db.prepare(
+    `UPDATE order_recovery_records
+     SET strategy_id = COALESCE(
+       strategy_id,
+       (SELECT strategy_id FROM order_records WHERE order_records.id = order_recovery_records.order_id),
+       (SELECT strategy_id FROM execution_tasks WHERE execution_tasks.id = order_recovery_records.execution_task_id)
+     ),
+     signal_id = COALESCE(
+       signal_id,
+       (SELECT signal_id FROM order_records WHERE order_records.id = order_recovery_records.order_id),
+       (SELECT signal_id FROM execution_tasks WHERE execution_tasks.id = order_recovery_records.execution_task_id)
+     )
+     WHERE strategy_id IS NULL OR signal_id IS NULL`,
+  ).run();
+
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_order_recovery_records_strategy_id ON order_recovery_records(strategy_id, recovery_status, updated_at)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_order_recovery_records_signal_id ON order_recovery_records(signal_id, recovery_status, updated_at)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_order_recovery_records_execution_task_id ON order_recovery_records(execution_task_id, updated_at)').run();
 }
 
 function migrateAuditLogs(db: Database.Database) {
@@ -560,7 +613,15 @@ function migrateStrategyInstances(db: Database.Database) {
       `SELECT *
        FROM monitor_rules
        WHERE strategy_id IS NULL
-          OR strategy_version_id IS NULL`,
+          OR strategy_version_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM strategy_instances
+            WHERE strategy_instances.id = monitor_rules.strategy_id
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM strategy_versions
+            WHERE strategy_versions.id = monitor_rules.strategy_version_id
+          )`,
     )
     .all() as Array<{
     id: string;
@@ -675,5 +736,31 @@ function migrateStrategyInstances(db: Database.Database) {
      )
      WHERE rule_id IS NOT NULL
        AND (strategy_id IS NULL OR signal_id IS NULL)`,
+  ).run();
+
+  db.prepare(
+    `UPDATE risk_checks
+     SET strategy_id = (
+       SELECT strategy_id FROM trading_signals WHERE trading_signals.id = risk_checks.signal_id
+     ),
+     strategy_version_id = (
+       SELECT strategy_version_id FROM trading_signals WHERE trading_signals.id = risk_checks.signal_id
+     )
+     WHERE strategy_id IS NULL OR strategy_version_id IS NULL`,
+  ).run();
+
+  db.prepare(
+    `UPDATE order_recovery_records
+     SET strategy_id = COALESCE(
+       strategy_id,
+       (SELECT strategy_id FROM order_records WHERE order_records.id = order_recovery_records.order_id),
+       (SELECT strategy_id FROM execution_tasks WHERE execution_tasks.id = order_recovery_records.execution_task_id)
+     ),
+     signal_id = COALESCE(
+       signal_id,
+       (SELECT signal_id FROM order_records WHERE order_records.id = order_recovery_records.order_id),
+       (SELECT signal_id FROM execution_tasks WHERE execution_tasks.id = order_recovery_records.execution_task_id)
+     )
+     WHERE strategy_id IS NULL OR signal_id IS NULL`,
   ).run();
 }

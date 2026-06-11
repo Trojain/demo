@@ -288,6 +288,8 @@ export class OrderService {
   }) {
     this.orderRecoveryService.createOrRefresh({
       identityKey: `rule_trigger_finalize:${input.order.exchange}:${input.order.exchangeOrderId}`,
+      strategyId: input.order.strategyId,
+      signalId: input.order.signalId,
       orderId: input.order.id,
       exchangeOrderId: input.order.exchangeOrderId,
       executionTaskId: input.order.executionTaskId,

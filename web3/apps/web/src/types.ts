@@ -23,6 +23,7 @@ export type AuditLogAction =
   | 'trigger.failed'
   | 'trigger.ignored'
   | 'execution.created'
+  | 'execution.cancelled'
   | 'execution.failed'
   | 'order.submitted'
   | 'order.synced'
@@ -360,6 +361,10 @@ export interface RiskCheck {
   id: string;
   /** 鍏宠仈浜ゆ槗淇″彿 ID */
   signalId: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联策略参数版本 ID */
+  strategyVersionId?: string;
   /** 鍏宠仈瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -736,6 +741,10 @@ export interface OrderRecoveryRecord {
   id: string;
   /** 鎭㈠鍘婚噸閿?*/
   identityKey: string;
+  /** 关联策略实例 ID */
+  strategyId?: string;
+  /** 关联信号 ID */
+  signalId?: string;
   /** 鍏宠仈璁㈠崟 ID */
   orderId?: string;
   /** 鍏宠仈浜ゆ槗鎵€璁㈠崟鍙?*/

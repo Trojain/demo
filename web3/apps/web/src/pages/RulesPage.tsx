@@ -159,6 +159,7 @@ const auditActionTextMap: Record<AuditLog['action'], string> = {
   'trigger.failed': '触发失败',
   'trigger.ignored': '触发忽略',
   'execution.created': '执行任务创建',
+  'execution.cancelled': '执行任务取消',
   'execution.failed': '执行任务失败',
   'order.submitted': '订单提交',
   'order.synced': '订单同步',

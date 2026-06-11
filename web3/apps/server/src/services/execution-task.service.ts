@@ -147,6 +147,41 @@ export class ExecutionTaskService {
     })
   }
 
+  markCancelled(taskId: string, reason: string) {
+    const task = this.findOrThrow(taskId)
+    if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+      return task
+    }
+
+    const now = new Date().toISOString()
+    const cancelled = this.executionTaskRepository.update({
+      ...task,
+      status: 'cancelled',
+      failureReason: reason,
+      cancelledAt: task.cancelledAt ?? now,
+      updatedAt: now,
+    })
+    this.auditLogService.record({
+      action: 'execution.cancelled',
+      entityType: 'execution_task',
+      entityId: cancelled.id,
+      strategyId: cancelled.strategyId,
+      signalId: cancelled.signalId,
+      executionTaskId: cancelled.id,
+      triggerId: cancelled.triggerId,
+      orderId: cancelled.orderId,
+      message: `${cancelled.symbol} 执行任务已取消：${reason}`,
+      payload: {
+        exchange: cancelled.exchange,
+        symbol: cancelled.symbol,
+        mode: cancelled.mode,
+        source: cancelled.source,
+        status: cancelled.status,
+      },
+    })
+    return cancelled
+  }
+
   markFailed(taskId: string, failureStage: ExecutionTaskFailureStage, reason: string) {
     const task = this.findOrThrow(taskId)
     const now = new Date().toISOString()

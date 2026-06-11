@@ -16,6 +16,7 @@ import type { SignalService } from '../services/signal.service.js'
 import type { StrategyInstanceService } from '../services/strategy-instance.service.js'
 import type { TradeAccountService } from '../services/trade-account.service.js'
 import type { TradeExecutionService } from '../services/trade-execution.service.js'
+import type { ExecutionTaskService } from '../services/execution-task.service.js'
 import { RuleValidationError, type TradingRuleService } from '../services/trading-rule.service.js'
 import type { OrderRepository } from '../repositories/order.repository.js'
 import type { AuditLogRepository } from '../repositories/audit-log.repository.js'
@@ -66,6 +67,7 @@ export interface ApiRouteDeps {
   qualityAnalysisService: QualityAnalysisService
   recoveryAnalysisService: RecoveryAnalysisService
   exchangeFactory: ExchangeFactory
+  executionTaskService: ExecutionTaskService
   marketService: MarketService
   orderRecoveryService: OrderRecoveryService
   orderPreviewService: OrderPreviewService
@@ -85,6 +87,19 @@ export interface ApiRouteDeps {
 }
 
 export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps) {
+  const releasePendingExecutionTask = (triggerId: string, reason: string) => {
+    const executionTask = deps.executionTaskService.findByTriggerId(triggerId)
+    if (!executionTask) {
+      return
+    }
+
+    if (executionTask.status !== 'waiting_confirm' && executionTask.status !== 'pending') {
+      return
+    }
+
+    deps.executionTaskService.markCancelled(executionTask.id, reason)
+  }
+
   app.get('/api/health', async () => ({
     status: 'ok',
     time: new Date().toISOString(),
@@ -691,6 +706,12 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       return reply.status(400).send({ message: '触发事件 ID 不合法', issues: parsed.error.issues })
     }
 
+    const trigger = deps.triggerRepository.findById(parsed.data.id)
+    if (!trigger) {
+      return reply.status(404).send({ message: '触发事件不存在' })
+    }
+
+    releasePendingExecutionTask(parsed.data.id, '触发事件已删除，待确认执行任务同步取消')
     const deleted = deps.triggerRepository.delete(parsed.data.id)
     return deleted ? reply.status(204).send() : reply.status(404).send({ message: '触发事件不存在' })
   })
@@ -706,6 +727,7 @@ export async function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps
       return reply.status(400).send({ message: '触发事件已经处理，不能重复忽略' })
     }
 
+    releasePendingExecutionTask(params.id, '触发事件已忽略，待确认执行任务同步取消')
     const ignoredTrigger = deps.triggerRepository.markIgnored(params.id)
     deps.auditLogService.record({
       action: 'trigger.ignored',

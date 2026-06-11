@@ -31,6 +31,10 @@ interface OrderRecoveryServiceOptions {
 export interface CreateOrderRecoveryInput {
   /** 稳定恢复去重键，未恢复前重复异常复用同一条记录。 */
   identityKey: string
+  /** 关联策略实例 ID。 */
+  strategyId?: string
+  /** 关联信号 ID。 */
+  signalId?: string
   /** 关联本地订单 ID，交易所级异常可为空。 */
   orderId?: string
   /** 关联交易所订单号。 */
@@ -156,6 +160,8 @@ export class OrderRecoveryService {
         : 'pending_recovery'
       const updated = this.orderRecoveryRepository.update({
         ...current,
+        strategyId: input.strategyId ?? current.strategyId,
+        signalId: input.signalId ?? current.signalId,
         orderId: input.orderId ?? current.orderId,
         exchangeOrderId: input.exchangeOrderId ?? current.exchangeOrderId,
         executionTaskId: input.executionTaskId ?? current.executionTaskId,
@@ -179,6 +185,8 @@ export class OrderRecoveryService {
     const created = this.orderRecoveryRepository.create({
       id: nanoid(),
       identityKey: input.identityKey,
+      strategyId: input.strategyId,
+      signalId: input.signalId,
       orderId: input.orderId,
       exchangeOrderId: input.exchangeOrderId,
       executionTaskId: input.executionTaskId,
@@ -446,12 +454,16 @@ export class OrderRecoveryService {
       action,
       entityType: 'recovery',
       entityId: record.id,
+      strategyId: record.strategyId,
+      signalId: record.signalId,
       orderId: record.orderId,
       executionTaskId: record.executionTaskId,
       message,
       payload: {
         recoveryId: record.id,
         identityKey: record.identityKey,
+        strategyId: record.strategyId,
+        signalId: record.signalId,
         exchange: record.exchange,
         tradingEnvironment: resolveTradingEnvironmentLabel(record.exchange),
         source: record.source,

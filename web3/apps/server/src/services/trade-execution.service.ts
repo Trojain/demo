@@ -51,7 +51,7 @@ type ConfirmTokenState = {
   blockedReason?: string
 }
 
-const REAL_ORDER_CONFIRM_TOKEN_TTL_MS = 2 * 60_000
+const MANUAL_ORDER_CONFIRM_TOKEN_TTL_MS = 2 * 60_000
 
 export class TradeExecutionError extends Error {
   constructor(
@@ -141,7 +141,7 @@ export class TradeExecutionService {
       checkItems,
       previewedAt: new Date().toISOString(),
     }
-    if (input.mode === 'real' && issueConfirmToken) {
+    if (issueConfirmToken) {
       preview.confirmToken = this.issueConfirmToken(input)
     }
 
@@ -151,23 +151,32 @@ export class TradeExecutionService {
   async confirm(input: TradeOrderPreviewInput, confirmToken?: string): Promise<OrderRecord> {
     const preview = await this.buildPreview(input, false)
     this.assertPreviewPassed(preview)
-    const executionTask = this.createManualExecutionTask(preview, input, confirmToken)
-    if (executionTask.orderId) {
-      const existingOrder = this.orderRepository.findById(executionTask.orderId)
-      if (existingOrder) {
-        return existingOrder
-      }
-    }
+    const confirmedOrder = this.consumeManualConfirmTokenOrGetExistingOrder(input, preview.mode, confirmToken)
+    let executionTask: ReturnType<ExecutionTaskService['createOrGet']> | undefined
     try {
+      executionTask = this.createManualExecutionTask(preview, input, confirmToken)
+      if (executionTask.orderId) {
+        const existingOrder = this.orderRepository.findById(executionTask.orderId)
+        if (existingOrder) {
+          if (confirmToken) {
+            this.markConfirmTokenCompleted(confirmToken, existingOrder.id)
+          }
+          return existingOrder
+        }
+      }
+
+      if (confirmedOrder) {
+        if (preview.mode === 'real') {
+          this.executionTaskService.markSubmitted(executionTask.id, confirmedOrder)
+        } else {
+          this.executionTaskService.markCompleted(executionTask.id, confirmedOrder)
+        }
+        return confirmedOrder
+      }
+
       this.executionTaskService.markRunning(executionTask.id)
       if (preview.mode === 'real') {
         this.assertRealTradingAllowed(preview)
-        const confirmedOrder = this.consumeConfirmTokenOrGetExistingOrder(input, confirmToken)
-        if (confirmedOrder) {
-          this.executionTaskService.markSubmitted(executionTask.id, confirmedOrder)
-          return confirmedOrder
-        }
-
         const order = await this.executeRealOrder(preview, {
           source: 'manual',
           executionTaskId: executionTask.id,
@@ -184,10 +193,18 @@ export class TradeExecutionService {
         // 快捷交易不经过规则和触发事件链路，这里不再伪造外键记录。
         rawMessage: '模拟交易即时成交，后续真实交易会由交易所订单状态同步',
       })
+      if (confirmToken) {
+        this.markConfirmTokenCompleted(confirmToken, order.id)
+      }
       this.executionTaskService.markCompleted(executionTask.id, order)
       return order
     } catch (error) {
-      this.executionTaskService.markFailed(executionTask.id, this.resolveExecutionFailureStage(error), error instanceof Error ? error.message : '交易确认失败')
+      if (confirmToken) {
+        this.releaseConfirmToken(confirmToken)
+      }
+      if (executionTask) {
+        this.executionTaskService.markFailed(executionTask.id, this.resolveExecutionFailureStage(error), error instanceof Error ? error.message : '交易确认失败')
+      }
       throw error
     }
   }
@@ -256,7 +273,8 @@ export class TradeExecutionService {
       side: preview.side,
       orderType: preview.orderType,
       source: 'manual',
-      idempotencyKey: confirmToken ? `manual-real:${confirmToken}` : `manual-simulation:${nanoid()}`,
+      // 快捷交易统一使用确认令牌驱动幂等，模拟与真实保持同一套防重复提交语义。
+      idempotencyKey: confirmToken ? `manual:${confirmToken}` : `manual-legacy:${nanoid()}`,
       status: 'pending',
       payload: {
         payloadHash: this.buildPreviewPayloadHash(input),
@@ -531,26 +549,31 @@ export class TradeExecutionService {
     const token = nanoid()
     this.confirmTokenStore.set(token, {
       payloadHash: this.buildPreviewPayloadHash(input),
-      expiresAt: Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS,
+      expiresAt: Date.now() + MANUAL_ORDER_CONFIRM_TOKEN_TTL_MS,
       processing: false,
     })
     return token
   }
 
-  private consumeConfirmTokenOrGetExistingOrder(input: TradeOrderPreviewInput, confirmToken?: string) {
+  private consumeManualConfirmTokenOrGetExistingOrder(
+    input: TradeOrderPreviewInput,
+    mode: TradeOrderPreviewInput['mode'],
+    confirmToken?: string,
+  ) {
+    const confirmLabel = mode === 'real' ? '真实交易确认' : '交易确认'
     if (!confirmToken) {
-      throw new Error('真实交易确认缺少 confirmToken，请重新预览后再确认')
+      throw new Error(`${confirmLabel}缺少 confirmToken，请重新预览后再确认`)
     }
 
     this.cleanupExpiredConfirmTokens()
     const tokenState = this.confirmTokenStore.get(confirmToken)
     if (!tokenState || tokenState.expiresAt < Date.now()) {
       this.confirmTokenStore.delete(confirmToken)
-      throw new Error('真实交易确认令牌已过期，请重新预览后再确认')
+      throw new Error(`${confirmLabel}令牌已过期，请重新预览后再确认`)
     }
 
     if (tokenState.payloadHash !== this.buildPreviewPayloadHash(input)) {
-      throw new Error('真实交易确认参数已变化，请重新预览后再确认')
+      throw new Error(`${confirmLabel}参数已变化，请重新预览后再确认`)
     }
 
     if (tokenState.orderId) {
@@ -561,11 +584,11 @@ export class TradeExecutionService {
     }
 
     if (tokenState.blockedAfterExchangeSubmit) {
-      throw new Error(tokenState.blockedReason ?? '上一笔真实交易已提交交易所，正在等待恢复任务处理')
+      throw new Error(tokenState.blockedReason ?? '上一笔交易已提交，正在等待恢复任务处理')
     }
 
     if (tokenState.processing) {
-      throw new Error('真实交易确认正在处理中，请稍后刷新成交记录查看结果')
+      throw new Error(`${confirmLabel}正在处理中，请稍后刷新记录查看结果`)
     }
 
     tokenState.processing = true
@@ -583,7 +606,7 @@ export class TradeExecutionService {
     tokenState.orderId = orderId
     tokenState.blockedAfterExchangeSubmit = false
     tokenState.blockedReason = undefined
-    tokenState.expiresAt = Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS
+    tokenState.expiresAt = Date.now() + MANUAL_ORDER_CONFIRM_TOKEN_TTL_MS
     this.confirmTokenStore.set(confirmToken, tokenState)
   }
 
@@ -596,7 +619,7 @@ export class TradeExecutionService {
     tokenState.processing = false
     tokenState.blockedAfterExchangeSubmit = true
     tokenState.blockedReason = reason
-    tokenState.expiresAt = Date.now() + REAL_ORDER_CONFIRM_TOKEN_TTL_MS
+    tokenState.expiresAt = Date.now() + MANUAL_ORDER_CONFIRM_TOKEN_TTL_MS
     this.confirmTokenStore.set(confirmToken, tokenState)
   }
 
@@ -692,6 +715,8 @@ export class TradeExecutionService {
     exchangeResult: Awaited<ReturnType<ReturnType<ExchangeFactory['getAdapter']>['placeOrder']>>,
     metadata: {
       source: OrderRecoverySource
+      strategyId?: string
+      signalId?: string
       clientOrderId?: string
       executionTaskId?: string
       confirmToken?: string
@@ -705,6 +730,8 @@ export class TradeExecutionService {
   ) {
     this.orderRecoveryService.createOrRefresh({
       identityKey: `order_submit_finalize:${preview.exchange}:${exchangeResult.exchangeOrderId}`,
+      strategyId: metadata.strategyId ?? order?.strategyId,
+      signalId: metadata.signalId ?? order?.signalId,
       orderId: order?.id,
       exchangeOrderId: exchangeResult.exchangeOrderId,
       executionTaskId: metadata.executionTaskId,

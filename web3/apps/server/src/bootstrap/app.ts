@@ -143,6 +143,7 @@ export async function createServerRuntime(): Promise<ServerRuntime> {
     qualityAnalysisService,
     recoveryAnalysisService,
     exchangeFactory,
+    executionTaskService,
     marketService,
     orderRecoveryService,
     orderPreviewService,

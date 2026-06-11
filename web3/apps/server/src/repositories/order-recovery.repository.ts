@@ -9,6 +9,8 @@ import type {
 type OrderRecoveryRow = {
   id: string
   identity_key: string
+  strategy_id?: string | null
+  signal_id?: string | null
   order_id?: string | null
   exchange_order_id?: string | null
   execution_task_id?: string | null
@@ -35,6 +37,8 @@ function mapOrderRecovery(row: OrderRecoveryRow): OrderRecoveryRecord {
   return {
     id: row.id,
     identityKey: row.identity_key,
+    strategyId: row.strategy_id ?? undefined,
+    signalId: row.signal_id ?? undefined,
     orderId: row.order_id ?? undefined,
     exchangeOrderId: row.exchange_order_id ?? undefined,
     executionTaskId: row.execution_task_id ?? undefined,
@@ -65,17 +69,19 @@ export class OrderRecoveryRepository {
     this.db
       .prepare(
         `INSERT INTO order_recovery_records (
-          id, identity_key, order_id, exchange_order_id, execution_task_id, exchange, source, mode, symbol,
+          id, identity_key, strategy_id, signal_id, order_id, exchange_order_id, execution_task_id, exchange, source, mode, symbol,
           failure_stage, recovery_status, retry_count, max_retry_count, last_recovery_source, resolved_by, last_error_code,
           last_error_message, next_retry_at, payload_json, created_at, updated_at, resolved_at
         ) VALUES (
-          @id, @identityKey, @orderId, @exchangeOrderId, @executionTaskId, @exchange, @source, @mode, @symbol,
+          @id, @identityKey, @strategyId, @signalId, @orderId, @exchangeOrderId, @executionTaskId, @exchange, @source, @mode, @symbol,
           @failureStage, @recoveryStatus, @retryCount, @maxRetryCount, @lastRecoverySource, @resolvedBy, @lastErrorCode,
           @lastErrorMessage, @nextRetryAt, @payloadJson, @createdAt, @updatedAt, @resolvedAt
         )`,
       )
       .run({
         ...record,
+        strategyId: record.strategyId ?? null,
+        signalId: record.signalId ?? null,
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
         executionTaskId: record.executionTaskId ?? null,
@@ -228,6 +234,8 @@ export class OrderRecoveryRepository {
       .prepare(
         `UPDATE order_recovery_records
          SET identity_key = @identityKey,
+             strategy_id = @strategyId,
+             signal_id = @signalId,
              order_id = @orderId,
              exchange_order_id = @exchangeOrderId,
              execution_task_id = @executionTaskId,
@@ -251,6 +259,8 @@ export class OrderRecoveryRepository {
       )
       .run({
         ...record,
+        strategyId: record.strategyId ?? null,
+        signalId: record.signalId ?? null,
         orderId: record.orderId ?? null,
         exchangeOrderId: record.exchangeOrderId ?? null,
         executionTaskId: record.executionTaskId ?? null,

@@ -4,6 +4,8 @@ import type { DailyRiskStats, RiskCheck } from '../types/domain.js';
 type RiskCheckRow = {
   id: string;
   signal_id: string;
+  strategy_id?: string | null;
+  strategy_version_id?: string | null;
   rule_id: string;
   exchange: RiskCheck['exchange'];
   symbol: string;
@@ -20,6 +22,8 @@ function mapRiskCheck(row: RiskCheckRow): RiskCheck {
   return {
     id: row.id,
     signalId: row.signal_id,
+    strategyId: row.strategy_id ?? undefined,
+    strategyVersionId: row.strategy_version_id ?? undefined,
     ruleId: row.rule_id,
     exchange: row.exchange,
     symbol: row.symbol,
@@ -40,14 +44,18 @@ export class RiskCheckRepository {
     this.db
       .prepare(
         `INSERT INTO risk_checks (
-          id, signal_id, rule_id, exchange, symbol, status, reason,
+          id, signal_id, strategy_id, strategy_version_id, rule_id, exchange, symbol, status, reason,
           quote_exposure, market_price, items_json, stat_date, created_at
         ) VALUES (
-          @id, @signalId, @ruleId, @exchange, @symbol, @status, @reason,
+          @id, @signalId, @strategyId, @strategyVersionId, @ruleId, @exchange, @symbol, @status, @reason,
           @quoteExposure, @marketPrice, @itemsJson, @statDate, @createdAt
         )`
       )
-      .run(check);
+      .run({
+        ...check,
+        strategyId: check.strategyId ?? null,
+        strategyVersionId: check.strategyVersionId ?? null,
+      });
 
     return check;
   }

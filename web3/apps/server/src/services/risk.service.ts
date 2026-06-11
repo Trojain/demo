@@ -94,6 +94,8 @@ export class RiskService {
     const check = this.riskCheckRepository.create({
       id: nanoid(),
       signalId: input.signal.id,
+      strategyId: input.signal.strategyId,
+      strategyVersionId: input.signal.strategyVersionId,
       ruleId: input.signal.ruleId,
       exchange: input.signal.exchange,
       symbol: input.signal.symbol,
@@ -111,10 +113,12 @@ export class RiskService {
       action: status === 'passed' ? 'risk.passed' : 'risk.rejected',
       entityType: 'risk_check',
       entityId: check.id,
+      strategyId: check.strategyId,
+      signalId: check.signalId,
       ruleId: check.ruleId,
       message: `${check.symbol} ${status === 'passed' ? '风控通过' : `风控拒绝：${reason}`}`,
       payload: {
-        signalId: check.signalId,
+        strategyVersionId: check.strategyVersionId,
         quoteExposure: check.quoteExposure,
         marketPrice: check.marketPrice,
         riskConfig: config,

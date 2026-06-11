@@ -60,6 +60,7 @@ export type AuditLogAction =
   | 'trigger.failed'
   | 'trigger.ignored'
   | 'execution.created'
+  | 'execution.cancelled'
   | 'execution.failed'
   | 'order.submitted'
   | 'order.synced'
@@ -330,6 +331,10 @@ export interface RiskCheck {
   id: string;
   /** 鍏宠仈浜ゆ槗淇″彿 ID */
   signalId: string;
+  /** 关联策略实例 ID，保证风控归档可直接回到执行体。 */
+  strategyId?: string;
+  /** 关联策略参数版本 ID，保证风控归档和策略版本一致。 */
+  strategyVersionId?: string;
   /** 鍏宠仈鐩戞帶瑙勫垯 ID */
   ruleId: string;
   /** 浜ゆ槗鎵€缂栫爜 */
@@ -833,6 +838,10 @@ export interface OrderRecoveryRecord {
   id: string;
   /** 鎭㈠鍘婚噸閿紝鍚屼竴闂鍦ㄦ湭鎭㈠鍓嶅鐢ㄥ悓涓€鏉¤褰?*/
   identityKey: string;
+  /** 关联策略实例 ID，便于恢复记录直接回到执行体。 */
+  strategyId?: string;
+  /** 关联信号 ID，便于恢复记录直接回到信号归档。 */
+  signalId?: string;
   /** 鍏宠仈鏈湴璁㈠崟 ID锛屼氦鏄撴墍绾у紓甯稿彲涓虹┖ */
   orderId?: string;
   /** 鍏宠仈浜ゆ槗鎵€璁㈠崟鍙凤紝渚夸簬鎺掓煡鐪熷疄浜ゆ槗闂 */

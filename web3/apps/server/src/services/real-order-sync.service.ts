@@ -151,8 +151,11 @@ export class RealOrderSyncService {
       const message = error instanceof Error ? error.message : '私有推送处理失败'
       this.orderRecoveryService?.createOrRefresh({
         identityKey: `private_stream:order:${order.id}`,
+        strategyId: order.strategyId,
+        signalId: order.signalId,
         orderId: order.id,
         exchangeOrderId: order.exchangeOrderId,
+        executionTaskId: order.executionTaskId,
         exchange: order.exchange,
         source: order.ruleId ? 'rule' : 'manual',
         mode: 'real',
@@ -236,8 +239,11 @@ export class RealOrderSyncService {
         const message = error instanceof Error ? error.message : '真实订单状态同步失败'
         this.orderRecoveryService?.createOrRefresh({
           identityKey: `order_sync:${currentOrder.id}`,
+          strategyId: currentOrder.strategyId,
+          signalId: currentOrder.signalId,
           orderId: currentOrder.id,
           exchangeOrderId: currentOrder.exchangeOrderId,
+          executionTaskId: currentOrder.executionTaskId,
           exchange: currentOrder.exchange,
           source: currentOrder.ruleId ? 'rule' : 'manual',
           mode: 'real',
@@ -380,8 +386,11 @@ export class RealOrderSyncService {
     if (deltaBaseQuantity.lessThan(0) || deltaQuoteAmount.lessThan(0) || deltaFeeAmount.lessThan(0)) {
       this.orderRecoveryService?.createOrRefresh({
         identityKey: `trade_fill_sync:${order.id}`,
+        strategyId: order.strategyId,
+        signalId: order.signalId,
         orderId: order.id,
         exchangeOrderId: order.exchangeOrderId,
+        executionTaskId: order.executionTaskId,
         exchange: order.exchange,
         source: order.ruleId ? 'rule' : 'manual',
         mode: 'real',
@@ -422,8 +431,11 @@ export class RealOrderSyncService {
     if (!deltaBaseQuantity.greaterThan(0) || !deltaQuoteAmount.greaterThan(0)) {
       this.orderRecoveryService?.createOrRefresh({
         identityKey: `trade_fill_sync:${order.id}`,
+        strategyId: order.strategyId,
+        signalId: order.signalId,
         orderId: order.id,
         exchangeOrderId: order.exchangeOrderId,
+        executionTaskId: order.executionTaskId,
         exchange: order.exchange,
         source: order.ruleId ? 'rule' : 'manual',
         mode: 'real',
@@ -484,8 +496,11 @@ export class RealOrderSyncService {
       this.tradeAccountRepository.updateAccountBalance(nextAccount)
       this.orderRecoveryService?.createOrRefresh({
         identityKey: `trade_fill_sync:${order.id}`,
+        strategyId: order.strategyId,
+        signalId: order.signalId,
         orderId: order.id,
         exchangeOrderId: order.exchangeOrderId,
+        executionTaskId: order.executionTaskId,
         exchange: order.exchange,
         source: order.ruleId ? 'rule' : 'manual',
         mode: 'real',
