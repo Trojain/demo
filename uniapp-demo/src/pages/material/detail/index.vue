@@ -40,6 +40,7 @@
 <script>
 import { decodeQueryObject } from '@/utils/query'
 import { saveNetworkImageToAlbum, saveNetworkVideoToAlbum } from '@/utils/image-save'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -54,6 +55,16 @@ export default {
     defaultTitle() {
       return this.isVideo ? '视频素材' : '素材'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.defaultTitle
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.defaultTitle
+    })
   },
   onLoad(options) {
     this.asset = decodeQueryObject(options.media || options.image)

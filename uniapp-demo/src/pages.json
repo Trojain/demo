@@ -3,7 +3,13 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "首页"
+        "navigationBarTitleText": "去水印"
+      }
+    },
+    {
+      "path": "pages/featured/index/index",
+      "style": {
+        "navigationBarTitleText": "热门精选"
       }
     },
     {
@@ -117,11 +123,11 @@
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "首页"
+        "text": "去水印"
       },
       {
-        "pagePath": "pages/profile/index",
-        "text": "我的"
+        "pagePath": "pages/featured/index/index",
+        "text": "热门精选"
       }
     ]
   }

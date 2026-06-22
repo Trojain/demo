@@ -129,6 +129,7 @@
 <script>
 import { fetchTvHomeData, getTvErrorMessage, getTvRegionOptions } from '@/services/tv-api'
 import { encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -151,6 +152,16 @@ export default {
       const matched = this.regionOptions.find(item => item.value === this.currentRegion)
       return matched ? matched.label : '国内'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '今日追剧'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '今日追剧'
+    })
   },
   onLoad() {
     this.fetchHomeData()

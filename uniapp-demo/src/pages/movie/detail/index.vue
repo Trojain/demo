@@ -92,6 +92,7 @@
 <script>
 import { fetchMovieDetail, fetchMovieRecommendations, getMovieErrorMessage } from '@/services/movie-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -136,6 +137,16 @@ export default {
 
       return this.detail.productionCountries || '未知'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.detail.title || '影视详情'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.detail.title || '影视详情'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

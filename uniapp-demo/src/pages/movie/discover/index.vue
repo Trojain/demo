@@ -95,6 +95,7 @@
 import { MOVIE_DISCOVER_SORT_OPTIONS } from '@/config/movie'
 import { createMovieYearOptions, discoverMovies, fetchMovieGenres, getMovieErrorMessage } from '@/services/movie-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -134,6 +135,16 @@ export default {
 
       return this.isFinished ? '没有更多了' : '加载更多'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.selectedGenreLabel || '电影分类'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.selectedGenreLabel || '电影分类'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

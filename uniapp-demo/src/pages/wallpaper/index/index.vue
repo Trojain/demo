@@ -31,6 +31,7 @@
 <script>
 import { fetchWallpaperCategories } from '@/services/wallpaper-api'
 import { encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -38,6 +39,16 @@ export default {
       categories: [],
       isLoading: false
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '高清壁纸'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '高清壁纸'
+    })
   },
   onLoad() {
     this.fetchCategories()

@@ -47,6 +47,7 @@
 <script>
 import { fetchWallpaperByCategory, fetchWallpaperCategories } from '@/services/wallpaper-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -70,6 +71,16 @@ export default {
 
       return this.isFinished ? '没有更多了' : '加载更多'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.pageTitle || '壁纸列表'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.pageTitle || '壁纸列表'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

@@ -2,18 +2,35 @@
   <view class="page">
     <view class="profile-card">
       <text class="profile-card__title">我的</text>
-      <text class="profile-card__desc">下载的素材和壁纸会保存到系统相册，本页后续可扩展下载记录和收藏。</text>
+      <text class="profile-card__desc">下载的素材、壁纸和解析视频会保存到系统相册，本页后续可扩展下载记录和收藏。</text>
     </view>
 
     <!-- <view class="notice-card">
       <text class="notice-card__title">使用前配置</text>
-      <text class="notice-card__item">1. 在 src/config/material.js、src/config/movie.js、src/config/tv.js 中维护素材、影视和追剧模块的接口配置。</text>
-      <text class="notice-card__item">2. 在小程序后台配置 pixabay.com、cdn.pixabay.com、cdn.apc.360.cn、wallpaper.apc.360.cn、api.themoviedb.org、image.tmdb.org、api.tvmaze.com、static.tvmaze.com 及各模块实际返回的资源域名。</text>
-      <text class="notice-card__item">3. 保存素材和壁纸时按平台提示授权相册权限。</text>
+      <text class="notice-card__item">1. 在 src/config/material.js、src/config/movie.js、src/config/tv.js、src/config/video.js 中维护素材、影视、追剧和视频解析模块的接口配置。</text>
+      <text class="notice-card__item">2. 在小程序后台配置 pixabay.com、cdn.pixabay.com、cdn.apc.360.cn、wallpaper.apc.360.cn、api.themoviedb.org、image.tmdb.org、api.tvmaze.com、static.tvmaze.com、api.tikhub.dev 及各模块实际返回的资源域名。</text>
+      <text class="notice-card__item">3. 保存素材、壁纸和视频时按平台提示授权相册权限。</text>
     </view> -->
 
   </view>
 </template>
+
+<script>
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
+
+export default {
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '我的'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '我的'
+    })
+  }
+}
+</script>
 
 <style lang="scss" scoped>
 .page {

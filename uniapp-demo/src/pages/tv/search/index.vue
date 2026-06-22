@@ -144,6 +144,7 @@ import {
   searchTvShows
 } from '@/services/tv-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -179,6 +180,16 @@ export default {
       const matched = this.regionOptions.find(item => item.value === this.currentRegion)
       return matched ? matched.label : '国内'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.headerTitle
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.headerTitle
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

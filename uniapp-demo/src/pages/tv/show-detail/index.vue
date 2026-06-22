@@ -124,6 +124,7 @@
 <script>
 import { fetchTvShowDetail, getTvErrorMessage } from '@/services/tv-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -154,6 +155,16 @@ export default {
       images: [],
       akas: []
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.detail.name || '剧集详情'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.detail.name || '剧集详情'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

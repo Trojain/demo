@@ -77,6 +77,7 @@
 import { MATERIAL_ERROR_CODES, searchMaterialAssets } from '@/services/material-api'
 import { MATERIAL_CATEGORIES, MATERIAL_FILTER_GROUPS, DEFAULT_MATERIAL_FILTERS, MATERIAL_MEDIA_OPTIONS } from '@/config/material-options'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -140,6 +141,16 @@ export default {
 
       return this.isFinished ? '没有更多了' : '加载更多'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '搜索素材'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '搜索素材'
+    })
   },
   onLoad(options) {
     const routeFilters = decodeQueryObject(options.filters)

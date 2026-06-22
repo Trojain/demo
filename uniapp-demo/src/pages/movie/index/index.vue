@@ -103,6 +103,7 @@
 <script>
 import { fetchMovieHomeData, getMovieErrorMessage } from '@/services/movie-api'
 import { encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -114,6 +115,16 @@ export default {
       trendingItems: [],
       genres: []
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '热门影视'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '热门影视'
+    })
   },
   onLoad() {
     this.fetchHomeData()

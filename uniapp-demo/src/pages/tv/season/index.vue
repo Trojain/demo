@@ -58,6 +58,7 @@
 <script>
 import { fetchTvSeasonPageData, getTvErrorMessage } from '@/services/tv-api'
 import { decodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -75,6 +76,16 @@ export default {
       currentSeason: {},
       episodes: []
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.show.name ? `${this.show.name} 季集` : '季 / 集结构'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.show.name ? `${this.show.name} 季集` : '季 / 集结构'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)

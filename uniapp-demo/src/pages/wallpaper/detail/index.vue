@@ -20,12 +20,23 @@
 <script>
 import { decodeQueryObject } from '@/utils/query'
 import { saveNetworkImageToAlbum } from '@/utils/image-save'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
     return {
       wallpaper: {},
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.wallpaper.title || '壁纸详情'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.wallpaper.title || '壁纸详情'
+    })
   },
   onLoad(options) {
     this.wallpaper = decodeQueryObject(options.wallpaper)

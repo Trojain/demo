@@ -27,12 +27,23 @@
 <script>
 import { MATERIAL_CATEGORIES, DEFAULT_MATERIAL_FILTERS } from '@/config/material-options'
 import { encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
     return {
       categories: MATERIAL_CATEGORIES
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: '精选素材'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: '精选素材'
+    })
   },
   methods: {
     goSearch() {

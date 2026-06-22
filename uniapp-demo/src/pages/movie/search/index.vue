@@ -74,6 +74,7 @@
 import { MOVIE_QUICK_KEYWORDS, MOVIE_SEARCH_TYPE_OPTIONS } from '@/config/movie'
 import { getMovieErrorMessage, searchMovieMedia } from '@/services/movie-api'
 import { decodeQueryObject, encodeQueryObject } from '@/utils/query'
+import { createPageShareOptions, createPageTimelineOptions } from '@/utils/page-share'
 
 export default {
   data() {
@@ -100,6 +101,16 @@ export default {
 
       return this.isFinished ? '没有更多了' : '加载更多'
     }
+  },
+  onShareAppMessage() {
+    return createPageShareOptions({
+      title: this.keyword ? `搜索影视：${this.keyword}` : '搜索影视'
+    })
+  },
+  onShareTimeline() {
+    return createPageTimelineOptions({
+      title: this.keyword ? `搜索影视：${this.keyword}` : '搜索影视'
+    })
   },
   onLoad(options) {
     const query = decodeQueryObject(options.query)
